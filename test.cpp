@@ -129,9 +129,12 @@ int main() {
 		memcpy((char*) &val1, tuple_ptr, sizeof(int32_t));
 		tuple_ptr += sizeof(int32_t);
 
-		int64_t val2;
-		memcpy((char*) &val2, tuple_ptr, sizeof(int64_t));
-		tuple_ptr += sizeof(int64_t);
+		// ahaa int64 is stored as int32, int32 not as int64
+		tuple_ptr += sizeof(int32_t);
+
+		int32_t val2;
+		memcpy((char*) &val2, tuple_ptr, sizeof(int32_t));
+		tuple_ptr += sizeof(int32_t);
 		
 
 // If it's a variable length field (attlen = -1) then it's a bit more complicated. All variable-length data types share the common header structure struct varlena, which includes the total length of the stored value and some flag bits. Depending on the flags, the data can be either inline or in a TOAST table; it might be compressed, too (see Section 70.2).

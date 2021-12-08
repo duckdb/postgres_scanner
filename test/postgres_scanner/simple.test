@@ -1,0 +1,8 @@
+statement ok
+LOAD 'build/debug/postgres_scanner.duckdb_extension';
+
+query I
+SELECT i FROM postgres_scan('', 'testtbl');
+----
+42
+43

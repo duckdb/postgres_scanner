@@ -65,7 +65,7 @@ struct PostgresColumnInfo {
 };
 
 struct PostgresBindData : public FunctionData {
-  string file_name;
+  vector<string> file_list;
   idx_t page_size;
   idx_t txid;
   vector<PostgresColumnInfo> columns;
@@ -78,6 +78,7 @@ struct PostgresOperatorData : public FunctionOperatorData {
   // TODO support projection pushdown
   vector<column_t> column_ids;
   unique_ptr<FileHandle> file_handle;
+  idx_t file_number;
   idx_t page_number;
   unique_ptr<data_t[]> page_buffer;
   idx_t item_count;
@@ -133,8 +134,13 @@ PostgresBind(ClientContext &context, vector<Value> &inputs,
                          table_name)
                          .c_str());
 
-  // TODO if the file is bigger than 1 GB or so, we may have multiple data files
-  result->file_name = PQgetvalue(res, 0, 0);
+  auto base_filename = string(PQgetvalue(res, 0, 0));
+  result->file_list.push_back(base_filename);
+  auto additional_files =
+      FileSystem::GetFileSystem(context).Glob(base_filename + ".*");
+  result->file_list.insert(result->file_list.end(), additional_files.begin(),
+                           additional_files.end());
+
   result->page_size = atoi(PQgetvalue(res, 0, 1));
   result->txid = atoi(PQgetvalue(res, 0, 2));
 
@@ -186,12 +192,7 @@ static void PostgresInitInternal(ClientContext &context,
   D_ASSERT(page_min <= page_max);
 
   local_state->done = false;
-  local_state->file_handle = FileSystem::GetFileSystem(context).OpenFile(
-      bind_data->file_name, FileFlags::FILE_FLAGS_READ);
-  local_state->page_number = 0;
-  local_state->item_count = 0;
-  local_state->item_offset = 0;
-
+  local_state->file_number = 0;
   local_state->page_buffer =
       unique_ptr<data_t[]>(new data_t[bind_data->page_size]);
 }
@@ -224,18 +225,28 @@ void PostgresScan(ClientContext &context, const FunctionData *bind_data_p,
 
   idx_t output_offset = 0;
   while (output_offset < STANDARD_VECTOR_SIZE) {
-    // we need to move on to a new page
+
+    // we need to move on to a new page or a new file
     if (state.item_offset >= state.item_count) {
+      if (!state.file_handle || state.page_number * bind_data->page_size >=
+                                    state.file_handle->GetFileSize()) {
+        // we ran out of file, do we have another one?
+        if (state.file_number >= bind_data->file_list.size()) {
+          state.done = true;
+          return;
+        }
+        state.file_handle = FileSystem::GetFileSystem(context).OpenFile(
+            bind_data->file_list[state.file_number++],
+            FileFlags::FILE_FLAGS_READ);
+        state.page_number = 0;
+        state.item_offset = 0;
+        state.item_count = 0;
+      }
+
       if (state.file_handle->GetFileSize() % bind_data->page_size != 0) {
         throw IOException(
             "Postgres data file length %s not a multiple of page size",
-            bind_data->file_name);
-      }
-      if (state.page_number * bind_data->page_size >=
-          state.file_handle->GetFileSize()) {
-        // we ran out of file
-        state.done = true;
-        return;
+            state.file_handle->path);
       }
 
       auto page_ptr = state.page_buffer.get();
@@ -293,6 +304,7 @@ void PostgresScan(ClientContext &context, const FunctionData *bind_data_p,
 
     tuple_ptr += tuple_header.t_hoff;
     for (idx_t col_idx = 0; col_idx < bind_data->columns.size(); col_idx++) {
+      // TODO handle NULLs here, they are not in the data
       auto &type = bind_data->types[col_idx];
       switch (type.id()) {
       case LogicalTypeId::INTEGER: {
@@ -302,7 +314,7 @@ void PostgresScan(ClientContext &context, const FunctionData *bind_data_p,
         break;
       }
       case LogicalTypeId::BIGINT: {
-          // TODO this is not correct yet
+        // TODO this is not correct yet
         auto out_ptr = FlatVector::GetData<int64_t>(output.data[col_idx]);
         out_ptr[output_offset] = Load<int64_t>(tuple_ptr);
         tuple_ptr += sizeof(int64_t);
@@ -316,20 +328,14 @@ void PostgresScan(ClientContext &context, const FunctionData *bind_data_p,
   }
 }
 
-static string PostgresToString(const FunctionData *bind_data_p) {
-  D_ASSERT(bind_data_p);
-  auto bind_data = (const PostgresBindData *)bind_data_p;
-  return StringUtil::Format("%s", bind_data->file_name);
-}
-
 class PostgresScanFunction : public TableFunction {
 public:
   PostgresScanFunction()
       : TableFunction(
             "postgres_scan", {LogicalType::VARCHAR, LogicalType::VARCHAR},
             PostgresScan, PostgresBind, PostgresInit, nullptr, nullptr, nullptr,
-            nullptr, nullptr, PostgresToString, nullptr, nullptr, nullptr,
-            nullptr, nullptr, false, false, nullptr) {}
+            nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr,
+            nullptr, false, false, nullptr) {}
 };
 
 extern "C" {

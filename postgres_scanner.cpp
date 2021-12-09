@@ -67,6 +67,7 @@ struct PostgresColumnInfo {
 struct PostgresBindData : public FunctionData {
   string file_name;
   idx_t page_size;
+  idx_t txid;
   vector<PostgresColumnInfo> columns;
   vector<string> names;
   vector<LogicalType> types;
@@ -76,6 +77,12 @@ struct PostgresOperatorData : public FunctionOperatorData {
   bool done = false;
   // TODO support projection pushdown
   vector<column_t> column_ids;
+  unique_ptr<FileHandle> file_handle;
+  idx_t page_number;
+  unique_ptr<data_t[]> page_buffer;
+  idx_t item_count;
+  idx_t item_offset;
+  ItemIdData *item_ptr;
 };
 
 static LogicalType DuckDBType(const string &pgtypename) {
@@ -120,7 +127,8 @@ PostgresBind(ClientContext &context, vector<Value> &inputs,
   // find out where the data file in question is
   res = PQexec(conn, StringUtil::Format(
                          "SELECT setting || '/' || pg_relation_filepath('%s') "
-                         "table_path, current_setting('block_size') block_size "
+                         "table_path, current_setting('block_size') "
+                         "block_size, txid_current() "
                          "FROM pg_settings WHERE name = 'data_directory'",
                          table_name)
                          .c_str());
@@ -128,6 +136,7 @@ PostgresBind(ClientContext &context, vector<Value> &inputs,
   // TODO if the file is bigger than 1 GB or so, we may have multiple data files
   result->file_name = PQgetvalue(res, 0, 0);
   result->page_size = atoi(PQgetvalue(res, 0, 1));
+  result->txid = atoi(PQgetvalue(res, 0, 2));
 
   PQclear(res);
 
@@ -177,8 +186,14 @@ static void PostgresInitInternal(ClientContext &context,
   D_ASSERT(page_min <= page_max);
 
   local_state->done = false;
+  local_state->file_handle = FileSystem::GetFileSystem(context).OpenFile(
+      bind_data->file_name, FileFlags::FILE_FLAGS_READ);
+  local_state->page_number = 0;
+  local_state->item_count = 0;
+  local_state->item_offset = 0;
 
-  // TODO
+  local_state->page_buffer =
+      unique_ptr<data_t[]>(new data_t[bind_data->page_size]);
 }
 
 static unique_ptr<FunctionOperatorData>
@@ -206,7 +221,99 @@ void PostgresScan(ClientContext &context, const FunctionData *bind_data_p,
   if (state.done) {
     return;
   }
-  // TODO
+
+  idx_t output_offset = 0;
+  while (output_offset < STANDARD_VECTOR_SIZE) {
+    // we need to move on to a new page
+    if (state.item_offset >= state.item_count) {
+      if (state.file_handle->GetFileSize() % bind_data->page_size != 0) {
+        throw IOException(
+            "Postgres data file length %s not a multiple of page size",
+            bind_data->file_name);
+      }
+      if (state.page_number * bind_data->page_size >=
+          state.file_handle->GetFileSize()) {
+        // we ran out of file
+        state.done = true;
+        return;
+      }
+
+      auto page_ptr = state.page_buffer.get();
+      state.file_handle->Read(page_ptr, bind_data->page_size,
+                              state.page_number * bind_data->page_size);
+      // parse page header
+      auto page_header = Load<PageHeaderData>(page_ptr);
+      page_ptr += sizeof(PageHeaderData);
+      if (page_header.pd_lower > bind_data->page_size ||
+          page_header.pd_upper > bind_data->page_size) {
+        throw IOException("Page upper/lower offsets exceed page size");
+      }
+      state.item_ptr = (ItemIdData *)page_ptr;
+      state.item_count =
+          (page_header.pd_lower - sizeof(PageHeaderData)) / sizeof(ItemIdData);
+      state.item_offset = 0;
+      state.page_number++;
+    }
+
+    // TODO maybe its faster to read the items in one go, but perhaps not since
+    // the page is rather small and fits in cache move to next page item
+    auto item = state.item_ptr[state.item_offset++];
+
+    if (item.lp_off + item.lp_len > bind_data->page_size) {
+      throw IOException("Item pointer and length exceed page size");
+    }
+    // unused or dead
+    if (item.lp_flags == 0 || item.lp_flags == 3) {
+      continue;
+    }
+    //  redirect
+    if (item.lp_flags == 2) {
+      throw IOException("REDIRECT tuples are not supported");
+    }
+    // normal
+    if (item.lp_flags != 1 || item.lp_len == 0) {
+      throw IOException("Expected NORMAL tuple with non-zero length but got "
+                        "something else");
+    }
+
+    // printf("lp_off=%d, lp_len=%d\n", item.lp_off, item.lp_len);
+
+    // read tuple header
+    auto tuple_ptr = state.page_buffer.get() + item.lp_off;
+    auto tuple_header = Load<HeapTupleHeaderData>(tuple_ptr);
+    // TODO decode the NULL bitmask here, future work
+
+    // printf("t_xmin=%d, t_xmax=%d, t_hoff=%d\n", tuple_header.t_xmin,
+    //        tuple_header.t_xmax, tuple_header.t_hoff);
+    if (tuple_header.t_xmin > bind_data->txid ||
+        (tuple_header.t_xmax != 0 && tuple_header.t_xmax < bind_data->txid)) {
+      // tuple was deleted or updated elsewhere
+      continue;
+    }
+
+    tuple_ptr += tuple_header.t_hoff;
+    for (idx_t col_idx = 0; col_idx < bind_data->columns.size(); col_idx++) {
+      auto &type = bind_data->types[col_idx];
+      switch (type.id()) {
+      case LogicalTypeId::INTEGER: {
+        auto out_ptr = FlatVector::GetData<int32_t>(output.data[col_idx]);
+        out_ptr[output_offset] = Load<int32_t>(tuple_ptr);
+        tuple_ptr += sizeof(int32_t);
+        break;
+      }
+      case LogicalTypeId::BIGINT: {
+          // TODO this is not correct yet
+        auto out_ptr = FlatVector::GetData<int64_t>(output.data[col_idx]);
+        out_ptr[output_offset] = Load<int64_t>(tuple_ptr);
+        tuple_ptr += sizeof(int64_t);
+        break;
+      }
+      default:
+        throw InternalException("Unsupported Type %s", type.ToString());
+      }
+    }
+    output.SetCardinality(++output_offset);
+  }
 }
 
 static string PostgresToString(const FunctionData *bind_data_p) {

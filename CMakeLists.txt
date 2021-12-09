@@ -43,7 +43,6 @@ endif()
 
 link_directories(${PostgreSQL_LIBRARY_DIRS})
 
-
 add_library(postgres_scanner SHARED postgres_scanner.cpp)
 set_target_properties(postgres_scanner PROPERTIES PREFIX "")
 target_link_libraries(postgres_scanner duckdb)
@@ -56,8 +55,9 @@ endif()
 set_target_properties(postgres_scanner PROPERTIES SUFFIX ".duckdb_extension")
 
 if(MSVC)
-  set_target_properties(postgres_scanner PROPERTIES RUNTIME_OUTPUT_DIRECTORY_DEBUG
-                                                  ${CMAKE_BINARY_DIR})
+  set_target_properties(
+    postgres_scanner PROPERTIES RUNTIME_OUTPUT_DIRECTORY_DEBUG
+                                ${CMAKE_BINARY_DIR})
   set_target_properties(
     sqlite_scanner PROPERTIES RUNTIME_OUTPUT_DIRECTORY_RELEASE
                               ${CMAKE_BINARY_DIR})
@@ -65,7 +65,7 @@ endif()
 
 if(WIN32)
   set_target_properties(postgres_scanner PROPERTIES LINK_FLAGS_RELEASE
-                                                  "/DELAYLOAD:duckdb.dll")
+                                                    "/DELAYLOAD:duckdb.dll")
   set(CMAKE_EXE_LINKER_FLAGS_RELEASE
       "${CMAKE_EXE_LINKER_FLAGS_RELEASE}  /DELAYLOAD:duckdb.dll")
 endif()

@@ -120,7 +120,7 @@ int main() {
 		HeapTupleHeaderData tuple_header;
 		memcpy((char*) &tuple_header, tuple_ptr, sizeof(HeapTupleHeaderData));
 		// TODO decode the NULL bitmask here, future work
-		tuple_ptr+= tuple_header.t_hoff; // TODO we may want to do the varlen thing
+		tuple_ptr += tuple_header.t_hoff; // TODO we may want to do the varlen thing
 
 		printf("t_xmin=%d, t_xmax=%d, t_hoff=%d\n", tuple_header.t_xmin, tuple_header.t_xmax, tuple_header.t_hoff);
 

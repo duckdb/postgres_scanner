@@ -64,8 +64,16 @@ struct PostgresColumnInfo {
   idx_t typlen;
 };
 
+struct ScanTask {
+  string file_name;
+  idx_t file_size;
+
+  idx_t page_min;
+  idx_t page_max;
+};
+
 struct PostgresBindData : public FunctionData {
-  vector<string> file_list;
+  vector<ScanTask> tasks;
   idx_t page_size;
   idx_t txid;
   vector<PostgresColumnInfo> columns;
@@ -78,13 +86,22 @@ struct PostgresOperatorData : public FunctionOperatorData {
   // TODO support projection pushdown
   vector<column_t> column_ids;
   unique_ptr<FileHandle> file_handle;
-  idx_t file_number;
-  idx_t page_number;
+  idx_t task_offset;
+  idx_t task_max;
+  ScanTask current_task;
+  idx_t page_offset;
   unique_ptr<data_t[]> page_buffer;
   idx_t item_count;
   idx_t item_offset;
   ItemIdData *item_ptr;
 };
+
+struct PostgresParallelState : public ParallelState {
+  mutex lock;
+  idx_t task_idx;
+};
+
+static constexpr idx_t PAGES_PER_TASK = 10000;
 
 static LogicalType DuckDBType(const string &pgtypename) {
   if (pgtypename == "int4") {
@@ -134,20 +151,44 @@ PostgresBind(ClientContext &context, vector<Value> &inputs,
                          table_name)
                          .c_str());
 
-  auto base_filename = string(PQgetvalue(res, 0, 0));
-  result->file_list.push_back(base_filename);
-  auto additional_files =
-      FileSystem::GetFileSystem(context).Glob(base_filename + ".*");
-  result->file_list.insert(result->file_list.end(), additional_files.begin(),
-                           additional_files.end());
-
   result->page_size = atoi(PQgetvalue(res, 0, 1));
   result->txid = atoi(PQgetvalue(res, 0, 2));
-
+  auto base_filename = string(PQgetvalue(res, 0, 0));
   PQclear(res);
 
-  // TODO support multiple schemas here
+  // find all the data files
+  vector<string> file_list;
+  file_list.push_back(base_filename);
+  auto &file_system = FileSystem::GetFileSystem(context);
+  auto additional_files = file_system.Glob(base_filename + ".*");
+  file_list.insert(file_list.end(), additional_files.begin(),
+                   additional_files.end());
 
+  // TODO should we maybe construct those tasks later?
+  for (auto &file_name : file_list) {
+    auto file_handle =
+        file_system.OpenFile(file_name, FileFlags::FILE_FLAGS_READ);
+    auto file_size = file_handle->GetFileSize();
+
+    if (file_size % result->page_size != 0) {
+      throw IOException(
+          "Postgres data file length %s not a multiple of page size",
+          file_name);
+    }
+
+    auto pages_in_file = file_size / result->page_size;
+    for (idx_t page_idx = 0; page_idx < pages_in_file;
+         page_idx += PAGES_PER_TASK) {
+      ScanTask task;
+      task.file_name = file_name;
+      task.file_size = file_size;
+      task.page_min = page_idx;
+      task.page_max = MinValue(page_idx + PAGES_PER_TASK, pages_in_file) - 1;
+      result->tasks.push_back(move(task));
+    }
+  }
+
+  // TODO support declaring a schema here ("default")
   // query the table schema so we can interpret the bits in the pages
   // fun fact: this query also works in DuckDB ^^
   res = PQexec(conn,
@@ -186,15 +227,19 @@ PostgresBind(ClientContext &context, vector<Value> &inputs,
 static void PostgresInitInternal(ClientContext &context,
                                  const PostgresBindData *bind_data,
                                  PostgresOperatorData *local_state,
-                                 idx_t page_min, idx_t page_max) {
+                                 idx_t task_min, idx_t task_max) {
   D_ASSERT(bind_data);
   D_ASSERT(local_state);
-  D_ASSERT(page_min <= page_max);
+  D_ASSERT(task_min <= task_max);
 
   local_state->done = false;
-  local_state->file_number = 0;
+  local_state->task_max = task_max;
+  local_state->task_offset = task_min;
+
   local_state->page_buffer =
       unique_ptr<data_t[]>(new data_t[bind_data->page_size]);
+  local_state->item_offset = 0;
+  local_state->item_count = 0;
 }
 
 static unique_ptr<FunctionOperatorData>
@@ -205,7 +250,8 @@ PostgresInit(ClientContext &context, const FunctionData *bind_data_p,
   auto result = make_unique<PostgresOperatorData>();
   result->column_ids = column_ids;
 
-  PostgresInitInternal(context, bind_data, result.get(), 0, 0);
+  PostgresInitInternal(context, bind_data, result.get(), 0,
+                       bind_data->tasks.size());
   return move(result);
 }
 
@@ -225,36 +271,31 @@ void PostgresScan(ClientContext &context, const FunctionData *bind_data_p,
 
   idx_t output_offset = 0;
   while (output_offset < STANDARD_VECTOR_SIZE) {
-
-    // we need to move on to a new page or a new file
     if (state.item_offset >= state.item_count) {
-      if (!state.file_handle || state.page_number * bind_data->page_size >=
-                                    state.file_handle->GetFileSize()) {
-        // we ran out of file, do we have another one?
-        if (state.file_number >= bind_data->file_list.size()) {
+      // we need to move on to a new page or a new task
+      if (!state.file_handle ||
+          state.page_offset > state.current_task.page_max) {
+        // we ran out of task, do we have another one?
+        if (state.task_offset > state.task_max) {
           state.done = true;
           return;
         }
+        // printf("%llu\n", state.task_offset);
+        state.current_task = bind_data->tasks[state.task_offset];
         state.file_handle = FileSystem::GetFileSystem(context).OpenFile(
-            bind_data->file_list[state.file_number++],
-            FileFlags::FILE_FLAGS_READ);
-        state.page_number = 0;
-        state.item_offset = 0;
+            state.current_task.file_name, FileFlags::FILE_FLAGS_READ);
+        state.page_offset = state.current_task.page_min;
         state.item_count = 0;
-      }
-
-      if (state.file_handle->GetFileSize() % bind_data->page_size != 0) {
-        throw IOException(
-            "Postgres data file length %s not a multiple of page size",
-            state.file_handle->path);
+        state.task_offset++;
       }
 
       auto page_ptr = state.page_buffer.get();
       state.file_handle->Read(page_ptr, bind_data->page_size,
-                              state.page_number * bind_data->page_size);
+                              state.page_offset * bind_data->page_size);
       // parse page header
       auto page_header = Load<PageHeaderData>(page_ptr);
       page_ptr += sizeof(PageHeaderData);
+
       if (page_header.pd_lower > bind_data->page_size ||
           page_header.pd_upper > bind_data->page_size) {
         throw IOException("Page upper/lower offsets exceed page size");
@@ -263,16 +304,17 @@ void PostgresScan(ClientContext &context, const FunctionData *bind_data_p,
       state.item_count =
           (page_header.pd_lower - sizeof(PageHeaderData)) / sizeof(ItemIdData);
       state.item_offset = 0;
-      state.page_number++;
+      state.page_offset++;
     }
 
     // TODO maybe its faster to read the items in one go, but perhaps not since
     // the page is rather small and fits in cache move to next page item
     auto item = state.item_ptr[state.item_offset++];
-
+#ifdef DEBUG // this check is somewhat optional
     if (item.lp_off + item.lp_len > bind_data->page_size) {
       throw IOException("Item pointer and length exceed page size");
     }
+#endif
     // unused or dead
     if (item.lp_flags == 0 || item.lp_flags == 3) {
       continue;
@@ -328,14 +370,69 @@ void PostgresScan(ClientContext &context, const FunctionData *bind_data_p,
   }
 }
 
+static idx_t PostgresMaxThreads(ClientContext &context,
+                                const FunctionData *bind_data_p) {
+  D_ASSERT(bind_data_p);
+
+  auto bind_data = (const PostgresBindData *)bind_data_p;
+  return bind_data->tasks.size();
+}
+
+static unique_ptr<ParallelState>
+PostgresInitParallelState(ClientContext &context, const FunctionData *,
+                          const vector<column_t> &column_ids,
+                          TableFilterCollection *) {
+  auto result = make_unique<PostgresParallelState>();
+  result->task_idx = 0;
+  return move(result);
+}
+
+static bool PostgresParallelStateNext(ClientContext &context,
+                                      const FunctionData *bind_data_p,
+                                      FunctionOperatorData *state_p,
+                                      ParallelState *parallel_state_p) {
+  D_ASSERT(bind_data_p);
+  D_ASSERT(state_p);
+  D_ASSERT(parallel_state_p);
+
+  auto bind_data = (const PostgresBindData *)bind_data_p;
+  auto &parallel_state = (PostgresParallelState &)*parallel_state_p;
+  auto local_state = (PostgresOperatorData *)state_p;
+
+  lock_guard<mutex> parallel_lock(parallel_state.lock);
+
+  if (parallel_state.task_idx < bind_data->tasks.size()) {
+    PostgresInitInternal(context, bind_data, local_state,
+                         parallel_state.task_idx, parallel_state.task_idx);
+    parallel_state.task_idx++;
+    return true;
+  }
+  return false;
+}
+
+static unique_ptr<FunctionOperatorData>
+PostgresParallelInit(ClientContext &context, const FunctionData *bind_data_p,
+                     ParallelState *parallel_state_p,
+                     const vector<column_t> &column_ids,
+                     TableFilterCollection *) {
+  auto result = make_unique<PostgresOperatorData>();
+  result->column_ids = column_ids;
+  if (!PostgresParallelStateNext(context, bind_data_p, result.get(),
+                                 parallel_state_p)) {
+    result->done = true;
+  }
+  return move(result);
+}
+
 class PostgresScanFunction : public TableFunction {
 public:
   PostgresScanFunction()
       : TableFunction(
             "postgres_scan", {LogicalType::VARCHAR, LogicalType::VARCHAR},
             PostgresScan, PostgresBind, PostgresInit, nullptr, nullptr, nullptr,
-            nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr,
-            nullptr, false, false, nullptr) {}
+            nullptr, nullptr, nullptr, PostgresMaxThreads,
+            PostgresInitParallelState, nullptr, PostgresParallelInit,
+            PostgresParallelStateNext, false, false, nullptr) {}
 };
 
 extern "C" {

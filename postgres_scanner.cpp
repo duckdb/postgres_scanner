@@ -9,7 +9,6 @@
 #include "duckdb/parser/parsed_data/create_table_function_info.hpp"
 #include "duckdb/parallel/parallel_state.hpp"
 #include "duckdb/storage/statistics/validity_statistics.hpp"
-#include "duckdb/parser/parser.hpp"
 #include "duckdb/parser/expression/cast_expression.hpp"
 #include "duckdb/main/client_context.hpp"
 #include "duckdb/parser/parsed_data/create_view_info.hpp"
@@ -73,6 +72,7 @@ struct ScanTask {
 };
 
 struct PostgresBindData : public FunctionData {
+  string table_name;
   vector<ScanTask> tasks;
   idx_t page_size;
   idx_t txid;
@@ -151,6 +151,7 @@ PostgresBind(ClientContext &context, vector<Value> &inputs,
                          table_name)
                          .c_str());
 
+  result->table_name = table_name;
   result->page_size = atoi(PQgetvalue(res, 0, 1));
   result->txid = atoi(PQgetvalue(res, 0, 2));
   auto base_filename = string(PQgetvalue(res, 0, 0));
@@ -280,7 +281,6 @@ void PostgresScan(ClientContext &context, const FunctionData *bind_data_p,
           state.done = true;
           return;
         }
-        // printf("%llu\n", state.task_offset);
         state.current_task = bind_data->tasks[state.task_offset];
         state.file_handle = FileSystem::GetFileSystem(context).OpenFile(
             state.current_task.file_name, FileFlags::FILE_FLAGS_READ);
@@ -329,15 +329,11 @@ void PostgresScan(ClientContext &context, const FunctionData *bind_data_p,
                         "something else");
     }
 
-    // printf("lp_off=%d, lp_len=%d\n", item.lp_off, item.lp_len);
-
     // read tuple header
     auto tuple_ptr = state.page_buffer.get() + item.lp_off;
     auto tuple_header = Load<HeapTupleHeaderData>(tuple_ptr);
     // TODO decode the NULL bitmask here, future work
 
-    // printf("t_xmin=%d, t_xmax=%d, t_hoff=%d\n", tuple_header.t_xmin,
-    //        tuple_header.t_xmax, tuple_header.t_hoff);
     if (tuple_header.t_xmin > bind_data->txid ||
         (tuple_header.t_xmax != 0 && tuple_header.t_xmax < bind_data->txid)) {
       // tuple was deleted or updated elsewhere
@@ -424,13 +420,20 @@ PostgresParallelInit(ClientContext &context, const FunctionData *bind_data_p,
   return move(result);
 }
 
+static string PostgresScanToString(const FunctionData *bind_data_p) {
+  D_ASSERT(bind_data_p);
+
+  auto bind_data = (const PostgresBindData *)bind_data_p;
+  return bind_data->table_name;
+}
+
 class PostgresScanFunction : public TableFunction {
 public:
   PostgresScanFunction()
       : TableFunction(
             "postgres_scan", {LogicalType::VARCHAR, LogicalType::VARCHAR},
             PostgresScan, PostgresBind, PostgresInit, nullptr, nullptr, nullptr,
-            nullptr, nullptr, nullptr, PostgresMaxThreads,
+            nullptr, nullptr, PostgresScanToString, PostgresMaxThreads,
             PostgresInitParallelState, nullptr, PostgresParallelInit,
             PostgresParallelStateNext, false, false, nullptr) {}
 };

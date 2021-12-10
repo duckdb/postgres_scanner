@@ -2,7 +2,18 @@ statement ok
 LOAD 'build/debug/postgres_scanner.duckdb_extension';
 
 query I
-SELECT i FROM postgres_scan('', 'testtbl');
+SELECT * FROM postgres_scan('', 'lineitem');
 ----
-42
-43
+
+
+#
+#query I
+#SELECT i FROM postgres_scan('', 'testtbl');
+#----
+#42
+#43
+#
+#query I
+#SELECT count(*) FROM postgres_scan('', 'integers');
+#----
+#100000000

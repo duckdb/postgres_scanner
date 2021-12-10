@@ -108,7 +108,13 @@ static LogicalType DuckDBType(const string &pgtypename) {
     return LogicalType::INTEGER;
   } else if (pgtypename == "int8") {
     return LogicalType::BIGINT;
-  } else {
+  } else if (pgtypename == "numeric") {
+      return LogicalType::DECIMAL(15, 2);
+  }  else if (pgtypename == "bpchar" || pgtypename == "varchar") {
+      return LogicalType::VARCHAR;
+  } else if (pgtypename == "date") {
+      return LogicalType::DATE;
+  }  else {
     throw IOException("Unsupported Postgres type %s", pgtypename);
   }
 }
@@ -358,6 +364,27 @@ void PostgresScan(ClientContext &context, const FunctionData *bind_data_p,
         tuple_ptr += sizeof(int64_t);
         break;
       }
+          case LogicalTypeId::VARCHAR: {
+              // TODO this is not correct yet
+              auto out_ptr = FlatVector::GetData<string_t>(output.data[col_idx]);
+              auto len = Load<uint32_t>(tuple_ptr);
+
+              // TODO interpret 2 high bits for TOASTedness
+              out_ptr[output_offset] = StringVector::AddString(output.data[col_idx], (char*) tuple_ptr + 4, len - 4);
+              tuple_ptr += len;
+              break;
+          }
+          case LogicalTypeId::DATE:
+              tuple_ptr += 4;
+              break;
+
+          case LogicalTypeId::DECIMAL: {
+              // TODO this does not do anything yet
+              auto len = Load<uint32_t>(tuple_ptr);
+              printf("len=%d\n", len);
+              tuple_ptr += len;
+              break;
+          }
       default:
         throw InternalException("Unsupported Type %s", type.ToString());
       }

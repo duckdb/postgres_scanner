@@ -55,19 +55,16 @@ struct HeapTupleHeaderData {
 };
 
 struct PostgresColumnInfo {
-  idx_t attnum;
   string attname;
   idx_t attlen;
   char attalign;
   bool attnotnull;
+  int atttypmod;
   string typname;
-  idx_t typlen;
 };
 
 struct ScanTask {
   string file_name;
-  idx_t file_size;
-
   idx_t page_min;
   idx_t page_max;
 };
@@ -104,13 +101,15 @@ struct PostgresParallelState : public ParallelState {
 
 static constexpr idx_t PAGES_PER_TASK = 10000;
 
-static LogicalType DuckDBType(const string &pgtypename) {
+static LogicalType DuckDBType(const string &pgtypename, const int atttypmod) {
   if (pgtypename == "int4") {
     return LogicalType::INTEGER;
   } else if (pgtypename == "int8") {
     return LogicalType::BIGINT;
   } else if (pgtypename == "numeric") {
-    return LogicalType::DECIMAL(15, 2);
+    auto width = ((atttypmod - sizeof(int32_t)) >> 16) & 0xffff;
+    auto scale = (((atttypmod - sizeof(int32_t)) & 0x7ff) ^ 1024) - 1024;
+    return LogicalType::DECIMAL(width, scale);
   } else if (pgtypename == "bpchar" || pgtypename == "varchar") {
     return LogicalType::VARCHAR;
   } else if (pgtypename == "date") {
@@ -189,7 +188,6 @@ PostgresBind(ClientContext &context, vector<Value> &inputs,
          page_idx += PAGES_PER_TASK) {
       ScanTask task;
       task.file_name = file_name;
-      task.file_size = file_size;
       task.page_min = page_idx;
       task.page_max = MinValue(page_idx + PAGES_PER_TASK, pages_in_file) - 1;
       result->tasks.push_back(move(task));
@@ -199,27 +197,26 @@ PostgresBind(ClientContext &context, vector<Value> &inputs,
   // TODO support declaring a schema here ("default")
   // query the table schema so we can interpret the bits in the pages
   // fun fact: this query also works in DuckDB ^^
-  res = PQexec(
-      conn, StringUtil::Format(
-                "SELECT attnum, attname, attlen, attalign, attnotnull, "
-                "typname, typlen, atttypmod FROM pg_attribute JOIN pg_class ON "
-                "attrelid=pg_class.oid JOIN pg_type ON atttypid=pg_type.oid "
-                "WHERE relname='%s' AND attnum > 0 ORDER BY attnum",
-                table_name)
-                .c_str());
+  res = PQexec(conn,
+               StringUtil::Format(
+                   "SELECT attname, attlen, attalign, attnotnull, atttypmod, "
+                   "typname FROM pg_attribute JOIN pg_class ON "
+                   "attrelid=pg_class.oid JOIN pg_type ON atttypid=pg_type.oid "
+                   "WHERE relname='%s' AND attnum > 0 ORDER BY attnum",
+                   table_name)
+                   .c_str());
 
   for (idx_t row = 0; row < PQntuples(res); row++) {
     PostgresColumnInfo info;
-    info.attnum = atol(PQgetvalue(res, row, 0));
-    info.attname = string(PQgetvalue(res, row, 1));
-    info.attlen = atol(PQgetvalue(res, row, 2));
-    info.attalign = PQgetvalue(res, row, 3)[0];
-    info.attnotnull = string(PQgetvalue(res, row, 4)) == "t";
+    info.attname = string(PQgetvalue(res, row, 0));
+    info.attlen = atol(PQgetvalue(res, row, 1));
+    info.attalign = PQgetvalue(res, row, 2)[0];
+    info.attnotnull = string(PQgetvalue(res, row, 3)) == "t";
+    info.atttypmod = atoi(PQgetvalue(res, row, 4));
     info.typname = string(PQgetvalue(res, row, 5));
-    info.typlen = atol(PQgetvalue(res, row, 6));
 
     result->names.push_back(info.attname);
-    result->types.push_back(DuckDBType(info.typname));
+    result->types.push_back(DuckDBType(info.typname, info.atttypmod));
 
     result->columns.push_back(info);
   }
@@ -298,92 +295,11 @@ static idx_t GetAttributeLength(data_ptr_t tuple_ptr,
 
 #define POSTGRES_EPOCH_JDATE 2451545 /* == date2j(2000, 1, 1) */
 
-/* ----------
- * Local data types
- *
- * Numeric values are represented in a base-NBASE floating point format.
- * Each "digit" ranges from 0 to NBASE-1.  The type NumericDigit is signed
- * and wide enough to store a digit.  We assume that NBASE*NBASE can fit in
- * an int.  Although the purely calculational routines could handle any even
- * NBASE that's less than sqrt(INT_MAX), in practice we are only interested
- * in NBASE a power of ten, so that I/O conversions and decimal rounding
- * are easy.  Also, it's actually more efficient if NBASE is rather less than
- * sqrt(INT_MAX), so that there is "headroom" for mul_var and div_var_fast to
- * postpone processing carries.
- *
- * Values of NBASE other than 10000 are considered of historical interest only
- * and are no longer supported in any sense; no mechanism exists for the client
- * to discover the base, so every client supporting binary mode expects the
- * base-10000 format.  If you plan to change this, also note the numeric
- * abbreviation code, which assumes NBASE=10000.
- * ----------
- */
-
-#if 1
 #define NBASE 10000
 #define HALF_NBASE 5000
 #define DEC_DIGITS 4       /* decimal digits per NBASE digit */
 #define MUL_GUARD_DIGITS 2 /* these are measured in NBASE digits */
 #define DIV_GUARD_DIGITS 4
-
-typedef int16_t NumericDigit;
-#endif
-
-/*
- * The Numeric type as stored on disk.
- *
- * If the high bits of the first word of a NumericChoice (n_header, or
- * n_short.n_header, or n_long.n_sign_dscale) are NUMERIC_SHORT, then the
- * numeric follows the NumericShort format; if they are NUMERIC_POS or
- * NUMERIC_NEG, it follows the NumericLong format. If they are NUMERIC_SPECIAL,
- * the value is a NaN or Infinity.  We currently always store SPECIAL values
- * using just two bytes (i.e. only n_header), but previous releases used only
- * the NumericLong format, so we might find 4-byte NaNs (though not infinities)
- * on disk if a database has been migrated using pg_upgrade.  In either case,
- * the low-order bits of a special value's header are reserved and currently
- * should always be set to zero.
- *
- * In the NumericShort format, the remaining 14 bits of the header word
- * (n_short.n_header) are allocated as follows: 1 for sign (positive or
- * negative), 6 for dynamic scale, and 7 for weight.  In practice, most
- * commonly-encountered values can be represented this way.
- *
- * In the NumericLong format, the remaining 14 bits of the header word
- * (n_long.n_sign_dscale) represent the display scale; and the weight is
- * stored separately in n_weight.
- *
- * NOTE: by convention, values in the packed form have been stripped of
- * all leading and trailing zero digits (where a "digit" is of base NBASE).
- * In particular, if the value is zero, there will be no digits at all!
- * The weight is arbitrary in that case, but we normally set it to zero.
- */
-
-// struct NumericShort
-//{
-//     uint16_t		n_header;		/* Sign + display scale + weight
-//     */
-////    NumericDigit n_data[FLEXIBLE_ARRAY_MEMBER]; /* Digits */
-//};
-//
-// struct NumericLong
-//{
-//    uint16_t		n_sign_dscale;	/* Sign + display scale */
-//    int16_t		n_weight;		/* Weight of 1st digit	*/
-////   NumericDigit n_data[FLEXIBLE_ARRAY_MEMBER]; /* Digits */
-//};
-
-// union NumericChoice
-//{
-//     uint16_t		n_header;		/* Header word */
-//     struct NumericLong n_long;	/* Long form (4-byte header) */
-//     struct NumericShort n_short;	/* Short form (2-byte header) */
-// };
-
-// struct NumericData
-//{
-//     int32_t		vl_len_;		/* varlena header (do not touch directly!)
-//     */ union NumericChoice choice; /* choice of format */
-// };
 
 /*
  * Interpretation of high bits.
@@ -394,22 +310,6 @@ typedef int16_t NumericDigit;
 #define NUMERIC_NEG 0x4000
 #define NUMERIC_SHORT 0x8000
 #define NUMERIC_SPECIAL 0xC000
-
-#define NUMERIC_FLAGBITS(n) ((n)->choice.n_header & NUMERIC_SIGN_MASK)
-#define NUMERIC_IS_SHORT(n) (NUMERIC_FLAGBITS(n) == NUMERIC_SHORT)
-#define NUMERIC_IS_SPECIAL(n) (NUMERIC_FLAGBITS(n) == NUMERIC_SPECIAL)
-
-#define NUMERIC_HDRSZ (VARHDRSZ + sizeof(uint16) + sizeof(int16))
-#define NUMERIC_HDRSZ_SHORT (VARHDRSZ + sizeof(uint16))
-
-/*
- * If the flag bits are NUMERIC_SHORT or NUMERIC_SPECIAL, we want the short
- * header; otherwise, we want the long one.  Instead of testing against each
- * value, we can just look at the high bit, for a slight efficiency gain.
- */
-#define NUMERIC_HEADER_IS_SHORT(n) (((n)->choice.n_header & 0x8000) != 0)
-#define NUMERIC_HEADER_SIZE(n)                                                 \
-  (VARHDRSZ + sizeof(uint16) + (NUMERIC_HEADER_IS_SHORT(n) ? 0 : sizeof(int16)))
 
 /*
  * Definitions for special values (NaN, positive infinity, negative infinity).
@@ -437,6 +337,7 @@ typedef int16_t NumericDigit;
  * Short format definitions.
  */
 
+#define NUMERIC_DSCALE_MASK 0x3FFF
 #define NUMERIC_SHORT_SIGN_MASK 0x2000
 #define NUMERIC_SHORT_DSCALE_MASK 0x1F80
 #define NUMERIC_SHORT_DSCALE_SHIFT 7
@@ -446,19 +347,6 @@ typedef int16_t NumericDigit;
 #define NUMERIC_SHORT_WEIGHT_MASK 0x003F
 #define NUMERIC_SHORT_WEIGHT_MAX NUMERIC_SHORT_WEIGHT_MASK
 #define NUMERIC_SHORT_WEIGHT_MIN (-(NUMERIC_SHORT_WEIGHT_MASK + 1))
-
-/*
- * Extract sign, display scale, weight.  These macros extract field values
- * suitable for the NumericVar format from the Numeric (on-disk) format.
- *
- * Note that we don't trouble to ensure that dscale and weight read as zero
- * for an infinity; however, that doesn't matter since we never convert
- * "special" numerics to NumericVar form.  Only the constants defined below
- * (const_nan, etc) ever represent a non-finite value as a NumericVar.
- */
-
-#define NUMERIC_DSCALE_MASK 0x3FFF
-#define NUMERIC_DSCALE_MAX NUMERIC_DSCALE_MASK
 
 #define NUMERIC_SIGN(is_short, header1)                                        \
   (is_short                                                                    \
@@ -474,34 +362,6 @@ typedef int16_t NumericDigit;
                     : 0) |                                                     \
                (header1 & NUMERIC_SHORT_WEIGHT_MASK))                          \
             : (header2))
-
-// TODO use this in the binder, but where is typmod?
-///*
-// * numeric_typmod_precision() -
-// *
-// *	Extract the precision from a numeric typmod --- see
-// make_numeric_typmod().
-// */
-// static inline int
-// numeric_typmod_precision(int32 typmod)
-//{
-//    return ((typmod - VARHDRSZ) >> 16) & 0xffff;
-//}
-//
-///*
-// * numeric_typmod_scale() -
-// *
-// *	Extract the scale from a numeric typmod --- see make_numeric_typmod().
-// *
-// *	Note that the scale may be negative, so we must do sign extension when
-// *	unpacking it.  We do this using the bit hack (x^1024)-1024, which sign
-// *	extends an 11-bit two's complement number x.
-// */
-// static inline int
-// numeric_typmod_scale(int32 typmod)
-//{
-//    return (((typmod - VARHDRSZ) & 0x7ff) ^ 1024) - 1024;
-//}
 
 static void PostgresScan(ClientContext &context,
                          const FunctionData *bind_data_p,
@@ -595,8 +455,12 @@ static void PostgresScan(ClientContext &context,
     for (idx_t col_idx = 0; col_idx < bind_data->columns.size(); col_idx++) {
       // TODO handle NULLs here, they are not in the data
       auto &type = bind_data->types[col_idx];
+      auto &info = bind_data->columns[col_idx];
+
       switch (type.id()) {
       case LogicalTypeId::INTEGER: {
+        D_ASSERT(info.attlen == sizeof(int32_t));
+
         auto out_ptr = FlatVector::GetData<int32_t>(output.data[col_idx]);
         out_ptr[output_offset] = Load<int32_t>(tuple_ptr);
         tuple_ptr += sizeof(int32_t);
@@ -604,6 +468,8 @@ static void PostgresScan(ClientContext &context,
       }
 
       case LogicalTypeId::VARCHAR: {
+        D_ASSERT(info.attlen == -1);
+
         auto len = GetAttributeLength(tuple_ptr, length_length);
         auto out_ptr = FlatVector::GetData<string_t>(output.data[col_idx]);
         out_ptr[output_offset] = StringVector::AddString(
@@ -613,6 +479,7 @@ static void PostgresScan(ClientContext &context,
         break;
       }
       case LogicalTypeId::DECIMAL: {
+        D_ASSERT(info.attlen == -1);
 
         auto len = GetAttributeLength(tuple_ptr, length_length);
         auto numeric_header = Load<uint16_t>(tuple_ptr + length_length);
@@ -680,14 +547,15 @@ static void PostgresScan(ClientContext &context,
         break;
       }
       case LogicalTypeId::DATE: {
+        // TODO compute this alignment nicer
+        // TODO compute alignment also for ints etc, should probably be generic
+        D_ASSERT(info.attlen == sizeof(int32_t));
         auto offset = tuple_ptr - tuple_start_ptr;
         tuple_ptr = tuple_start_ptr + ((offset + 3) / 4) * 4;
-
         auto jd = Load<int32_t>(tuple_ptr);
         auto out_ptr = FlatVector::GetData<date_t>(output.data[col_idx]);
         out_ptr[output_offset].days = jd + POSTGRES_EPOCH_JDATE - 2440588;
-        // TODO clean this up, we just want to increment the pointer a bit
-        tuple_ptr += 4;
+        tuple_ptr += sizeof(int32_t);
         break;
       }
       default:

@@ -32,6 +32,8 @@ if(WIN32 AND NOT MSVC)
 endif()
 
 include_directories(duckdb/src/include)
+include_directories(duckdb/third_party/fmt/include)
+
 include_directories(${PostgreSQL_INCLUDE_DIRS})
 
 if("${CMAKE_BUILD_TYPE}" STREQUAL "Debug")

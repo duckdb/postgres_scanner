@@ -19,6 +19,7 @@
 #include "duckdb/parser/expression/function_expression.hpp"
 #include "duckdb/parser/expression/constant_expression.hpp"
 #include "duckdb/parser/statement/create_statement.hpp"
+#include "duckdb/common/types/cast_helpers.hpp"
 
 using namespace duckdb;
 
@@ -109,12 +110,12 @@ static LogicalType DuckDBType(const string &pgtypename) {
   } else if (pgtypename == "int8") {
     return LogicalType::BIGINT;
   } else if (pgtypename == "numeric") {
-      return LogicalType::DECIMAL(15, 2);
-  }  else if (pgtypename == "bpchar" || pgtypename == "varchar") {
-      return LogicalType::VARCHAR;
+    return LogicalType::DECIMAL(15, 2);
+  } else if (pgtypename == "bpchar" || pgtypename == "varchar") {
+    return LogicalType::VARCHAR;
   } else if (pgtypename == "date") {
-      return LogicalType::DATE;
-  }  else {
+    return LogicalType::DATE;
+  } else {
     throw IOException("Unsupported Postgres type %s", pgtypename);
   }
 }
@@ -198,14 +199,14 @@ PostgresBind(ClientContext &context, vector<Value> &inputs,
   // TODO support declaring a schema here ("default")
   // query the table schema so we can interpret the bits in the pages
   // fun fact: this query also works in DuckDB ^^
-  res = PQexec(conn,
-               StringUtil::Format(
-                   "SELECT attnum, attname, attlen, attalign, attnotnull, "
-                   "typname, typlen FROM pg_attribute JOIN pg_class ON "
-                   "attrelid=pg_class.oid JOIN pg_type ON atttypid=pg_type.oid "
-                   "WHERE relname='%s' AND attnum > 0 ORDER BY attnum",
-                   table_name)
-                   .c_str());
+  res = PQexec(
+      conn, StringUtil::Format(
+                "SELECT attnum, attname, attlen, attalign, attnotnull, "
+                "typname, typlen, atttypmod FROM pg_attribute JOIN pg_class ON "
+                "attrelid=pg_class.oid JOIN pg_type ON atttypid=pg_type.oid "
+                "WHERE relname='%s' AND attnum > 0 ORDER BY attnum",
+                table_name)
+                .c_str());
 
   for (idx_t row = 0; row < PQntuples(res); row++) {
     PostgresColumnInfo info;
@@ -263,143 +264,249 @@ PostgresInit(ClientContext &context, const FunctionData *bind_data_p,
 }
 
 //
-//188  * xxxxxx00 4-byte length word, aligned, uncompressed data (up to 1G)
-//189  * xxxxxx10 4-byte length word, aligned, *compressed* data (up to 1G)
-//190  * 00000001 1-byte length word, unaligned, TOAST pointer
-//191  * xxxxxxx1 1-byte length word, unaligned, uncompressed data (up to 126b)
-//192  *
-//193  * The "xxx" bits are the length field (which includes itself in all cases).
-//194  * In the big-endian case we mask to extract the length, in the little-endian
-//195  * case we shift.  Note that in both cases the flag bits are in the physically
-//196  * first byte.  Also, it is not possible for a 1-byte length word to be zero;
-//197  * this lets us disambiguate alignment padding bytes from the start of an
-//198  * unaligned datum.  (We now *require* pad bytes to be filled with zero!)
-//199  *
+// 188  * xxxxxx00 4-byte length word, aligned, uncompressed data (up to 1G)
+// 189  * xxxxxx10 4-byte length word, aligned, *compressed* data (up to 1G)
+// 190  * 00000001 1-byte length word, unaligned, TOAST pointer
+// 191  * xxxxxxx1 1-byte length word, unaligned, uncompressed data (up to 126b)
+// 192  *
+// 193  * The "xxx" bits are the length field (which includes itself in all
+// cases). 194  * In the big-endian case we mask to extract the length, in the
+// little-endian 195  * case we shift.  Note that in both cases the flag bits
+// are in the physically 196  * first byte.  Also, it is not possible for a
+// 1-byte length word to be zero; 197  * this lets us disambiguate alignment
+// padding bytes from the start of an 198  * unaligned datum.  (We now *require*
+// pad bytes to be filled with zero!) 199  *
+
+static idx_t GetAttributeLength(data_ptr_t tuple_ptr,
+                                idx_t &length_length_out) {
+  auto first_varlen_byte = Load<uint8_t>(tuple_ptr);
+  if (first_varlen_byte == 0x80) {
+    // 1 byte external, unsupported
+    throw IOException("No external values");
+  }
+  // one byte length varlen
+  if ((first_varlen_byte & 0x01) == 0x01) {
+    length_length_out = 1;
+    return (first_varlen_byte >> 1) & 0x7F;
+  } else {
+    auto four_byte_len = Load<uint32_t>(tuple_ptr);
+    length_length_out = 4;
+    return (four_byte_len >> 2) & 0x3FFFFFFF;
+    // TODO check if not TOAST/external
+  }
+}
+
+#define POSTGRES_EPOCH_JDATE 2451545 /* == date2j(2000, 1, 1) */
+
+/* ----------
+ * Local data types
+ *
+ * Numeric values are represented in a base-NBASE floating point format.
+ * Each "digit" ranges from 0 to NBASE-1.  The type NumericDigit is signed
+ * and wide enough to store a digit.  We assume that NBASE*NBASE can fit in
+ * an int.  Although the purely calculational routines could handle any even
+ * NBASE that's less than sqrt(INT_MAX), in practice we are only interested
+ * in NBASE a power of ten, so that I/O conversions and decimal rounding
+ * are easy.  Also, it's actually more efficient if NBASE is rather less than
+ * sqrt(INT_MAX), so that there is "headroom" for mul_var and div_var_fast to
+ * postpone processing carries.
+ *
+ * Values of NBASE other than 10000 are considered of historical interest only
+ * and are no longer supported in any sense; no mechanism exists for the client
+ * to discover the base, so every client supporting binary mode expects the
+ * base-10000 format.  If you plan to change this, also note the numeric
+ * abbreviation code, which assumes NBASE=10000.
+ * ----------
+ */
+
+#if 1
+#define NBASE 10000
+#define HALF_NBASE 5000
+#define DEC_DIGITS 4       /* decimal digits per NBASE digit */
+#define MUL_GUARD_DIGITS 2 /* these are measured in NBASE digits */
+#define DIV_GUARD_DIGITS 4
+
+typedef int16_t NumericDigit;
+#endif
+
+/*
+ * The Numeric type as stored on disk.
+ *
+ * If the high bits of the first word of a NumericChoice (n_header, or
+ * n_short.n_header, or n_long.n_sign_dscale) are NUMERIC_SHORT, then the
+ * numeric follows the NumericShort format; if they are NUMERIC_POS or
+ * NUMERIC_NEG, it follows the NumericLong format. If they are NUMERIC_SPECIAL,
+ * the value is a NaN or Infinity.  We currently always store SPECIAL values
+ * using just two bytes (i.e. only n_header), but previous releases used only
+ * the NumericLong format, so we might find 4-byte NaNs (though not infinities)
+ * on disk if a database has been migrated using pg_upgrade.  In either case,
+ * the low-order bits of a special value's header are reserved and currently
+ * should always be set to zero.
+ *
+ * In the NumericShort format, the remaining 14 bits of the header word
+ * (n_short.n_header) are allocated as follows: 1 for sign (positive or
+ * negative), 6 for dynamic scale, and 7 for weight.  In practice, most
+ * commonly-encountered values can be represented this way.
+ *
+ * In the NumericLong format, the remaining 14 bits of the header word
+ * (n_long.n_sign_dscale) represent the display scale; and the weight is
+ * stored separately in n_weight.
+ *
+ * NOTE: by convention, values in the packed form have been stripped of
+ * all leading and trailing zero digits (where a "digit" is of base NBASE).
+ * In particular, if the value is zero, there will be no digits at all!
+ * The weight is arbitrary in that case, but we normally set it to zero.
+ */
+
+// struct NumericShort
+//{
+//     uint16_t		n_header;		/* Sign + display scale + weight
+//     */
+////    NumericDigit n_data[FLEXIBLE_ARRAY_MEMBER]; /* Digits */
+//};
 //
-//typedef union
-//149 {
-//150     struct                      /* Normal varlena (4-byte length) */
-//151     {
-//152         uint32      va_header;
-//153         char        va_data[FLEXIBLE_ARRAY_MEMBER];
-//154     }           va_4byte;
-//155     struct                      /* Compressed-in-line format */
-//156     {
-//157         uint32      va_header;
-//158         uint32      va_tcinfo;  /* Original data size (excludes header) and
-//  159                                  * compression method; see va_extinfo */
-//160         char        va_data[FLEXIBLE_ARRAY_MEMBER]; /* Compressed data */
-//161     }           va_compressed;
-//162 } varattrib_4b;
-//163
+// struct NumericLong
+//{
+//    uint16_t		n_sign_dscale;	/* Sign + display scale */
+//    int16_t		n_weight;		/* Weight of 1st digit	*/
+////   NumericDigit n_data[FLEXIBLE_ARRAY_MEMBER]; /* Digits */
+//};
+
+// union NumericChoice
+//{
+//     uint16_t		n_header;		/* Header word */
+//     struct NumericLong n_long;	/* Long form (4-byte header) */
+//     struct NumericShort n_short;	/* Short form (2-byte header) */
+// };
+
+// struct NumericData
+//{
+//     int32_t		vl_len_;		/* varlena header (do not touch directly!)
+//     */ union NumericChoice choice; /* choice of format */
+// };
+
+/*
+ * Interpretation of high bits.
+ */
+
+#define NUMERIC_SIGN_MASK 0xC000
+#define NUMERIC_POS 0x0000
+#define NUMERIC_NEG 0x4000
+#define NUMERIC_SHORT 0x8000
+#define NUMERIC_SPECIAL 0xC000
+
+#define NUMERIC_FLAGBITS(n) ((n)->choice.n_header & NUMERIC_SIGN_MASK)
+#define NUMERIC_IS_SHORT(n) (NUMERIC_FLAGBITS(n) == NUMERIC_SHORT)
+#define NUMERIC_IS_SPECIAL(n) (NUMERIC_FLAGBITS(n) == NUMERIC_SPECIAL)
+
+#define NUMERIC_HDRSZ (VARHDRSZ + sizeof(uint16) + sizeof(int16))
+#define NUMERIC_HDRSZ_SHORT (VARHDRSZ + sizeof(uint16))
+
+/*
+ * If the flag bits are NUMERIC_SHORT or NUMERIC_SPECIAL, we want the short
+ * header; otherwise, we want the long one.  Instead of testing against each
+ * value, we can just look at the high bit, for a slight efficiency gain.
+ */
+#define NUMERIC_HEADER_IS_SHORT(n) (((n)->choice.n_header & 0x8000) != 0)
+#define NUMERIC_HEADER_SIZE(n)                                                 \
+  (VARHDRSZ + sizeof(uint16) + (NUMERIC_HEADER_IS_SHORT(n) ? 0 : sizeof(int16)))
+
+/*
+ * Definitions for special values (NaN, positive infinity, negative infinity).
+ *
+ * The two bits after the NUMERIC_SPECIAL bits are 00 for NaN, 01 for positive
+ * infinity, 11 for negative infinity.  (This makes the sign bit match where
+ * it is in a short-format value, though we make no use of that at present.)
+ * We could mask off the remaining bits before testing the active bits, but
+ * currently those bits must be zeroes, so masking would just add cycles.
+ */
+#define NUMERIC_EXT_SIGN_MASK 0xF000 /* high bits plus NaN/Inf flag bits */
+#define NUMERIC_NAN 0xC000
+#define NUMERIC_PINF 0xD000
+#define NUMERIC_NINF 0xF000
+#define NUMERIC_INF_SIGN_MASK 0x2000
+
+#define NUMERIC_EXT_FLAGBITS(n) ((n)->choice.n_header & NUMERIC_EXT_SIGN_MASK)
+#define NUMERIC_IS_NAN(n) ((n)->choice.n_header == NUMERIC_NAN)
+#define NUMERIC_IS_PINF(n) ((n)->choice.n_header == NUMERIC_PINF)
+#define NUMERIC_IS_NINF(n) ((n)->choice.n_header == NUMERIC_NINF)
+#define NUMERIC_IS_INF(n)                                                      \
+  (((n)->choice.n_header & ~NUMERIC_INF_SIGN_MASK) == NUMERIC_PINF)
+
+/*
+ * Short format definitions.
+ */
+
+#define NUMERIC_SHORT_SIGN_MASK 0x2000
+#define NUMERIC_SHORT_DSCALE_MASK 0x1F80
+#define NUMERIC_SHORT_DSCALE_SHIFT 7
+#define NUMERIC_SHORT_DSCALE_MAX                                               \
+  (NUMERIC_SHORT_DSCALE_MASK >> NUMERIC_SHORT_DSCALE_SHIFT)
+#define NUMERIC_SHORT_WEIGHT_SIGN_MASK 0x0040
+#define NUMERIC_SHORT_WEIGHT_MASK 0x003F
+#define NUMERIC_SHORT_WEIGHT_MAX NUMERIC_SHORT_WEIGHT_MASK
+#define NUMERIC_SHORT_WEIGHT_MIN (-(NUMERIC_SHORT_WEIGHT_MASK + 1))
+
+/*
+ * Extract sign, display scale, weight.  These macros extract field values
+ * suitable for the NumericVar format from the Numeric (on-disk) format.
+ *
+ * Note that we don't trouble to ensure that dscale and weight read as zero
+ * for an infinity; however, that doesn't matter since we never convert
+ * "special" numerics to NumericVar form.  Only the constants defined below
+ * (const_nan, etc) ever represent a non-finite value as a NumericVar.
+ */
+
+#define NUMERIC_DSCALE_MASK 0x3FFF
+#define NUMERIC_DSCALE_MAX NUMERIC_DSCALE_MASK
+
+#define NUMERIC_SIGN(is_short, header1)                                        \
+  (is_short                                                                    \
+       ? ((header1 & NUMERIC_SHORT_SIGN_MASK) ? NUMERIC_NEG : NUMERIC_POS)     \
+       : (header1 & NUMERIC_SIGN_MASK))
+#define NUMERIC_DSCALE(is_short, header1)                                      \
+  (is_short                                                                    \
+       ? (header1 & NUMERIC_SHORT_DSCALE_MASK) >> NUMERIC_SHORT_DSCALE_SHIFT   \
+       : (header1 & NUMERIC_DSCALE_MASK))
+#define NUMERIC_WEIGHT(is_short, header1, header2)                             \
+  (is_short ? ((header1 & NUMERIC_SHORT_WEIGHT_SIGN_MASK                       \
+                    ? ~NUMERIC_SHORT_WEIGHT_MASK                               \
+                    : 0) |                                                     \
+               (header1 & NUMERIC_SHORT_WEIGHT_MASK))                          \
+            : (header2))
+
+// TODO use this in the binder, but where is typmod?
+///*
+// * numeric_typmod_precision() -
+// *
+// *	Extract the precision from a numeric typmod --- see
+// make_numeric_typmod().
+// */
+// static inline int
+// numeric_typmod_precision(int32 typmod)
+//{
+//    return ((typmod - VARHDRSZ) >> 16) & 0xffff;
+//}
 //
-//typedef struct
-//165 {
-//166     uint8       va_header;
-//167     char        va_data[FLEXIBLE_ARRAY_MEMBER]; /* Data begins here */
-//168 } varattrib_1b;
-//169
+///*
+// * numeric_typmod_scale() -
+// *
+// *	Extract the scale from a numeric typmod --- see make_numeric_typmod().
+// *
+// *	Note that the scale may be negative, so we must do sign extension when
+// *	unpacking it.  We do this using the bit hack (x^1024)-1024, which sign
+// *	extends an 11-bit two's complement number x.
+// */
+// static inline int
+// numeric_typmod_scale(int32 typmod)
+//{
+//    return (((typmod - VARHDRSZ) & 0x7ff) ^ 1024) - 1024;
+//}
 
-//typedef struct
-//172 {
-//173     uint8       va_header;      /* Always 0x80 or 0x01 */
-//174     uint8       va_tag;         /* Type of datum */
-//175     char        va_data[FLEXIBLE_ARRAY_MEMBER]; /* Type-specific data */
-//176 } varattrib_1b_e;
-
-// from postgres.h
-
-//
-//00146 #define VARATT_IS_4B(PTR) \
-//00147     ((((varattrib_1b *) (PTR))->va_header & 0x80) == 0x00)
-//00148 #define VARATT_IS_4B_U(PTR) \
-//00149     ((((varattrib_1b *) (PTR))->va_header & 0xC0) == 0x00)
-//00150 #define VARATT_IS_4B_C(PTR) \
-//00151     ((((varattrib_1b *) (PTR))->va_header & 0xC0) == 0x40)
-//00152 #define VARATT_IS_1B(PTR) \
-//00153     ((((varattrib_1b *) (PTR))->va_header & 0x80) == 0x80)
-//00154 #define VARATT_IS_1B_E(PTR) \
-//00155     ((((varattrib_1b *) (PTR))->va_header) == 0x80)
-//00156 #define VARATT_NOT_PAD_BYTE(PTR) \
-//00157     (*((uint8 *) (PTR)) != 0)
-//00158
-//00159 /* VARSIZE_4B() should only be used on known-aligned data */
-//00160 #define VARSIZE_4B(PTR) \
-//00161     (((varattrib_4b *) (PTR))->va_4byte.va_header & 0x3FFFFFFF)
-//00162 #define VARSIZE_1B(PTR) \
-//00163     (((varattrib_1b *) (PTR))->va_header & 0x7F)
-//00164 #define VARSIZE_1B_E(PTR) \
-//00165     (((varattrib_1b_e *) (PTR))->va_len_1be)
-//00166
-
-//00178 #define VARATT_IS_4B(PTR) \
-//00179     ((((varattrib_1b *) (PTR))->va_header & 0x01) == 0x00)
-//00180 #define VARATT_IS_4B_U(PTR) \
-//00181     ((((varattrib_1b *) (PTR))->va_header & 0x03) == 0x00)
-//00182 #define VARATT_IS_4B_C(PTR) \
-//00183     ((((varattrib_1b *) (PTR))->va_header & 0x03) == 0x02)
-//00184 #define VARATT_IS_1B(PTR) \
-//00185     ((((varattrib_1b *) (PTR))->va_header & 0x01) == 0x01)
-//00186 #define VARATT_IS_1B_E(PTR) \
-//00187     ((((varattrib_1b *) (PTR))->va_header) == 0x01)
-
-//00190
-//00218 #define VARHDRSZ_EXTERNAL       2
-//00219
-//00220 #define VARDATA_4B(PTR)     (((varattrib_4b *) (PTR))->va_4byte.va_data)
-//00221 #define VARDATA_4B_C(PTR)   (((varattrib_4b *) (PTR))->va_compressed.va_data)
-//00222 #define VARDATA_1B(PTR)     (((varattrib_1b *) (PTR))->va_data)
-//00223 #define VARDATA_1B_E(PTR)   (((varattrib_1b_e *) (PTR))->va_data)
-//00224
-//00225 #define VARRAWSIZE_4B_C(PTR) \
-//00226     (((varattrib_4b *) (PTR))->va_compressed.va_rawsize)
-//00227
-//00228 /* Externally visible macros */
-//00229
-//00230 /*
-//00231  * VARDATA, VARSIZE, and SET_VARSIZE are the recommended API for most code
-//00232  * for varlena datatypes.  Note that they only work on untoasted,
-//00233  * 4-byte-header Datums!
-//00234  *
-//00235  * Code that wants to use 1-byte-header values without detoasting should
-//00236  * use VARSIZE_ANY/VARSIZE_ANY_EXHDR/VARDATA_ANY.  The other macros here
-//00237  * should usually be used only by tuple assembly/disassembly code and
-//00238  * code that specifically wants to work with still-toasted Datums.
-//00239  *
-//00240  * WARNING: It is only safe to use VARDATA_ANY() -- typically with
-//00241  * PG_DETOAST_DATUM_PACKED() -- if you really don't care about the alignment.
-//00242  * Either because you're working with something like text where the alignment
-//00243  * doesn't matter or because you're not going to access its constituent parts
-//00244  * and just use things like memcpy on it anyways.
-//00245  */
-//00246 #define VARDATA(PTR)                        VARDATA_4B(PTR)
-//00247 #define VARSIZE(PTR)                        VARSIZE_4B(PTR)
-//00248
-//00249 #define VARSIZE_SHORT(PTR)                  VARSIZE_1B(PTR)
-//00250 #define VARDATA_SHORT(PTR)                  VARDATA_1B(PTR)
-//00251
-//00252 #define VARSIZE_EXTERNAL(PTR)               VARSIZE_1B_E(PTR)
-//00253 #define VARDATA_EXTERNAL(PTR)               VARDATA_1B_E(PTR)
-//00254
-//00255 #define VARATT_IS_COMPRESSED(PTR)           VARATT_IS_4B_C(PTR)
-//00256 #define VARATT_IS_EXTERNAL(PTR)             VARATT_IS_1B_E(PTR)
-//00257 #define VARATT_IS_SHORT(PTR)                VARATT_IS_1B(PTR)
-//00258 #define VARATT_IS_EXTENDED(PTR)             (!VARATT_IS_4B_U(PTR))
-//00259
-//00260 #define SET_VARSIZE(PTR, len)               SET_VARSIZE_4B(PTR, len)
-//00261 #define SET_VARSIZE_SHORT(PTR, len)         SET_VARSIZE_1B(PTR, len)
-//00262 #define SET_VARSIZE_COMPRESSED(PTR, len)    SET_VARSIZE_4B_C(PTR, len)
-//00263 #define SET_VARSIZE_EXTERNAL(PTR, len)      SET_VARSIZE_1B_E(PTR, len)
-//00264
-//00265 #define VARSIZE_ANY(PTR) \
-//00266     (VARATT_IS_1B_E(PTR) ? VARSIZE_1B_E(PTR) : \
-//00267      (VARATT_IS_1B(PTR) ? VARSIZE_1B(PTR) : \
-//00268       VARSIZE_4B(PTR)))
-//00269
-
-void PostgresScan(ClientContext &context, const FunctionData *bind_data_p,
-                  FunctionOperatorData *operator_state, DataChunk *,
-                  DataChunk &output) {
+static void PostgresScan(ClientContext &context,
+                         const FunctionData *bind_data_p,
+                         FunctionOperatorData *operator_state, DataChunk *,
+                         DataChunk &output) {
 
   D_ASSERT(operator_state);
   D_ASSERT(bind_data_p);
@@ -471,7 +578,8 @@ void PostgresScan(ClientContext &context, const FunctionData *bind_data_p,
     }
 
     // read tuple header
-    auto tuple_ptr = state.page_buffer.get() + item.lp_off;
+    auto tuple_start_ptr = state.page_buffer.get() + item.lp_off;
+    auto tuple_ptr = tuple_start_ptr;
     auto tuple_header = Load<HeapTupleHeaderData>(tuple_ptr);
     // TODO decode the NULL bitmask here, future work
 
@@ -480,6 +588,8 @@ void PostgresScan(ClientContext &context, const FunctionData *bind_data_p,
       // tuple was deleted or updated elsewhere
       continue;
     }
+
+    idx_t length_length;
 
     tuple_ptr += tuple_header.t_hoff;
     for (idx_t col_idx = 0; col_idx < bind_data->columns.size(); col_idx++) {
@@ -492,44 +602,94 @@ void PostgresScan(ClientContext &context, const FunctionData *bind_data_p,
         tuple_ptr += sizeof(int32_t);
         break;
       }
-//      case LogicalTypeId::BIGINT: {
-//        // TODO this is not correct yet
-//        auto out_ptr = FlatVector::GetData<int64_t>(output.data[col_idx]);
-//        out_ptr[output_offset] = Load<int64_t>(tuple_ptr);
-//        tuple_ptr += sizeof(int64_t);
-//        break;
-//      }
-          case LogicalTypeId::VARCHAR: {
-              throw std::runtime_error("eek");
-//
-//              // TODO this is not correct yet
-//              auto out_ptr = FlatVector::GetData<string_t>(output.data[col_idx]);
-//              auto len = Load<uint32_t>(tuple_ptr);
-//
-//              // TODO interpret 2 high bits for TOASTedness
-//              out_ptr[output_offset] = StringVector::AddString(output.data[col_idx], (char*) tuple_ptr + 4, len - 4);
-//              tuple_ptr += len;
-//              break;
-          }
-          case LogicalTypeId::DECIMAL: {
-              auto first_varlen_byte = Load<uint8_t>(tuple_ptr);
-              if (first_varlen_byte == 0x80) {
-                  // 1 byte external, unsupported
-                  throw IOException("No external values");
-              }
-              idx_t len = 0;
-              // one byte length varlen
-              if ((first_varlen_byte & 0x80) == 0x80) {
-                  len = first_varlen_byte & 0x7F;
-              } else {
-                  auto four_byte_len = Load<uint32_t>(tuple_ptr);
-                  len = four_byte_len & 0x3FFFFFFF;
-              }
-              printf("len=%llu\n", len);
 
-              tuple_ptr += len;
-              break;
+      case LogicalTypeId::VARCHAR: {
+        auto len = GetAttributeLength(tuple_ptr, length_length);
+        auto out_ptr = FlatVector::GetData<string_t>(output.data[col_idx]);
+        out_ptr[output_offset] = StringVector::AddString(
+            output.data[col_idx], (char *)tuple_ptr + length_length,
+            len - length_length);
+        tuple_ptr += len;
+        break;
+      }
+      case LogicalTypeId::DECIMAL: {
+
+        auto len = GetAttributeLength(tuple_ptr, length_length);
+        auto numeric_header = Load<uint16_t>(tuple_ptr + length_length);
+        if ((numeric_header & NUMERIC_SIGN_MASK) == NUMERIC_SPECIAL) {
+          throw IOException(
+              "'Special' numerics not supported. Please insert more coin.");
+        }
+
+        auto is_short = (numeric_header & NUMERIC_SIGN_MASK) == NUMERIC_SHORT;
+        auto total_header_length =
+            length_length + (is_short ? sizeof(uint16_t) : sizeof(uint32_t));
+        int ndigits = (len - total_header_length) / sizeof(int16_t);
+
+        int16_t long_header = 0;
+        if (!is_short) {
+          long_header =
+              Load<uint16_t>(tuple_ptr + length_length + sizeof(uint16_t));
+        }
+
+        int weight = NUMERIC_WEIGHT(is_short, numeric_header, long_header);
+        auto is_negative =
+            NUMERIC_SIGN(is_short, numeric_header) == NUMERIC_NEG;
+        int dscale = NUMERIC_DSCALE(is_short, numeric_header);
+        auto digit_ptr = (uint16_t *)(tuple_ptr + total_header_length);
+
+        switch (type.InternalType()) {
+        case PhysicalType::INT64: {
+          auto out_ptr = FlatVector::GetData<int64_t>(output.data[col_idx]);
+
+          if (ndigits == 0) {
+            out_ptr[output_offset] = 0;
+            break;
           }
+          out_ptr[output_offset] = *digit_ptr;
+          if (weight > 0) {
+            for (int i = 1; i <= weight; i++) {
+              out_ptr[output_offset] *= NBASE;
+              if (i < ndigits) {
+                // TODO bounds check on i
+                out_ptr[output_offset] += digit_ptr[i];
+              }
+            }
+          }
+          out_ptr[output_offset] *=
+              NumericHelper::POWERS_OF_TEN[DecimalType::GetScale(type)];
+
+          // TODO weight == 0?
+          if (weight + 1 < ndigits) {
+            for (int i = 1; i <= ndigits - (weight + 1); i++) {
+              out_ptr[output_offset] /= NBASE;
+              if (i < ndigits) {
+                // TODO bounds check on i
+                out_ptr[output_offset] += digit_ptr[i];
+              }
+            }
+          }
+          break;
+        }
+        default:
+          throw InternalException("Unsupported decimal storage type");
+        }
+
+        // data is at tuple_ptr + length_length;
+        tuple_ptr += len;
+        break;
+      }
+      case LogicalTypeId::DATE: {
+        auto offset = tuple_ptr - tuple_start_ptr;
+        tuple_ptr = tuple_start_ptr + ((offset + 3) / 4) * 4;
+
+        auto jd = Load<int32_t>(tuple_ptr);
+        auto out_ptr = FlatVector::GetData<date_t>(output.data[col_idx]);
+        out_ptr[output_offset].days = jd + POSTGRES_EPOCH_JDATE - 2440588;
+        // TODO clean this up, we just want to increment the pointer a bit
+        tuple_ptr += 4;
+        break;
+      }
       default:
         throw InternalException("Unsupported Type %s", type.ToString());
       }

@@ -2,7 +2,7 @@ statement ok
 LOAD 'build/debug/postgres_scanner.duckdb_extension';
 
 query I
-SELECT * FROM postgres_scan('', 'lineitem');
+SELECT * FROM postgres_scan('', 'lineitem') limit 10;
 ----
 
 

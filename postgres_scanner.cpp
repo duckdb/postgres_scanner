@@ -262,6 +262,141 @@ PostgresInit(ClientContext &context, const FunctionData *bind_data_p,
   return move(result);
 }
 
+//
+//188  * xxxxxx00 4-byte length word, aligned, uncompressed data (up to 1G)
+//189  * xxxxxx10 4-byte length word, aligned, *compressed* data (up to 1G)
+//190  * 00000001 1-byte length word, unaligned, TOAST pointer
+//191  * xxxxxxx1 1-byte length word, unaligned, uncompressed data (up to 126b)
+//192  *
+//193  * The "xxx" bits are the length field (which includes itself in all cases).
+//194  * In the big-endian case we mask to extract the length, in the little-endian
+//195  * case we shift.  Note that in both cases the flag bits are in the physically
+//196  * first byte.  Also, it is not possible for a 1-byte length word to be zero;
+//197  * this lets us disambiguate alignment padding bytes from the start of an
+//198  * unaligned datum.  (We now *require* pad bytes to be filled with zero!)
+//199  *
+//
+//typedef union
+//149 {
+//150     struct                      /* Normal varlena (4-byte length) */
+//151     {
+//152         uint32      va_header;
+//153         char        va_data[FLEXIBLE_ARRAY_MEMBER];
+//154     }           va_4byte;
+//155     struct                      /* Compressed-in-line format */
+//156     {
+//157         uint32      va_header;
+//158         uint32      va_tcinfo;  /* Original data size (excludes header) and
+//  159                                  * compression method; see va_extinfo */
+//160         char        va_data[FLEXIBLE_ARRAY_MEMBER]; /* Compressed data */
+//161     }           va_compressed;
+//162 } varattrib_4b;
+//163
+//
+//typedef struct
+//165 {
+//166     uint8       va_header;
+//167     char        va_data[FLEXIBLE_ARRAY_MEMBER]; /* Data begins here */
+//168 } varattrib_1b;
+//169
+
+//typedef struct
+//172 {
+//173     uint8       va_header;      /* Always 0x80 or 0x01 */
+//174     uint8       va_tag;         /* Type of datum */
+//175     char        va_data[FLEXIBLE_ARRAY_MEMBER]; /* Type-specific data */
+//176 } varattrib_1b_e;
+
+// from postgres.h
+
+//
+//00146 #define VARATT_IS_4B(PTR) \
+//00147     ((((varattrib_1b *) (PTR))->va_header & 0x80) == 0x00)
+//00148 #define VARATT_IS_4B_U(PTR) \
+//00149     ((((varattrib_1b *) (PTR))->va_header & 0xC0) == 0x00)
+//00150 #define VARATT_IS_4B_C(PTR) \
+//00151     ((((varattrib_1b *) (PTR))->va_header & 0xC0) == 0x40)
+//00152 #define VARATT_IS_1B(PTR) \
+//00153     ((((varattrib_1b *) (PTR))->va_header & 0x80) == 0x80)
+//00154 #define VARATT_IS_1B_E(PTR) \
+//00155     ((((varattrib_1b *) (PTR))->va_header) == 0x80)
+//00156 #define VARATT_NOT_PAD_BYTE(PTR) \
+//00157     (*((uint8 *) (PTR)) != 0)
+//00158
+//00159 /* VARSIZE_4B() should only be used on known-aligned data */
+//00160 #define VARSIZE_4B(PTR) \
+//00161     (((varattrib_4b *) (PTR))->va_4byte.va_header & 0x3FFFFFFF)
+//00162 #define VARSIZE_1B(PTR) \
+//00163     (((varattrib_1b *) (PTR))->va_header & 0x7F)
+//00164 #define VARSIZE_1B_E(PTR) \
+//00165     (((varattrib_1b_e *) (PTR))->va_len_1be)
+//00166
+
+//00178 #define VARATT_IS_4B(PTR) \
+//00179     ((((varattrib_1b *) (PTR))->va_header & 0x01) == 0x00)
+//00180 #define VARATT_IS_4B_U(PTR) \
+//00181     ((((varattrib_1b *) (PTR))->va_header & 0x03) == 0x00)
+//00182 #define VARATT_IS_4B_C(PTR) \
+//00183     ((((varattrib_1b *) (PTR))->va_header & 0x03) == 0x02)
+//00184 #define VARATT_IS_1B(PTR) \
+//00185     ((((varattrib_1b *) (PTR))->va_header & 0x01) == 0x01)
+//00186 #define VARATT_IS_1B_E(PTR) \
+//00187     ((((varattrib_1b *) (PTR))->va_header) == 0x01)
+
+//00190
+//00218 #define VARHDRSZ_EXTERNAL       2
+//00219
+//00220 #define VARDATA_4B(PTR)     (((varattrib_4b *) (PTR))->va_4byte.va_data)
+//00221 #define VARDATA_4B_C(PTR)   (((varattrib_4b *) (PTR))->va_compressed.va_data)
+//00222 #define VARDATA_1B(PTR)     (((varattrib_1b *) (PTR))->va_data)
+//00223 #define VARDATA_1B_E(PTR)   (((varattrib_1b_e *) (PTR))->va_data)
+//00224
+//00225 #define VARRAWSIZE_4B_C(PTR) \
+//00226     (((varattrib_4b *) (PTR))->va_compressed.va_rawsize)
+//00227
+//00228 /* Externally visible macros */
+//00229
+//00230 /*
+//00231  * VARDATA, VARSIZE, and SET_VARSIZE are the recommended API for most code
+//00232  * for varlena datatypes.  Note that they only work on untoasted,
+//00233  * 4-byte-header Datums!
+//00234  *
+//00235  * Code that wants to use 1-byte-header values without detoasting should
+//00236  * use VARSIZE_ANY/VARSIZE_ANY_EXHDR/VARDATA_ANY.  The other macros here
+//00237  * should usually be used only by tuple assembly/disassembly code and
+//00238  * code that specifically wants to work with still-toasted Datums.
+//00239  *
+//00240  * WARNING: It is only safe to use VARDATA_ANY() -- typically with
+//00241  * PG_DETOAST_DATUM_PACKED() -- if you really don't care about the alignment.
+//00242  * Either because you're working with something like text where the alignment
+//00243  * doesn't matter or because you're not going to access its constituent parts
+//00244  * and just use things like memcpy on it anyways.
+//00245  */
+//00246 #define VARDATA(PTR)                        VARDATA_4B(PTR)
+//00247 #define VARSIZE(PTR)                        VARSIZE_4B(PTR)
+//00248
+//00249 #define VARSIZE_SHORT(PTR)                  VARSIZE_1B(PTR)
+//00250 #define VARDATA_SHORT(PTR)                  VARDATA_1B(PTR)
+//00251
+//00252 #define VARSIZE_EXTERNAL(PTR)               VARSIZE_1B_E(PTR)
+//00253 #define VARDATA_EXTERNAL(PTR)               VARDATA_1B_E(PTR)
+//00254
+//00255 #define VARATT_IS_COMPRESSED(PTR)           VARATT_IS_4B_C(PTR)
+//00256 #define VARATT_IS_EXTERNAL(PTR)             VARATT_IS_1B_E(PTR)
+//00257 #define VARATT_IS_SHORT(PTR)                VARATT_IS_1B(PTR)
+//00258 #define VARATT_IS_EXTENDED(PTR)             (!VARATT_IS_4B_U(PTR))
+//00259
+//00260 #define SET_VARSIZE(PTR, len)               SET_VARSIZE_4B(PTR, len)
+//00261 #define SET_VARSIZE_SHORT(PTR, len)         SET_VARSIZE_1B(PTR, len)
+//00262 #define SET_VARSIZE_COMPRESSED(PTR, len)    SET_VARSIZE_4B_C(PTR, len)
+//00263 #define SET_VARSIZE_EXTERNAL(PTR, len)      SET_VARSIZE_1B_E(PTR, len)
+//00264
+//00265 #define VARSIZE_ANY(PTR) \
+//00266     (VARATT_IS_1B_E(PTR) ? VARSIZE_1B_E(PTR) : \
+//00267      (VARATT_IS_1B(PTR) ? VARSIZE_1B(PTR) : \
+//00268       VARSIZE_4B(PTR)))
+//00269
+
 void PostgresScan(ClientContext &context, const FunctionData *bind_data_p,
                   FunctionOperatorData *operator_state, DataChunk *,
                   DataChunk &output) {
@@ -357,31 +492,41 @@ void PostgresScan(ClientContext &context, const FunctionData *bind_data_p,
         tuple_ptr += sizeof(int32_t);
         break;
       }
-      case LogicalTypeId::BIGINT: {
-        // TODO this is not correct yet
-        auto out_ptr = FlatVector::GetData<int64_t>(output.data[col_idx]);
-        out_ptr[output_offset] = Load<int64_t>(tuple_ptr);
-        tuple_ptr += sizeof(int64_t);
-        break;
-      }
+//      case LogicalTypeId::BIGINT: {
+//        // TODO this is not correct yet
+//        auto out_ptr = FlatVector::GetData<int64_t>(output.data[col_idx]);
+//        out_ptr[output_offset] = Load<int64_t>(tuple_ptr);
+//        tuple_ptr += sizeof(int64_t);
+//        break;
+//      }
           case LogicalTypeId::VARCHAR: {
-              // TODO this is not correct yet
-              auto out_ptr = FlatVector::GetData<string_t>(output.data[col_idx]);
-              auto len = Load<uint32_t>(tuple_ptr);
-
-              // TODO interpret 2 high bits for TOASTedness
-              out_ptr[output_offset] = StringVector::AddString(output.data[col_idx], (char*) tuple_ptr + 4, len - 4);
-              tuple_ptr += len;
-              break;
+              throw std::runtime_error("eek");
+//
+//              // TODO this is not correct yet
+//              auto out_ptr = FlatVector::GetData<string_t>(output.data[col_idx]);
+//              auto len = Load<uint32_t>(tuple_ptr);
+//
+//              // TODO interpret 2 high bits for TOASTedness
+//              out_ptr[output_offset] = StringVector::AddString(output.data[col_idx], (char*) tuple_ptr + 4, len - 4);
+//              tuple_ptr += len;
+//              break;
           }
-          case LogicalTypeId::DATE:
-              tuple_ptr += 4;
-              break;
-
           case LogicalTypeId::DECIMAL: {
-              // TODO this does not do anything yet
-              auto len = Load<uint32_t>(tuple_ptr);
-              printf("len=%d\n", len);
+              auto first_varlen_byte = Load<uint8_t>(tuple_ptr);
+              if (first_varlen_byte == 0x80) {
+                  // 1 byte external, unsupported
+                  throw IOException("No external values");
+              }
+              idx_t len = 0;
+              // one byte length varlen
+              if ((first_varlen_byte & 0x80) == 0x80) {
+                  len = first_varlen_byte & 0x7F;
+              } else {
+                  auto four_byte_len = Load<uint32_t>(tuple_ptr);
+                  len = four_byte_len & 0x3FFFFFFF;
+              }
+              printf("len=%llu\n", len);
+
               tuple_ptr += len;
               break;
           }

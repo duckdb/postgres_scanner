@@ -5,11 +5,9 @@
 
 #include "duckdb/function/table_function.hpp"
 #include "duckdb/common/types/date.hpp"
-#include "duckdb/common/unordered_map.hpp"
 #include "duckdb/common/types/timestamp.hpp"
 #include "duckdb/parser/parsed_data/create_table_function_info.hpp"
 #include "duckdb/parallel/parallel_state.hpp"
-#include "duckdb/storage/statistics/validity_statistics.hpp"
 #include "duckdb/parser/expression/cast_expression.hpp"
 #include "duckdb/main/client_context.hpp"
 #include "duckdb/parser/parsed_data/create_view_info.hpp"
@@ -82,7 +80,7 @@ struct PostgresBindData : public FunctionData {
 
 struct PostgresOperatorData : public FunctionOperatorData {
   bool done = false;
-  unordered_map<idx_t, idx_t> scan_columns;
+  vector<idx_t> scan_columns;
   idx_t max_bound_column_id;
   unique_ptr<FileHandle> file_handle;
   idx_t task_offset;
@@ -94,9 +92,10 @@ struct PostgresOperatorData : public FunctionOperatorData {
   idx_t item_offset;
   ItemIdData *item_ptr;
 
-  void InitScanColumns(const vector<column_t> &column_ids) {
+  void InitScanColumns(idx_t ncol, const vector<column_t> &column_ids) {
     idx_t col_idx = 0;
     max_bound_column_id = 0;
+    scan_columns.resize(ncol, -1);
     for (auto &col : column_ids) {
       scan_columns[col] = col_idx;
       col_idx++;
@@ -284,7 +283,7 @@ PostgresInit(ClientContext &context, const FunctionData *bind_data_p,
 
   PostgresInitInternal(context, bind_data, result.get(), 0,
                        bind_data->tasks.size());
-  result->InitScanColumns(column_ids);
+  result->InitScanColumns(bind_data->types.size(), column_ids);
   return move(result);
 }
 
@@ -324,10 +323,7 @@ static idx_t GetAttributeLength(data_ptr_t tuple_ptr,
 #define POSTGRES_EPOCH_JDATE 2451545 /* == date2j(2000, 1, 1) */
 
 #define NBASE 10000
-#define HALF_NBASE 5000
-#define DEC_DIGITS 4       /* decimal digits per NBASE digit */
-#define MUL_GUARD_DIGITS 2 /* these are measured in NBASE digits */
-#define DIV_GUARD_DIGITS 4
+#define DEC_DIGITS 4 /* decimal digits per NBASE digit */
 
 /*
  * Interpretation of high bits.
@@ -415,7 +411,7 @@ void ReadDecimal(idx_t scale, int32_t ndigits, int32_t weight, bool is_negative,
     fractional_part *= NBASE;
     fractional_part += digit_ptr[i];
   }
-  fractional_part /= NumericHelper::POWERS_OF_TEN[scale % 4];
+  fractional_part /= NumericHelper::POWERS_OF_TEN[scale % DEC_DIGITS];
   out_ptr[output_offset] =
       (integral_part + fractional_part) * (is_negative ? -1 : 1);
 }
@@ -522,7 +518,7 @@ static void PostgresScan(ClientContext &context,
       // TODO handle NULLs here, they are not in the data
       auto &type = bind_data->types[col_idx2];
       auto &info = bind_data->columns[col_idx2];
-      bool skip_column = state.scan_columns.count(col_idx2) == 0;
+      bool skip_column = state.scan_columns[col_idx2] == -1;
       // TODO if we are done with the last column that the query actually wants
       // we can completely skip ahead to the next tuple
 
@@ -680,7 +676,9 @@ PostgresParallelInit(ClientContext &context, const FunctionData *bind_data_p,
                                  parallel_state_p)) {
     result->done = true;
   }
-  result->InitScanColumns(column_ids);
+  auto bind_data = (const PostgresBindData *)bind_data_p;
+
+  result->InitScanColumns(bind_data->types.size(), column_ids);
   return move(result);
 }
 

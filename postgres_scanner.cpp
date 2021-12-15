@@ -5,6 +5,7 @@
 
 #include "duckdb/function/table_function.hpp"
 #include "duckdb/common/types/date.hpp"
+#include "duckdb/common/unordered_map.hpp"
 #include "duckdb/common/types/timestamp.hpp"
 #include "duckdb/parser/parsed_data/create_table_function_info.hpp"
 #include "duckdb/parallel/parallel_state.hpp"
@@ -81,8 +82,8 @@ struct PostgresBindData : public FunctionData {
 
 struct PostgresOperatorData : public FunctionOperatorData {
   bool done = false;
-  // TODO support projection pushdown
-  vector<column_t> column_ids;
+  unordered_map<idx_t, idx_t> scan_columns;
+  idx_t max_bound_column_id;
   unique_ptr<FileHandle> file_handle;
   idx_t task_offset;
   idx_t task_max;
@@ -92,6 +93,18 @@ struct PostgresOperatorData : public FunctionOperatorData {
   idx_t item_count;
   idx_t item_offset;
   ItemIdData *item_ptr;
+
+  void InitScanColumns(const vector<column_t> &column_ids) {
+    idx_t col_idx = 0;
+    max_bound_column_id = 0;
+    for (auto &col : column_ids) {
+      scan_columns[col] = col_idx;
+      col_idx++;
+      if (col > max_bound_column_id && col != COLUMN_IDENTIFIER_ROW_ID) {
+        max_bound_column_id = col;
+      }
+    }
+  }
 };
 
 struct PostgresParallelState : public ParallelState {
@@ -268,10 +281,10 @@ PostgresInit(ClientContext &context, const FunctionData *bind_data_p,
   D_ASSERT(bind_data_p);
   auto bind_data = (const PostgresBindData *)bind_data_p;
   auto result = make_unique<PostgresOperatorData>();
-  result->column_ids = column_ids;
 
   PostgresInitInternal(context, bind_data, result.get(), 0,
                        bind_data->tasks.size());
+  result->InitScanColumns(column_ids);
   return move(result);
 }
 
@@ -407,6 +420,46 @@ void ReadDecimal(idx_t scale, int32_t ndigits, int32_t weight, bool is_negative,
       (integral_part + fractional_part) * (is_negative ? -1 : 1);
 }
 
+static bool PrepareTuple(ClientContext &context,
+                         const PostgresBindData *bind_data,
+                         PostgresOperatorData &state) {
+  if (state.item_offset >= state.item_count) {
+    // we need to move on to a new page or a new task
+    if (!state.file_handle || state.page_offset > state.current_task.page_max) {
+      // we ran out of task, do we have another one?
+      if (state.task_offset >= state.task_max) {
+        state.done = true;
+        return false;
+      }
+      state.current_task = bind_data->tasks[state.task_offset];
+      state.file_handle = FileSystem::GetFileSystem(context).OpenFile(
+          state.current_task.file_name, FileFlags::FILE_FLAGS_READ);
+      state.page_offset = state.current_task.page_min;
+      state.item_count = 0;
+      state.task_offset++;
+    }
+
+    auto page_ptr = state.page_buffer.get();
+    state.file_handle->Read(page_ptr, bind_data->page_size,
+                            state.page_offset * bind_data->page_size);
+    // parse page header
+    auto page_header = Load<PageHeaderData>(page_ptr);
+    page_ptr += sizeof(PageHeaderData);
+
+    if (page_header.pd_lower > bind_data->page_size ||
+        page_header.pd_upper > bind_data->page_size) {
+      throw IOException("Page upper/lower offsets exceed page size");
+    }
+    state.item_ptr = (ItemIdData *)page_ptr;
+    state.item_count =
+        (page_header.pd_lower - sizeof(PageHeaderData)) / sizeof(ItemIdData);
+    state.item_offset = 0;
+    state.page_offset++;
+  }
+
+  return true;
+}
+
 static void PostgresScan(ClientContext &context,
                          const FunctionData *bind_data_p,
                          FunctionOperatorData *operator_state, DataChunk *,
@@ -424,39 +477,8 @@ static void PostgresScan(ClientContext &context,
 
   idx_t output_offset = 0;
   while (output_offset < STANDARD_VECTOR_SIZE) {
-    if (state.item_offset >= state.item_count) {
-      // we need to move on to a new page or a new task
-      if (!state.file_handle ||
-          state.page_offset > state.current_task.page_max) {
-        // we ran out of task, do we have another one?
-        if (state.task_offset >= state.task_max) {
-          state.done = true;
-          return;
-        }
-        state.current_task = bind_data->tasks[state.task_offset];
-        state.file_handle = FileSystem::GetFileSystem(context).OpenFile(
-            state.current_task.file_name, FileFlags::FILE_FLAGS_READ);
-        state.page_offset = state.current_task.page_min;
-        state.item_count = 0;
-        state.task_offset++;
-      }
-
-      auto page_ptr = state.page_buffer.get();
-      state.file_handle->Read(page_ptr, bind_data->page_size,
-                              state.page_offset * bind_data->page_size);
-      // parse page header
-      auto page_header = Load<PageHeaderData>(page_ptr);
-      page_ptr += sizeof(PageHeaderData);
-
-      if (page_header.pd_lower > bind_data->page_size ||
-          page_header.pd_upper > bind_data->page_size) {
-        throw IOException("Page upper/lower offsets exceed page size");
-      }
-      state.item_ptr = (ItemIdData *)page_ptr;
-      state.item_count =
-          (page_header.pd_lower - sizeof(PageHeaderData)) / sizeof(ItemIdData);
-      state.item_offset = 0;
-      state.page_offset++;
+    if (!PrepareTuple(context, bind_data, state)) {
+      return;
     }
 
     // TODO maybe its faster to read the items in one go, but perhaps not since
@@ -496,17 +518,22 @@ static void PostgresScan(ClientContext &context,
     idx_t length_length;
 
     tuple_ptr += tuple_header.t_hoff;
-    for (idx_t col_idx = 0; col_idx < bind_data->columns.size(); col_idx++) {
+    for (idx_t col_idx2 = 0; col_idx2 < state.max_bound_column_id; col_idx2++) {
       // TODO handle NULLs here, they are not in the data
-      auto &type = bind_data->types[col_idx];
-      auto &info = bind_data->columns[col_idx];
+      auto &type = bind_data->types[col_idx2];
+      auto &info = bind_data->columns[col_idx2];
+      bool skip_column = state.scan_columns.count(col_idx2) == 0;
+      // TODO if we are done with the last column that the query actually wants
+      // we can completely skip ahead to the next tuple
 
+      auto output_idx = skip_column ? -1 : state.scan_columns[col_idx2];
       switch (type.id()) {
       case LogicalTypeId::INTEGER: {
         D_ASSERT(info.attlen == sizeof(int32_t));
-
-        auto out_ptr = FlatVector::GetData<int32_t>(output.data[col_idx]);
-        out_ptr[output_offset] = Load<int32_t>(tuple_ptr);
+        if (!skip_column) {
+          auto out_ptr = FlatVector::GetData<int32_t>(output.data[output_idx]);
+          out_ptr[output_offset] = Load<int32_t>(tuple_ptr);
+        }
         tuple_ptr += sizeof(int32_t);
         break;
       }
@@ -515,10 +542,13 @@ static void PostgresScan(ClientContext &context,
         D_ASSERT(info.attlen == -1);
 
         auto len = GetAttributeLength(tuple_ptr, length_length);
-        auto out_ptr = FlatVector::GetData<string_t>(output.data[col_idx]);
-        out_ptr[output_offset] = StringVector::AddString(
-            output.data[col_idx], (char *)tuple_ptr + length_length,
-            len - length_length);
+        if (!skip_column) {
+          auto out_ptr = FlatVector::GetData<string_t>(output.data[output_idx]);
+          out_ptr[output_offset] = StringVector::AddString(
+              output.data[output_idx], (char *)tuple_ptr + length_length,
+              len - length_length);
+        }
+
         tuple_ptr += len;
         break;
       }
@@ -526,64 +556,69 @@ static void PostgresScan(ClientContext &context,
         D_ASSERT(info.attlen == -1);
 
         auto len = GetAttributeLength(tuple_ptr, length_length);
-        auto numeric_header = Load<uint16_t>(tuple_ptr + length_length);
-        if ((numeric_header & NUMERIC_SIGN_MASK) == NUMERIC_SPECIAL) {
-          throw IOException(
-              "'Special' numerics not supported. Please insert more coin.");
+        if (!skip_column) {
+
+          auto numeric_header = Load<uint16_t>(tuple_ptr + length_length);
+          if ((numeric_header & NUMERIC_SIGN_MASK) == NUMERIC_SPECIAL) {
+            throw IOException(
+                "'Special' numerics not supported. Please insert more coin.");
+          }
+
+          auto is_short = (numeric_header & NUMERIC_SIGN_MASK) == NUMERIC_SHORT;
+          auto total_header_length =
+              length_length + (is_short ? sizeof(uint16_t) : sizeof(uint32_t));
+          int ndigits = (len - total_header_length) / sizeof(int16_t);
+
+          int16_t long_header = 0;
+          if (!is_short) {
+            long_header =
+                Load<uint16_t>(tuple_ptr + length_length + sizeof(uint16_t));
+          }
+
+          int weight = NUMERIC_WEIGHT(is_short, numeric_header, long_header);
+          auto is_negative =
+              NUMERIC_SIGN(is_short, numeric_header) == NUMERIC_NEG;
+          int dscale = NUMERIC_DSCALE(is_short, numeric_header);
+          auto digit_ptr = (uint16_t *)(tuple_ptr + total_header_length);
+          D_ASSERT(dscale == DecimalType::GetScale(type));
+
+          switch (type.InternalType()) {
+          case PhysicalType::INT16:
+            ReadDecimal<int16_t>(DecimalType::GetScale(type), ndigits, weight,
+                                 is_negative, digit_ptr,
+                                 output.data[output_idx], output_offset);
+            break;
+          case PhysicalType::INT32:
+            ReadDecimal<int32_t>(DecimalType::GetScale(type), ndigits, weight,
+                                 is_negative, digit_ptr,
+                                 output.data[output_idx], output_offset);
+            break;
+          case PhysicalType::INT64:
+            ReadDecimal<int64_t>(DecimalType::GetScale(type), ndigits, weight,
+                                 is_negative, digit_ptr,
+                                 output.data[output_idx], output_offset);
+            break;
+
+          default:
+            throw InternalException("Unsupported decimal storage type");
+          }
         }
-
-        auto is_short = (numeric_header & NUMERIC_SIGN_MASK) == NUMERIC_SHORT;
-        auto total_header_length =
-            length_length + (is_short ? sizeof(uint16_t) : sizeof(uint32_t));
-        int ndigits = (len - total_header_length) / sizeof(int16_t);
-
-        int16_t long_header = 0;
-        if (!is_short) {
-          long_header =
-              Load<uint16_t>(tuple_ptr + length_length + sizeof(uint16_t));
-        }
-
-        int weight = NUMERIC_WEIGHT(is_short, numeric_header, long_header);
-        auto is_negative =
-            NUMERIC_SIGN(is_short, numeric_header) == NUMERIC_NEG;
-        int dscale = NUMERIC_DSCALE(is_short, numeric_header);
-        auto digit_ptr = (uint16_t *)(tuple_ptr + total_header_length);
-        D_ASSERT(dscale == DecimalType::GetScale(type));
-
-        switch (type.InternalType()) {
-        case PhysicalType::INT16:
-          ReadDecimal<int16_t>(DecimalType::GetScale(type), ndigits, weight,
-                               is_negative, digit_ptr, output.data[col_idx],
-                               output_offset);
-          break;
-        case PhysicalType::INT32:
-          ReadDecimal<int32_t>(DecimalType::GetScale(type), ndigits, weight,
-                               is_negative, digit_ptr, output.data[col_idx],
-                               output_offset);
-          break;
-        case PhysicalType::INT64:
-          ReadDecimal<int64_t>(DecimalType::GetScale(type), ndigits, weight,
-                               is_negative, digit_ptr, output.data[col_idx],
-                               output_offset);
-          break;
-
-        default:
-          throw InternalException("Unsupported decimal storage type");
-        }
-
         // data is at tuple_ptr + length_length;
         tuple_ptr += len;
         break;
       }
       case LogicalTypeId::DATE: {
+
         // TODO compute this alignment nicer
         // TODO compute alignment also for ints etc, should probably be generic
         D_ASSERT(info.attlen == sizeof(int32_t));
         auto offset = tuple_ptr - tuple_start_ptr;
         tuple_ptr = tuple_start_ptr + ((offset + 3) / 4) * 4;
-        auto jd = Load<int32_t>(tuple_ptr);
-        auto out_ptr = FlatVector::GetData<date_t>(output.data[col_idx]);
-        out_ptr[output_offset].days = jd + POSTGRES_EPOCH_JDATE - 2440588;
+        if (!skip_column) {
+          auto jd = Load<int32_t>(tuple_ptr);
+          auto out_ptr = FlatVector::GetData<date_t>(output.data[output_idx]);
+          out_ptr[output_offset].days = jd + POSTGRES_EPOCH_JDATE - 2440588;
+        }
         tuple_ptr += sizeof(int32_t);
         break;
       }
@@ -641,11 +676,11 @@ PostgresParallelInit(ClientContext &context, const FunctionData *bind_data_p,
                      const vector<column_t> &column_ids,
                      TableFilterCollection *) {
   auto result = make_unique<PostgresOperatorData>();
-  result->column_ids = column_ids;
   if (!PostgresParallelStateNext(context, bind_data_p, result.get(),
                                  parallel_state_p)) {
     result->done = true;
   }
+  result->InitScanColumns(column_ids);
   return move(result);
 }
 
@@ -664,7 +699,7 @@ public:
             PostgresScan, PostgresBind, PostgresInit, nullptr, nullptr, nullptr,
             nullptr, nullptr, PostgresScanToString, PostgresMaxThreads,
             PostgresInitParallelState, nullptr, PostgresParallelInit,
-            PostgresParallelStateNext, false, false, nullptr) {}
+            PostgresParallelStateNext, true, false, nullptr) {}
 };
 
 extern "C" {

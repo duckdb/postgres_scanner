@@ -142,9 +142,7 @@ PostgresBind(ClientContext &context, vector<Value> &inputs,
 
   // TODO make this optional? do this at all?
   PQexec(conn, "CHECKPOINT");
-  PQexec(conn, "SYNC");
 
-  // TODO check if those queries succeeded
   // TODO maybe we should hold an open transaction so we have a transaction id
   // as reference
 
@@ -156,6 +154,14 @@ PostgresBind(ClientContext &context, vector<Value> &inputs,
                          "FROM pg_settings WHERE name = 'data_directory'",
                          table_name)
                          .c_str());
+
+  if (!res) {
+    throw IOException("Unable to query Postgres at %s", dsn);
+  }
+  if (PQresultStatus(res) != PGRES_TUPLES_OK) {
+    throw IOException("Unable to query Postgres at %s: %s", dsn,
+                      string(PQresultErrorMessage(res)));
+  }
 
   result->table_name = table_name;
   result->page_size = atoi(PQgetvalue(res, 0, 1));
@@ -199,12 +205,21 @@ PostgresBind(ClientContext &context, vector<Value> &inputs,
   // fun fact: this query also works in DuckDB ^^
   res = PQexec(conn,
                StringUtil::Format(
-                   "SELECT attname, attlen, attalign, attnotnull, atttypmod, "
-                   "typname FROM pg_attribute JOIN pg_class ON "
-                   "attrelid=pg_class.oid JOIN pg_type ON atttypid=pg_type.oid "
-                   "WHERE relname='%s' AND attnum > 0 ORDER BY attnum",
+                   R"(SELECT attname, attlen, attalign, attnotnull, atttypmod,
+                   typname FROM pg_attribute JOIN pg_class ON
+                   attrelid=pg_class.oid JOIN pg_type ON atttypid=pg_type.oid
+                       WHERE relname='%s' AND attnum > 0 ORDER BY attnum)",
                    table_name)
                    .c_str());
+
+  // TODO make this a wrapper
+  if (!res) {
+    throw IOException("Unable to query Postgres at %s", dsn);
+  }
+  if (PQresultStatus(res) != PGRES_TUPLES_OK) {
+    throw IOException("Unable to query Postgres at %s: %s", dsn,
+                      string(PQresultErrorMessage(res)));
+  }
 
   for (idx_t row = 0; row < PQntuples(res); row++) {
     PostgresColumnInfo info;
@@ -363,6 +378,35 @@ static idx_t GetAttributeLength(data_ptr_t tuple_ptr,
                (header1 & NUMERIC_SHORT_WEIGHT_MASK))                          \
             : (header2))
 
+template <class T>
+void ReadDecimal(idx_t scale, int32_t ndigits, int32_t weight, bool is_negative,
+                 const uint16_t *digit_ptr, Vector &output,
+                 idx_t output_offset) {
+  // this is wild
+  auto out_ptr = FlatVector::GetData<T>(output);
+  auto scale_POWER = NumericHelper::POWERS_OF_TEN[scale];
+
+  if (ndigits == 0) {
+    out_ptr[output_offset] = 0;
+    return;
+  }
+  T integral_part = 0, fractional_part = 0;
+  D_ASSERT(weight <= ndigits);
+  for (auto i = 0; i <= weight; i++) {
+    integral_part *= NBASE;
+    integral_part += digit_ptr[i];
+  }
+  integral_part *= scale_POWER;
+
+  for (auto i = weight + 1; i < ndigits; i++) {
+    fractional_part *= NBASE;
+    fractional_part += digit_ptr[i];
+  }
+  fractional_part /= NumericHelper::POWERS_OF_TEN[scale % 4];
+  out_ptr[output_offset] =
+      (integral_part + fractional_part) * (is_negative ? -1 : 1);
+}
+
 static void PostgresScan(ClientContext &context,
                          const FunctionData *bind_data_p,
                          FunctionOperatorData *operator_state, DataChunk *,
@@ -385,7 +429,7 @@ static void PostgresScan(ClientContext &context,
       if (!state.file_handle ||
           state.page_offset > state.current_task.page_max) {
         // we ran out of task, do we have another one?
-        if (state.task_offset > state.task_max) {
+        if (state.task_offset >= state.task_max) {
           state.done = true;
           return;
         }
@@ -504,40 +548,25 @@ static void PostgresScan(ClientContext &context,
             NUMERIC_SIGN(is_short, numeric_header) == NUMERIC_NEG;
         int dscale = NUMERIC_DSCALE(is_short, numeric_header);
         auto digit_ptr = (uint16_t *)(tuple_ptr + total_header_length);
+        D_ASSERT(dscale == DecimalType::GetScale(type));
 
         switch (type.InternalType()) {
-        case PhysicalType::INT64: {
-          auto out_ptr = FlatVector::GetData<int64_t>(output.data[col_idx]);
-
-          if (ndigits == 0) {
-            out_ptr[output_offset] = 0;
-            break;
-          }
-          out_ptr[output_offset] = *digit_ptr;
-          if (weight > 0) {
-            for (int i = 1; i <= weight; i++) {
-              out_ptr[output_offset] *= NBASE;
-              if (i < ndigits) {
-                // TODO bounds check on i
-                out_ptr[output_offset] += digit_ptr[i];
-              }
-            }
-          }
-          out_ptr[output_offset] *=
-              NumericHelper::POWERS_OF_TEN[DecimalType::GetScale(type)];
-
-          // TODO weight == 0?
-          if (weight + 1 < ndigits) {
-            for (int i = 1; i <= ndigits - (weight + 1); i++) {
-              out_ptr[output_offset] /= NBASE;
-              if (i < ndigits) {
-                // TODO bounds check on i
-                out_ptr[output_offset] += digit_ptr[i];
-              }
-            }
-          }
+        case PhysicalType::INT16:
+          ReadDecimal<int16_t>(DecimalType::GetScale(type), ndigits, weight,
+                               is_negative, digit_ptr, output.data[col_idx],
+                               output_offset);
           break;
-        }
+        case PhysicalType::INT32:
+          ReadDecimal<int32_t>(DecimalType::GetScale(type), ndigits, weight,
+                               is_negative, digit_ptr, output.data[col_idx],
+                               output_offset);
+          break;
+        case PhysicalType::INT64:
+          ReadDecimal<int64_t>(DecimalType::GetScale(type), ndigits, weight,
+                               is_negative, digit_ptr, output.data[col_idx],
+                               output_offset);
+          break;
+
         default:
           throw InternalException("Unsupported decimal storage type");
         }
@@ -599,7 +628,7 @@ static bool PostgresParallelStateNext(ClientContext &context,
 
   if (parallel_state.task_idx < bind_data->tasks.size()) {
     PostgresInitInternal(context, bind_data, local_state,
-                         parallel_state.task_idx, parallel_state.task_idx);
+                         parallel_state.task_idx, parallel_state.task_idx + 1);
     parallel_state.task_idx++;
     return true;
   }

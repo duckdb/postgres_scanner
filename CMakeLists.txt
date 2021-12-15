@@ -37,7 +37,7 @@ include_directories(duckdb/third_party/fmt/include)
 include_directories(${PostgreSQL_INCLUDE_DIRS})
 
 if("${CMAKE_BUILD_TYPE}" STREQUAL "Debug")
-  add_compile_options(-Wall -pedantic -fsanitize=address)
+  add_compile_options(-Wall -pedantic -fsanitize=address -fno-sanitize=vptr)
   link_directories(duckdb/build/debug/src)
 else()
   link_directories(duckdb/build/release/src)

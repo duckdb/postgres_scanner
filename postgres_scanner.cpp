@@ -78,6 +78,14 @@ struct PostgresBindData : public FunctionData {
   vector<PostgresColumnInfo> columns;
   vector<string> names;
   vector<LogicalType> types;
+
+  PGconn *conn = nullptr;
+  ~PostgresBindData() {
+    if (conn) {
+      PQfinish(conn);
+      conn = nullptr;
+    }
+  }
 };
 
 struct PostgresOperatorData : public FunctionOperatorData {
@@ -184,36 +192,41 @@ PostgresBind(ClientContext &context, vector<Value> &inputs,
   auto schema_name = inputs[1].GetValue<string>();
   auto table_name = inputs[2].GetValue<string>();
 
-  PGconn *conn;
-  conn = PQconnectdb(dsn.c_str());
+  result->conn = PQconnectdb(dsn.c_str());
 
-  if (PQstatus(conn) == CONNECTION_BAD) {
+  if (PQstatus(result->conn) == CONNECTION_BAD) {
     throw IOException("Unable to connect to Postgres at %s", dsn);
   }
 
-  // TODO maybe we should hold an open transaction so we have a transaction id
-  // as reference
+  PQexec(result->conn, "BEGIN TRANSACTION");
+  // get a read lock on lineitem so we can be sure nobody deletes the pages
+  // under our asses
+  PQexec(result->conn,
+         StringUtil::Format(
+             "LOCK TABLE \"public\".\"lineitem\" IN ACCESS SHARE MODE;",
+             table_name, schema_name)
+             .c_str());
 
   // find the id of the table in question to simplify below queries and avoid
   // complex joins (ha)
-  auto res = PGQuery(conn, StringUtil::Format(R"(
+  auto res = PGQuery(result->conn, StringUtil::Format(R"(
 SELECT pg_class.oid, reltuples
 FROM pg_class JOIN pg_namespace ON relnamespace = pg_namespace.oid
 WHERE nspname='%s' AND relname='%s'
 )",
-                                              schema_name, table_name));
+                                                      schema_name, table_name));
   result->oid = res->GetInt64(0, 0);
   result->cardinality = res->GetInt64(0, 1);
 
   // somewhat hacky query to find out where the data file in question is
-  res = PGQuery(conn, StringUtil::Format(R"(
+  res = PGQuery(result->conn, StringUtil::Format(R"(
 SELECT setting || '/' || pg_relation_filepath(%d) table_path,
     current_setting('block_size') block_size,
     txid_current()
 FROM pg_settings
 WHERE name = 'data_directory'
 )",
-                                         result->oid));
+                                                 result->oid));
 
   result->table_name = table_name;
   result->page_size = res->GetInt32(0, 1);
@@ -253,15 +266,15 @@ WHERE name = 'data_directory'
 
   // query the table schema so we can interpret the bits in the pages
   // fun fact: this query also works in DuckDB ^^
-  res = PGQuery(conn, StringUtil::Format(
-                          R"(
+  res = PGQuery(result->conn, StringUtil::Format(
+                                  R"(
 SELECT attname, attlen, attalign, attnotnull, atttypmod, typname
 FROM pg_attribute
     JOIN pg_type ON atttypid=pg_type.oid
 WHERE attrelid=%d AND attnum > 0
 ORDER BY attnum
 )",
-                          result->oid));
+                                  result->oid));
 
   for (idx_t row = 0; row < PQntuples(res->res); row++) {
     PostgresColumnInfo info;
@@ -278,7 +291,6 @@ ORDER BY attnum
     result->columns.push_back(info);
   }
   res.reset();
-  PQfinish(conn);
 
   return_types = result->types;
   names = result->names;
@@ -830,6 +842,8 @@ static void AttachFunction(ClientContext &context,
   parameters.push_back(make_unique<ConstantExpression>(Value(data.dsn)));
   parameters.push_back(
       make_unique<ConstantExpression>(Value(data.source_schema)));
+  // push an empty parameter for the table name but keep a pointer so we can
+  // fill it below
   parameters.push_back(make_unique<ConstantExpression>(Value()));
   auto *table_name_ptr = (ConstantExpression *)parameters.back().get();
   auto table_function = make_unique<TableFunctionRef>();

@@ -70,11 +70,12 @@ struct ScanTask {
 
 struct PostgresBindData : public FunctionData {
   string table_name;
-  idx_t oid;
-  idx_t cardinality;
+  idx_t oid = 0;
+  idx_t cardinality = 0;
+  idx_t page_size = 0;
+  idx_t txid = 0;
+
   vector<ScanTask> tasks;
-  idx_t page_size;
-  idx_t txid;
   vector<PostgresColumnInfo> columns;
   vector<string> names;
   vector<LogicalType> types;
@@ -82,6 +83,7 @@ struct PostgresBindData : public FunctionData {
   PGconn *conn = nullptr;
   ~PostgresBindData() {
     if (conn) {
+      PQexec(conn, "ROLLBACK");
       PQfinish(conn);
       conn = nullptr;
     }

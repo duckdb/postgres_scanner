@@ -70,6 +70,8 @@ struct ScanTask {
 
 struct PostgresBindData : public FunctionData {
   string table_name;
+  idx_t oid;
+  idx_t cardinality;
   vector<ScanTask> tasks;
   idx_t page_size;
   idx_t txid;
@@ -155,9 +157,9 @@ struct PGQueryResult {
   }
 };
 
-static unique_ptr<PGQueryResult> PGQuery(PGconn *conn, const char *q) {
+static unique_ptr<PGQueryResult> PGQuery(PGconn *conn, string q) {
   auto res = make_unique<PGQueryResult>();
-  res->res = PQexec(conn, q);
+  res->res = PQexec(conn, q.c_str());
 
   if (!res->res) {
     throw IOException("Unable to query Postgres");
@@ -179,33 +181,39 @@ PostgresBind(ClientContext &context, vector<Value> &inputs,
   auto result = make_unique<PostgresBindData>();
 
   auto dsn = inputs[0].GetValue<string>();
-  auto table_name = inputs[1].GetValue<string>();
+  auto schema_name = inputs[1].GetValue<string>();
+  auto table_name = inputs[2].GetValue<string>();
 
   PGconn *conn;
-
   conn = PQconnectdb(dsn.c_str());
 
   if (PQstatus(conn) == CONNECTION_BAD) {
     throw IOException("Unable to connect to Postgres at %s", dsn);
   }
 
-  // TODO make this optional? do this at all?
-  // PGQuery(conn, "CHECKPOINT");
-
   // TODO maybe we should hold an open transaction so we have a transaction id
   // as reference
 
-  // find out where the data file in question is
-  auto res = PGQuery(
-      conn,
-      StringUtil::Format(R"("
-SELECT
-    setting || '/' || pg_relation_filepath('%s') table_path,
+  // find the id of the table in question to simplify below queries and avoid
+  // complex joins (ha)
+  auto res = PGQuery(conn, StringUtil::Format(R"(
+SELECT pg_class.oid, reltuples
+FROM pg_class JOIN pg_namespace ON relnamespace = pg_namespace.oid
+WHERE nspname='%s' AND relname='%s'
+)",
+                                              schema_name, table_name));
+  result->oid = res->GetInt64(0, 0);
+  result->cardinality = res->GetInt64(0, 1);
+
+  // somewhat hacky query to find out where the data file in question is
+  res = PGQuery(conn, StringUtil::Format(R"(
+SELECT setting || '/' || pg_relation_filepath(%d) table_path,
     current_setting('block_size') block_size,
     txid_current()
-FROM pg_settings WHERE name = 'data_directory'
-)", table_name)
-          .c_str());
+FROM pg_settings
+WHERE name = 'data_directory'
+)",
+                                         result->oid));
 
   result->table_name = table_name;
   result->page_size = res->GetInt32(0, 1);
@@ -221,7 +229,6 @@ FROM pg_settings WHERE name = 'data_directory'
   file_list.insert(file_list.end(), additional_files.begin(),
                    additional_files.end());
 
-  // TODO should we maybe construct those tasks later?
   for (auto &file_name : file_list) {
     auto file_handle =
         file_system.OpenFile(file_name, FileFlags::FILE_FLAGS_READ);
@@ -244,17 +251,17 @@ FROM pg_settings WHERE name = 'data_directory'
     }
   }
 
-  // TODO support declaring a schema here ("default")
   // query the table schema so we can interpret the bits in the pages
   // fun fact: this query also works in DuckDB ^^
-  res = PGQuery(conn,
-                StringUtil::Format(
-                    R"(SELECT attname, attlen, attalign, attnotnull, atttypmod,
-                   typname FROM pg_attribute JOIN pg_class ON
-                   attrelid=pg_class.oid JOIN pg_type ON atttypid=pg_type.oid
-                       WHERE relname='%s' AND attnum > 0 ORDER BY attnum)",
-                    table_name)
-                    .c_str());
+  res = PGQuery(conn, StringUtil::Format(
+                          R"(
+SELECT attname, attlen, attalign, attnotnull, atttypmod, typname
+FROM pg_attribute
+    JOIN pg_type ON atttypid=pg_type.oid
+WHERE attrelid=%d AND attnum > 0
+ORDER BY attnum
+)",
+                          result->oid));
 
   for (idx_t row = 0; row < PQntuples(res->res); row++) {
     PostgresColumnInfo info;
@@ -340,8 +347,10 @@ static idx_t GetAttributeLength(data_ptr_t tuple_ptr, idx_t page_size,
   } else {
     auto four_byte_len = Load<uint32_t>(tuple_ptr);
     length_length_out = 4;
+    if ((four_byte_len & 0x3) == 0x2) {
+      throw IOException("No compressed values");
+    }
     len = (four_byte_len >> 2) & 0x3FFFFFFF;
-    // TODO check if not TOAST/external
   }
   if (len > page_size) {
     throw IOException(
@@ -591,10 +600,7 @@ static idx_t ProcessValue(data_ptr_t tuple_ptr,
     return len;
   }
   case LogicalTypeId::DATE: {
-    // TODO compute this alignment nicer
-    // TODO compute alignment also for ints etc, should probably be generic
     D_ASSERT(info.attlen == sizeof(int32_t));
-
     if (!skip) {
       auto jd = Load<int32_t>(tuple_ptr);
       auto out_ptr = FlatVector::GetData<date_t>(output);
@@ -628,7 +634,7 @@ static void PostgresScan(ClientContext &context,
       return;
     }
 
-    // TODO maybe its faster to read the items in one go, but perhaps not since
+    // maybe its faster to read the items in one go, but perhaps not since
     // the page is rather small and fits in cache move to next page item
     auto item = state.item_ptr[state.item_offset++];
 #ifdef DEBUG // this check is somewhat optional
@@ -754,6 +760,15 @@ static string PostgresScanToString(const FunctionData *bind_data_p) {
   return bind_data->table_name;
 }
 
+static unique_ptr<NodeStatistics>
+PostgresCardinality(ClientContext &context, const FunctionData *bind_data_p) {
+  auto bind_data = (const PostgresBindData *)bind_data_p;
+  if (bind_data->cardinality == -1) {
+    return make_unique<NodeStatistics>();
+  }
+  return make_unique<NodeStatistics>(bind_data->cardinality);
+}
+
 struct AttachFunctionData : public TableFunctionData {
   AttachFunctionData() {}
 
@@ -775,7 +790,9 @@ AttachBind(ClientContext &context, vector<Value> &inputs,
   result->dsn = inputs[0].GetValue<string>();
 
   for (auto &kv : named_parameters) {
-    if (kv.first == "schema") {
+    if (kv.first == "source_schema") {
+      result->source_schema = kv.second.str_value;
+    } else if (kv.first == "target_schema") {
       result->target_schema = kv.second.str_value;
     } else if (kv.first == "overwrite") {
       result->overwrite = kv.second.value_.boolean;
@@ -811,6 +828,8 @@ static void AttachFunction(ClientContext &context,
 
   vector<unique_ptr<ParsedExpression>> parameters;
   parameters.push_back(make_unique<ConstantExpression>(Value(data.dsn)));
+  parameters.push_back(
+      make_unique<ConstantExpression>(Value(data.source_schema)));
   parameters.push_back(make_unique<ConstantExpression>(Value()));
   auto *table_name_ptr = (ConstantExpression *)parameters.back().get();
   auto table_function = make_unique<TableFunctionRef>();
@@ -824,12 +843,11 @@ static void AttachFunction(ClientContext &context,
   view_info.query = make_unique<SelectStatement>();
   view_info.query->node = move(select_node);
 
-  // TODO support schemas other than 'public' also elsewhere
   auto res = PGQuery(conn, StringUtil::Format(
                                R"(
 SELECT table_name
 FROM information_schema.tables
-WHERE table_schema='public'
+WHERE table_schema='%s'
 AND table_type='BASE TABLE'
 )",
                                data.source_schema)
@@ -854,17 +872,17 @@ AND table_type='BASE TABLE'
   data.finished = true;
 }
 
-// TODO implement cardinality using postgres' own estimates
-
 class PostgresScanFunction : public TableFunction {
 public:
   PostgresScanFunction()
       : TableFunction(
-            "postgres_scan", {LogicalType::VARCHAR, LogicalType::VARCHAR},
+            "postgres_scan",
+            {LogicalType::VARCHAR, LogicalType::VARCHAR, LogicalType::VARCHAR},
             PostgresScan, PostgresBind, PostgresInit, nullptr, nullptr, nullptr,
-            nullptr, nullptr, PostgresScanToString, PostgresMaxThreads,
-            PostgresInitParallelState, nullptr, PostgresParallelInit,
-            PostgresParallelStateNext, true, false, nullptr) {}
+            PostgresCardinality, nullptr, PostgresScanToString,
+            PostgresMaxThreads, PostgresInitParallelState, nullptr,
+            PostgresParallelInit, PostgresParallelStateNext, true, false,
+            nullptr) {}
 };
 
 extern "C" {
@@ -881,7 +899,8 @@ DUCKDB_EXTENSION_API void postgres_scanner_init(duckdb::DatabaseInstance &db) {
   TableFunction attach_func("postgres_attach", {LogicalType::VARCHAR},
                             AttachFunction, AttachBind);
   attach_func.named_parameters["overwrite"] = LogicalType::BOOLEAN;
-  attach_func.named_parameters["schema"] = LogicalType::VARCHAR;
+  attach_func.named_parameters["source_schema"] = LogicalType::VARCHAR;
+  attach_func.named_parameters["target_schema"] = LogicalType::VARCHAR;
   attach_func.named_parameters["suffix"] = LogicalType::VARCHAR;
 
   CreateTableFunctionInfo attach_info(attach_func);

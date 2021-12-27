@@ -4,12 +4,6 @@ LOAD 'build/debug/postgres_scanner.duckdb_extension';
 statement ok
 CALL postgres_attach('');
 
-# nasty bug with alignment of strings
-query IIII
-SELECT * FROM region LIMIT 10;
-----
-
-
 query I
 SELECT d2 FROM dectest
 ----

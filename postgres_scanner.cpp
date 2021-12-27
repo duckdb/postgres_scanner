@@ -97,9 +97,12 @@ struct PostgresOperatorData : public FunctionOperatorData {
     max_bound_column_id = 0;
     scan_columns.resize(ncol, -1);
     for (auto &col : column_ids) {
+      if (col == COLUMN_IDENTIFIER_ROW_ID) {
+        continue;
+      }
       scan_columns[col] = col_idx;
       col_idx++;
-      if (col > max_bound_column_id && col != COLUMN_IDENTIFIER_ROW_ID) {
+      if (col > max_bound_column_id) {
         max_bound_column_id = col;
       }
     }
@@ -514,15 +517,17 @@ static void PostgresScan(ClientContext &context,
     idx_t length_length;
 
     tuple_ptr += tuple_header.t_hoff;
-    for (idx_t col_idx2 = 0; col_idx2 < state.max_bound_column_id; col_idx2++) {
+    // if we are done with the last column that the query actually wants
+    // we can completely skip ahead to the next tupl
+    for (idx_t col_idx2 = 0; col_idx2 <= state.max_bound_column_id;
+         col_idx2++) {
+
       // TODO handle NULLs here, they are not in the data
       auto &type = bind_data->types[col_idx2];
       auto &info = bind_data->columns[col_idx2];
       bool skip_column = state.scan_columns[col_idx2] == -1;
-      // TODO if we are done with the last column that the query actually wants
-      // we can completely skip ahead to the next tuple
-
       auto output_idx = skip_column ? -1 : state.scan_columns[col_idx2];
+
       switch (type.id()) {
       case LogicalTypeId::INTEGER: {
         D_ASSERT(info.attlen == sizeof(int32_t));
@@ -553,7 +558,6 @@ static void PostgresScan(ClientContext &context,
 
         auto len = GetAttributeLength(tuple_ptr, length_length);
         if (!skip_column) {
-
           auto numeric_header = Load<uint16_t>(tuple_ptr + length_length);
           if ((numeric_header & NUMERIC_SIGN_MASK) == NUMERIC_SPECIAL) {
             throw IOException(
@@ -604,18 +608,19 @@ static void PostgresScan(ClientContext &context,
         break;
       }
       case LogicalTypeId::DATE: {
-
         // TODO compute this alignment nicer
         // TODO compute alignment also for ints etc, should probably be generic
         D_ASSERT(info.attlen == sizeof(int32_t));
         auto offset = tuple_ptr - tuple_start_ptr;
-        tuple_ptr = tuple_start_ptr + ((offset + 3) / 4) * 4;
+        auto padding = ((offset + 3) / 4) * 4;
+        tuple_ptr = tuple_start_ptr + padding;
+
         if (!skip_column) {
           auto jd = Load<int32_t>(tuple_ptr);
           auto out_ptr = FlatVector::GetData<date_t>(output.data[output_idx]);
           out_ptr[output_offset].days = jd + POSTGRES_EPOCH_JDATE - 2440588;
         }
-        tuple_ptr += sizeof(int32_t);
+        tuple_ptr += sizeof(int32_t) + padding;
         break;
       }
       default:

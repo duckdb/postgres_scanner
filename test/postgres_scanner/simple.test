@@ -1,10 +1,7 @@
 statement ok
 LOAD 'build/debug/postgres_scanner.duckdb_extension';
 
-query I
-SELECT count(*) FROM postgres_scan('', 'lineitem');
-----
-6001215
+
 
 query IIIII
 SELECT * FROM postgres_scan('', 'dectest') limit 10;
@@ -13,11 +10,24 @@ SELECT * FROM postgres_scan('', 'dectest') limit 10;
 0	0.001	0.23	1.23456789	1.2345678912
 -1	-1.001	-0.23	1.23456789	1.2345678912
 
+query I
+SELECT count(*) FROM postgres_scan('', 'lineitem');
+----
+6001215
 
-#query I
-#SELECT * FROM postgres_scan('', 'lineitem') limit 10;
-#----
-
+query III
+SELECT l_orderkey, l_partkey, l_quantity FROM postgres_scan('', 'lineitem') limit 10;
+----
+1	155190	17
+1	67310	36
+1	63700	8
+1	2132	28
+1	24027	24
+1	15635	32
+2	106170	38
+3	4297	45
+3	19036	49
+3	128449	27
 
 #
 #query I

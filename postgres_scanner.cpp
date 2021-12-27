@@ -508,6 +508,103 @@ static bool PrepareTuple(ClientContext &context,
   return true;
 }
 
+static idx_t ProcessValue(data_ptr_t tuple_ptr,
+                          const PostgresBindData *bind_data, idx_t &col_idx,
+                          bool skip, Vector &output, idx_t output_offset) {
+  idx_t length_length;
+  auto &type = bind_data->types[col_idx];
+  auto &info = bind_data->columns[col_idx];
+
+  switch (type.id()) {
+  case LogicalTypeId::INTEGER: {
+    D_ASSERT(info.attlen == sizeof(int32_t));
+
+    if (!skip) {
+      auto out_ptr = FlatVector::GetData<int32_t>(output);
+      out_ptr[output_offset] = Load<int32_t>(tuple_ptr);
+    }
+    return sizeof(int32_t);
+  }
+
+  case LogicalTypeId::VARCHAR: {
+    D_ASSERT(info.attlen == -1);
+
+    auto len =
+        GetAttributeLength(tuple_ptr, bind_data->page_size, length_length);
+
+    if (!skip) {
+      auto out_ptr = FlatVector::GetData<string_t>(output);
+      out_ptr[output_offset] = StringVector::AddString(
+          output, (char *)tuple_ptr + length_length, len - length_length);
+    }
+    return len;
+  }
+  case LogicalTypeId::DECIMAL: {
+    D_ASSERT(info.attlen == -1);
+
+    auto len =
+        GetAttributeLength(tuple_ptr, bind_data->page_size, length_length);
+    if (!skip) {
+      auto numeric_header = Load<uint16_t>(tuple_ptr + length_length);
+      if ((numeric_header & NUMERIC_SIGN_MASK) == NUMERIC_SPECIAL) {
+        throw IOException(
+            "'Special' numerics not supported. Please insert more coin.");
+      }
+
+      auto is_short = (numeric_header & NUMERIC_SIGN_MASK) == NUMERIC_SHORT;
+      auto total_header_length =
+          length_length + (is_short ? sizeof(uint16_t) : sizeof(uint32_t));
+      int ndigits = (len - total_header_length) / sizeof(int16_t);
+
+      int16_t long_header = 0;
+      if (!is_short) {
+        long_header =
+            Load<uint16_t>(tuple_ptr + length_length + sizeof(uint16_t));
+      }
+
+      int weight = NUMERIC_WEIGHT(is_short, numeric_header, long_header);
+      auto is_negative = NUMERIC_SIGN(is_short, numeric_header) == NUMERIC_NEG;
+      int dscale = NUMERIC_DSCALE(is_short, numeric_header);
+      auto digit_ptr = (uint16_t *)(tuple_ptr + total_header_length);
+      D_ASSERT(dscale == DecimalType::GetScale(type));
+
+      switch (type.InternalType()) {
+      case PhysicalType::INT16:
+        ReadDecimal<int16_t>(DecimalType::GetScale(type), ndigits, weight,
+                             is_negative, digit_ptr, output, output_offset);
+        break;
+      case PhysicalType::INT32:
+        ReadDecimal<int32_t>(DecimalType::GetScale(type), ndigits, weight,
+                             is_negative, digit_ptr, output, output_offset);
+        break;
+      case PhysicalType::INT64:
+        ReadDecimal<int64_t>(DecimalType::GetScale(type), ndigits, weight,
+                             is_negative, digit_ptr, output, output_offset);
+        break;
+
+      default:
+        throw InternalException("Unsupported decimal storage type");
+      }
+    }
+    return len;
+  }
+  case LogicalTypeId::DATE: {
+    // TODO compute this alignment nicer
+    // TODO compute alignment also for ints etc, should probably be generic
+    D_ASSERT(info.attlen == sizeof(int32_t));
+
+    if (!skip) {
+      auto jd = Load<int32_t>(tuple_ptr);
+      auto out_ptr = FlatVector::GetData<date_t>(output);
+      out_ptr[output_offset].days = jd + POSTGRES_EPOCH_JDATE - 2440588;
+    }
+    return sizeof(int32_t);
+  }
+  default:
+    throw InternalException("Unsupported Type %s", type.ToString());
+  }
+}
+
 static void PostgresScan(ClientContext &context,
                          const FunctionData *bind_data_p,
                          FunctionOperatorData *operator_state, DataChunk *,
@@ -562,10 +659,9 @@ static void PostgresScan(ClientContext &context,
       // tuple was deleted or updated elsewhere
       continue;
     }
+    tuple_ptr += tuple_header.t_hoff;
 
     idx_t length_length;
-
-    tuple_ptr += tuple_header.t_hoff;
 
     // if we are done with the last column that the query actually wants
     // we can completely skip ahead to the next tupl
@@ -590,110 +686,12 @@ static void PostgresScan(ClientContext &context,
         }
       }
 
-      switch (type.id()) {
-      case LogicalTypeId::INTEGER: {
-        D_ASSERT(info.attlen == sizeof(int32_t));
-
-        if (!skip_column) {
-          auto out_ptr = FlatVector::GetData<int32_t>(output.data[output_idx]);
-          out_ptr[output_offset] = Load<int32_t>(tuple_ptr);
-        }
-        tuple_ptr += sizeof(int32_t);
-        break;
-      }
-
-      case LogicalTypeId::VARCHAR: {
-        D_ASSERT(info.attlen == -1);
-
-        auto len =
-            GetAttributeLength(tuple_ptr, bind_data->page_size, length_length);
-
-        if (!skip_column) {
-          auto out_ptr = FlatVector::GetData<string_t>(output.data[output_idx]);
-          out_ptr[output_offset] = StringVector::AddString(
-              output.data[output_idx], (char *)tuple_ptr + length_length,
-              len - length_length);
-        }
-
-        tuple_ptr += len;
-        break;
-      }
-      case LogicalTypeId::DECIMAL: {
-        D_ASSERT(info.attlen == -1);
-
-        auto len =
-            GetAttributeLength(tuple_ptr, bind_data->page_size, length_length);
-        if (!skip_column) {
-          auto numeric_header = Load<uint16_t>(tuple_ptr + length_length);
-          if ((numeric_header & NUMERIC_SIGN_MASK) == NUMERIC_SPECIAL) {
-            throw IOException(
-                "'Special' numerics not supported. Please insert more coin.");
-          }
-
-          auto is_short = (numeric_header & NUMERIC_SIGN_MASK) == NUMERIC_SHORT;
-          auto total_header_length =
-              length_length + (is_short ? sizeof(uint16_t) : sizeof(uint32_t));
-          int ndigits = (len - total_header_length) / sizeof(int16_t);
-
-          int16_t long_header = 0;
-          if (!is_short) {
-            long_header =
-                Load<uint16_t>(tuple_ptr + length_length + sizeof(uint16_t));
-          }
-
-          int weight = NUMERIC_WEIGHT(is_short, numeric_header, long_header);
-          auto is_negative =
-              NUMERIC_SIGN(is_short, numeric_header) == NUMERIC_NEG;
-          int dscale = NUMERIC_DSCALE(is_short, numeric_header);
-          auto digit_ptr = (uint16_t *)(tuple_ptr + total_header_length);
-          D_ASSERT(dscale == DecimalType::GetScale(type));
-
-          switch (type.InternalType()) {
-          case PhysicalType::INT16:
-            ReadDecimal<int16_t>(DecimalType::GetScale(type), ndigits, weight,
-                                 is_negative, digit_ptr,
-                                 output.data[output_idx], output_offset);
-            break;
-          case PhysicalType::INT32:
-            ReadDecimal<int32_t>(DecimalType::GetScale(type), ndigits, weight,
-                                 is_negative, digit_ptr,
-                                 output.data[output_idx], output_offset);
-            break;
-          case PhysicalType::INT64:
-            ReadDecimal<int64_t>(DecimalType::GetScale(type), ndigits, weight,
-                                 is_negative, digit_ptr,
-                                 output.data[output_idx], output_offset);
-            break;
-
-          default:
-            throw InternalException("Unsupported decimal storage type");
-          }
-        }
-        // data is at tuple_ptr + length_length;
-        tuple_ptr += len;
-        break;
-      }
-      case LogicalTypeId::DATE: {
-        // TODO compute this alignment nicer
-        // TODO compute alignment also for ints etc, should probably be generic
-        D_ASSERT(info.attlen == sizeof(int32_t));
-
-        if (!skip_column) {
-          auto jd = Load<int32_t>(tuple_ptr);
-          auto out_ptr = FlatVector::GetData<date_t>(output.data[output_idx]);
-          out_ptr[output_offset].days = jd + POSTGRES_EPOCH_JDATE - 2440588;
-        }
-        tuple_ptr += sizeof(int32_t);
-        break;
-      }
-      default:
-        throw InternalException("Unsupported Type %s", type.ToString());
-      }
+      tuple_ptr += ProcessValue(tuple_ptr, bind_data, col_idx2, skip_column,
+                                output.data[output_idx], output_offset);
     }
     output.SetCardinality(++output_offset);
   }
 }
-
 static idx_t PostgresMaxThreads(ClientContext &context,
                                 const FunctionData *bind_data_p) {
   D_ASSERT(bind_data_p);

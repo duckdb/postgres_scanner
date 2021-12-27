@@ -1,28 +1,13 @@
 statement ok
-LOAD 'build/debug/postgres_scanner.duckdb_extension';
+LOAD 'build/release/postgres_scanner.duckdb_extension';
 
 statement ok
 CALL postgres_attach('');
 
 
-query I
-SELECT sum(l_quantity) FROM lineitem;
-----
-153078795
-
-query IIII
-SELECT min(l_extendedprice), max(l_extendedprice), sum(l_extendedprice), avg(l_extendedprice) FROM lineitem
-----
-901.00
-104949.50
-229577310901.20
-38255.138484656857
-
-
 require tpch
 
 loop i 1 9
-
 query I
 PRAGMA tpch(${i})
 ----

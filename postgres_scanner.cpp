@@ -322,9 +322,10 @@ PostgresInit(ClientContext &context, const FunctionData *bind_data_p,
 // padding bytes from the start of an 198  * unaligned datum.  (We now *require*
 // pad bytes to be filled with zero!) 199  *
 
-static idx_t GetAttributeLength(data_ptr_t tuple_ptr,
+static idx_t GetAttributeLength(data_ptr_t tuple_ptr, idx_t page_size,
                                 idx_t &length_length_out) {
   auto first_varlen_byte = Load<uint8_t>(tuple_ptr);
+  idx_t len = 0;
   if (first_varlen_byte == 0x80) {
     // 1 byte external, unsupported
     throw IOException("No external values");
@@ -332,13 +333,20 @@ static idx_t GetAttributeLength(data_ptr_t tuple_ptr,
   // one byte length varlen
   if ((first_varlen_byte & 0x01) == 0x01) {
     length_length_out = 1;
-    return (first_varlen_byte >> 1) & 0x7F;
+    len = (first_varlen_byte >> 1) & 0x7F;
+
   } else {
     auto four_byte_len = Load<uint32_t>(tuple_ptr);
     length_length_out = 4;
-    return (four_byte_len >> 2) & 0x3FFFFFFF;
+    len = (four_byte_len >> 2) & 0x3FFFFFFF;
     // TODO check if not TOAST/external
   }
+  if (len > page_size) {
+    throw IOException(
+        "Can't have attribute length of %lld on page of size %lld", len,
+        page_size);
+  }
+  return len;
 }
 
 #define POSTGRES_EPOCH_JDATE 2451545 /* == date2j(2000, 1, 1) */
@@ -409,9 +417,9 @@ static idx_t GetAttributeLength(data_ptr_t tuple_ptr,
             : (header2))
 
 template <class T>
-void ReadDecimal(idx_t scale, int32_t ndigits, int32_t weight, bool is_negative,
-                 const uint16_t *digit_ptr, Vector &output,
-                 idx_t output_offset) {
+static void ReadDecimal(idx_t scale, int32_t ndigits, int32_t weight,
+                        bool is_negative, const uint16_t *digit_ptr,
+                        Vector &output, idx_t output_offset) {
   // this is wild
   auto out_ptr = FlatVector::GetData<T>(output);
   auto scale_POWER = NumericHelper::POWERS_OF_TEN[scale];
@@ -421,18 +429,41 @@ void ReadDecimal(idx_t scale, int32_t ndigits, int32_t weight, bool is_negative,
     return;
   }
   T integral_part = 0, fractional_part = 0;
-  D_ASSERT(weight <= ndigits);
-  for (auto i = 0; i <= weight; i++) {
-    integral_part *= NBASE;
-    integral_part += digit_ptr[i];
-  }
-  integral_part *= scale_POWER;
 
-  for (auto i = weight + 1; i < ndigits; i++) {
-    fractional_part *= NBASE;
-    fractional_part += digit_ptr[i];
+  if (weight >= 0) {
+    D_ASSERT(weight <= ndigits);
+    integral_part = digit_ptr[0];
+    for (auto i = 1; i <= weight; i++) {
+      integral_part *= NBASE;
+      if (i < ndigits) {
+        integral_part += digit_ptr[i];
+      }
+    }
+    integral_part *= scale_POWER;
   }
-  fractional_part /= NumericHelper::POWERS_OF_TEN[scale % DEC_DIGITS];
+
+  if (ndigits > weight + 1) {
+    fractional_part = digit_ptr[weight + 1];
+    for (auto i = weight + 2; i < ndigits; i++) {
+      fractional_part *= NBASE;
+      if (i < ndigits) {
+        fractional_part += digit_ptr[i];
+      }
+    }
+
+    // we need to find out how large the fractional part is in terms of powers
+    // of ten this depends on how many times we multiplied with NBASE
+    // if that is different from scale, we need to divide the extra part away
+    // again
+    auto fractional_power = ((ndigits - weight - 1) * DEC_DIGITS);
+    D_ASSERT(fractional_power >= scale);
+    auto fractional_power_correction = fractional_power - scale;
+    D_ASSERT(fractional_power_correction < 20);
+    fractional_part /=
+        NumericHelper::POWERS_OF_TEN[fractional_power_correction];
+  }
+
+  // finally
   out_ptr[output_offset] =
       (integral_part + fractional_part) * (is_negative ? -1 : 1);
 }
@@ -535,6 +566,7 @@ static void PostgresScan(ClientContext &context,
     idx_t length_length;
 
     tuple_ptr += tuple_header.t_hoff;
+
     // if we are done with the last column that the query actually wants
     // we can completely skip ahead to the next tupl
     for (idx_t col_idx2 = 0; col_idx2 <= state.max_bound_column_id;
@@ -546,9 +578,22 @@ static void PostgresScan(ClientContext &context,
       bool skip_column = state.scan_columns[col_idx2] == -1;
       auto output_idx = skip_column ? -1 : state.scan_columns[col_idx2];
 
+      // TODO clean this up, its uuugly and we dont have to start at
+      // tuple_start_ptr every time
+      if (info.attlen != -1) {
+        if (info.attalign == 'i') {
+          auto offset = tuple_ptr - tuple_start_ptr;
+          auto real_offset = ((offset + 3) / 4) * 4;
+          tuple_ptr = tuple_start_ptr + real_offset;
+        } else {
+          throw IOException("Unknown alignment %c", info.attalign);
+        }
+      }
+
       switch (type.id()) {
       case LogicalTypeId::INTEGER: {
         D_ASSERT(info.attlen == sizeof(int32_t));
+
         if (!skip_column) {
           auto out_ptr = FlatVector::GetData<int32_t>(output.data[output_idx]);
           out_ptr[output_offset] = Load<int32_t>(tuple_ptr);
@@ -560,7 +605,9 @@ static void PostgresScan(ClientContext &context,
       case LogicalTypeId::VARCHAR: {
         D_ASSERT(info.attlen == -1);
 
-        auto len = GetAttributeLength(tuple_ptr, length_length);
+        auto len =
+            GetAttributeLength(tuple_ptr, bind_data->page_size, length_length);
+
         if (!skip_column) {
           auto out_ptr = FlatVector::GetData<string_t>(output.data[output_idx]);
           out_ptr[output_offset] = StringVector::AddString(
@@ -574,7 +621,8 @@ static void PostgresScan(ClientContext &context,
       case LogicalTypeId::DECIMAL: {
         D_ASSERT(info.attlen == -1);
 
-        auto len = GetAttributeLength(tuple_ptr, length_length);
+        auto len =
+            GetAttributeLength(tuple_ptr, bind_data->page_size, length_length);
         if (!skip_column) {
           auto numeric_header = Load<uint16_t>(tuple_ptr + length_length);
           if ((numeric_header & NUMERIC_SIGN_MASK) == NUMERIC_SPECIAL) {
@@ -629,16 +677,13 @@ static void PostgresScan(ClientContext &context,
         // TODO compute this alignment nicer
         // TODO compute alignment also for ints etc, should probably be generic
         D_ASSERT(info.attlen == sizeof(int32_t));
-        auto offset = tuple_ptr - tuple_start_ptr;
-        auto padding = ((offset + 3) / 4) * 4;
-        tuple_ptr = tuple_start_ptr + padding;
 
         if (!skip_column) {
           auto jd = Load<int32_t>(tuple_ptr);
           auto out_ptr = FlatVector::GetData<date_t>(output.data[output_idx]);
           out_ptr[output_offset].days = jd + POSTGRES_EPOCH_JDATE - 2440588;
         }
-        tuple_ptr += sizeof(int32_t) + padding;
+        tuple_ptr += sizeof(int32_t);
         break;
       }
       default:
@@ -784,10 +829,12 @@ static void AttachFunction(ClientContext &context,
 
   // TODO support schemas other than 'public' also elsewhere
   auto res = PGQuery(conn, StringUtil::Format(
-                               R"(SELECT table_name
-    FROM information_schema.tables
-    WHERE table_schema='public'
-    AND table_type='BASE TABLE')",
+                               R"(
+SELECT table_name
+FROM information_schema.tables
+WHERE table_schema='public'
+AND table_type='BASE TABLE'
+)",
                                data.source_schema)
                                .c_str());
 

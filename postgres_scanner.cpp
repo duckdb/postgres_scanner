@@ -198,11 +198,13 @@ PostgresBind(ClientContext &context, vector<Value> &inputs,
   // find out where the data file in question is
   auto res = PGQuery(
       conn,
-      StringUtil::Format("SELECT setting || '/' || pg_relation_filepath('%s') "
-                         "table_path, current_setting('block_size') "
-                         "block_size, txid_current() "
-                         "FROM pg_settings WHERE name = 'data_directory'",
-                         table_name)
+      StringUtil::Format(R"("
+SELECT
+    setting || '/' || pg_relation_filepath('%s') table_path,
+    current_setting('block_size') block_size,
+    txid_current()
+FROM pg_settings WHERE name = 'data_directory'
+)", table_name)
           .c_str());
 
   result->table_name = table_name;
@@ -661,15 +663,12 @@ static void PostgresScan(ClientContext &context,
     }
     tuple_ptr += tuple_header.t_hoff;
 
-    idx_t length_length;
-
     // if we are done with the last column that the query actually wants
     // we can completely skip ahead to the next tupl
     for (idx_t col_idx2 = 0; col_idx2 <= state.max_bound_column_id;
          col_idx2++) {
 
       // TODO handle NULLs here, they are not in the data
-      auto &type = bind_data->types[col_idx2];
       auto &info = bind_data->columns[col_idx2];
       bool skip_column = state.scan_columns[col_idx2] == -1;
       auto output_idx = skip_column ? -1 : state.scan_columns[col_idx2];

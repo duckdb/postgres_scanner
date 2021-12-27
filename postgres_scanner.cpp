@@ -134,6 +134,41 @@ static LogicalType DuckDBType(const string &pgtypename, const int atttypmod) {
   }
 }
 
+struct PGQueryResult {
+  ~PGQueryResult() {
+    if (res) {
+      PQclear(res);
+    }
+  }
+  PGresult *res = nullptr;
+
+  string GetString(idx_t row, idx_t col) {
+    D_ASSERT(res);
+    return string(PQgetvalue(res, row, col));
+  }
+
+  int32_t GetInt32(idx_t row, idx_t col) {
+    return atoi(PQgetvalue(res, row, col));
+  }
+  int64_t GetInt64(idx_t row, idx_t col) {
+    return atoll(PQgetvalue(res, row, col));
+  }
+};
+
+static unique_ptr<PGQueryResult> PGQuery(PGconn *conn, const char *q) {
+  auto res = make_unique<PGQueryResult>();
+  res->res = PQexec(conn, q);
+
+  if (!res->res) {
+    throw IOException("Unable to query Postgres");
+  }
+  if (PQresultStatus(res->res) != PGRES_TUPLES_OK) {
+    throw IOException("Unable to query Postgres: %s",
+                      string(PQresultErrorMessage(res->res)));
+  }
+  return res;
+}
+
 unique_ptr<FunctionData>
 PostgresBind(ClientContext &context, vector<Value> &inputs,
              unordered_map<string, Value> &named_parameters,
@@ -147,7 +182,6 @@ PostgresBind(ClientContext &context, vector<Value> &inputs,
   auto table_name = inputs[1].GetValue<string>();
 
   PGconn *conn;
-  PGresult *res;
 
   conn = PQconnectdb(dsn.c_str());
 
@@ -156,33 +190,26 @@ PostgresBind(ClientContext &context, vector<Value> &inputs,
   }
 
   // TODO make this optional? do this at all?
-  PQexec(conn, "CHECKPOINT");
+  // PGQuery(conn, "CHECKPOINT");
 
   // TODO maybe we should hold an open transaction so we have a transaction id
   // as reference
 
   // find out where the data file in question is
-  res = PQexec(conn, StringUtil::Format(
-                         "SELECT setting || '/' || pg_relation_filepath('%s') "
+  auto res = PGQuery(
+      conn,
+      StringUtil::Format("SELECT setting || '/' || pg_relation_filepath('%s') "
                          "table_path, current_setting('block_size') "
                          "block_size, txid_current() "
                          "FROM pg_settings WHERE name = 'data_directory'",
                          table_name)
-                         .c_str());
-
-  if (!res) {
-    throw IOException("Unable to query Postgres at %s", dsn);
-  }
-  if (PQresultStatus(res) != PGRES_TUPLES_OK) {
-    throw IOException("Unable to query Postgres at %s: %s", dsn,
-                      string(PQresultErrorMessage(res)));
-  }
+          .c_str());
 
   result->table_name = table_name;
-  result->page_size = atoi(PQgetvalue(res, 0, 1));
-  result->txid = atoi(PQgetvalue(res, 0, 2));
-  auto base_filename = string(PQgetvalue(res, 0, 0));
-  PQclear(res);
+  result->page_size = res->GetInt32(0, 1);
+  result->txid = res->GetInt32(0, 2);
+  auto base_filename = res->GetString(0, 0);
+  res.reset();
 
   // find all the data files
   vector<string> file_list;
@@ -218,39 +245,30 @@ PostgresBind(ClientContext &context, vector<Value> &inputs,
   // TODO support declaring a schema here ("default")
   // query the table schema so we can interpret the bits in the pages
   // fun fact: this query also works in DuckDB ^^
-  res = PQexec(conn,
-               StringUtil::Format(
-                   R"(SELECT attname, attlen, attalign, attnotnull, atttypmod,
+  res = PGQuery(conn,
+                StringUtil::Format(
+                    R"(SELECT attname, attlen, attalign, attnotnull, atttypmod,
                    typname FROM pg_attribute JOIN pg_class ON
                    attrelid=pg_class.oid JOIN pg_type ON atttypid=pg_type.oid
                        WHERE relname='%s' AND attnum > 0 ORDER BY attnum)",
-                   table_name)
-                   .c_str());
+                    table_name)
+                    .c_str());
 
-  // TODO make this a wrapper
-  if (!res) {
-    throw IOException("Unable to query Postgres at %s", dsn);
-  }
-  if (PQresultStatus(res) != PGRES_TUPLES_OK) {
-    throw IOException("Unable to query Postgres at %s: %s", dsn,
-                      string(PQresultErrorMessage(res)));
-  }
-
-  for (idx_t row = 0; row < PQntuples(res); row++) {
+  for (idx_t row = 0; row < PQntuples(res->res); row++) {
     PostgresColumnInfo info;
-    info.attname = string(PQgetvalue(res, row, 0));
-    info.attlen = atol(PQgetvalue(res, row, 1));
-    info.attalign = PQgetvalue(res, row, 2)[0];
-    info.attnotnull = string(PQgetvalue(res, row, 3)) == "t";
-    info.atttypmod = atoi(PQgetvalue(res, row, 4));
-    info.typname = string(PQgetvalue(res, row, 5));
+    info.attname = res->GetString(row, 0);
+    info.attlen = res->GetInt64(row, 1);
+    info.attalign = res->GetString(row, 2)[0];
+    info.attnotnull = res->GetString(row, 3) == "t";
+    info.atttypmod = res->GetInt32(row, 4);
+    info.typname = res->GetString(row, 5);
 
     result->names.push_back(info.attname);
     result->types.push_back(DuckDBType(info.typname, info.atttypmod));
 
     result->columns.push_back(info);
   }
-  PQclear(res);
+  res.reset();
   PQfinish(conn);
 
   return_types = result->types;
@@ -694,6 +712,106 @@ static string PostgresScanToString(const FunctionData *bind_data_p) {
   return bind_data->table_name;
 }
 
+struct AttachFunctionData : public TableFunctionData {
+  AttachFunctionData() {}
+
+  bool finished = false;
+  string source_schema = "public";
+  string target_schema = DEFAULT_SCHEMA;
+  string suffix = "";
+  bool overwrite = false;
+  string dsn = "";
+};
+
+static unique_ptr<FunctionData>
+AttachBind(ClientContext &context, vector<Value> &inputs,
+           unordered_map<string, Value> &named_parameters,
+           vector<LogicalType> &input_table_types,
+           vector<string> &input_table_names, vector<LogicalType> &return_types,
+           vector<string> &names) {
+  auto result = make_unique<AttachFunctionData>();
+  result->dsn = inputs[0].GetValue<string>();
+
+  for (auto &kv : named_parameters) {
+    if (kv.first == "schema") {
+      result->target_schema = kv.second.str_value;
+    } else if (kv.first == "overwrite") {
+      result->overwrite = kv.second.value_.boolean;
+    }
+  }
+
+  return_types.push_back(LogicalType::BOOLEAN);
+  names.emplace_back("Success");
+  return move(result);
+}
+
+static void AttachFunction(ClientContext &context,
+                           const FunctionData *bind_data,
+                           FunctionOperatorData *operator_state,
+                           DataChunk *input, DataChunk &output) {
+  auto &data = (AttachFunctionData &)*bind_data;
+  if (data.finished) {
+    return;
+  }
+
+  auto conn = PQconnectdb(data.dsn.c_str());
+
+  if (PQstatus(conn) == CONNECTION_BAD) {
+    throw IOException("Unable to connect to Postgres at %s", data.dsn);
+  }
+
+  // create a template create view info that is filled in the loop below
+  CreateViewInfo view_info;
+  view_info.schema = data.target_schema;
+  view_info.temporary = true;
+  view_info.on_conflict = data.overwrite ? OnCreateConflict::REPLACE_ON_CONFLICT
+                                         : OnCreateConflict::ERROR_ON_CONFLICT;
+
+  vector<unique_ptr<ParsedExpression>> parameters;
+  parameters.push_back(make_unique<ConstantExpression>(Value(data.dsn)));
+  parameters.push_back(make_unique<ConstantExpression>(Value()));
+  auto *table_name_ptr = (ConstantExpression *)parameters.back().get();
+  auto table_function = make_unique<TableFunctionRef>();
+  table_function->function =
+      make_unique<FunctionExpression>("postgres_scan", move(parameters));
+
+  auto select_node = make_unique<SelectNode>();
+  select_node->select_list.push_back(make_unique<StarExpression>());
+  select_node->from_table = move(table_function);
+
+  view_info.query = make_unique<SelectStatement>();
+  view_info.query->node = move(select_node);
+
+  // TODO support schemas other than 'public' also elsewhere
+  auto res = PGQuery(conn, StringUtil::Format(
+                               R"(SELECT table_name
+    FROM information_schema.tables
+    WHERE table_schema='public'
+    AND table_type='BASE TABLE')",
+                               data.source_schema)
+                               .c_str());
+
+  for (idx_t row = 0; row < PQntuples(res->res); row++) {
+
+    auto table_name = res->GetString(row, 0);
+    view_info.view_name = table_name;
+    table_name_ptr->value = Value(table_name);
+    // CREATE VIEW AS SELECT * FROM sqlite_scan()
+    auto binder = Binder::CreateBinder(context);
+    auto bound_statement = binder->Bind(*view_info.query->Copy());
+    view_info.types = bound_statement.types;
+    auto view_info_copy = view_info.Copy();
+    context.db->GetCatalog().CreateView(context,
+                                        (CreateViewInfo *)view_info_copy.get());
+  }
+  res.reset();
+  PQfinish(conn);
+
+  data.finished = true;
+}
+
+// TODO implement cardinality using postgres' own estimates
+
 class PostgresScanFunction : public TableFunction {
 public:
   PostgresScanFunction()
@@ -715,6 +833,15 @@ DUCKDB_EXTENSION_API void postgres_scanner_init(duckdb::DatabaseInstance &db) {
   PostgresScanFunction postgres_fun;
   CreateTableFunctionInfo postgres_info(postgres_fun);
   catalog.CreateTableFunction(context, &postgres_info);
+
+  TableFunction attach_func("postgres_attach", {LogicalType::VARCHAR},
+                            AttachFunction, AttachBind);
+  attach_func.named_parameters["overwrite"] = LogicalType::BOOLEAN;
+  attach_func.named_parameters["schema"] = LogicalType::VARCHAR;
+  attach_func.named_parameters["suffix"] = LogicalType::VARCHAR;
+
+  CreateTableFunctionInfo attach_info(attach_func);
+  catalog.CreateTableFunction(context, &attach_info);
 
   con.Commit();
 }

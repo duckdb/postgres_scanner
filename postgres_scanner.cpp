@@ -393,6 +393,10 @@ static idx_t GetAttributeLength(data_ptr_t tuple_ptr, idx_t page_size,
   return len;
 }
 
+#define HEAP_HASNULL 0x0001
+#define HEAP_HASVARWIDTH 0x0002
+#define HEAP_HASEXTERNAL 0x0004
+
 #define POSTGRES_EPOCH_JDATE 2451545 /* == date2j(2000, 1, 1) */
 
 #define NBASE 10000
@@ -691,25 +695,41 @@ static void PostgresScan(ClientContext &context,
 
     // read tuple header
     auto tuple_start_ptr = state.page_buffer.get() + item.lp_off;
-    auto tuple_ptr = tuple_start_ptr;
-    auto tuple_header = Load<HeapTupleHeaderData>(tuple_ptr);
-    auto null_ptr = tuple_ptr + 23;
+    auto tuple_header = Load<HeapTupleHeaderData>(tuple_start_ptr);
+    auto defined_ptr = tuple_start_ptr + 23;
+    auto can_have_nulls = tuple_header.t_infomask & HEAP_HASNULL;
 
     if (tuple_header.t_xmin > bind_data->txid ||
         (tuple_header.t_xmax != 0 && tuple_header.t_xmax < bind_data->txid)) {
       // tuple was deleted or updated elsewhere
       continue;
     }
-    tuple_ptr += tuple_header.t_hoff;
+    if (tuple_header.t_infomask & HEAP_HASEXTERNAL) {
+      throw IOException("EXTERNAL tuples are not supported");
+    }
 
+    auto tuple_ptr = tuple_start_ptr + tuple_header.t_hoff;
+
+    bool defined;
     // if we are done with the last column that the query actually wants
     // we can completely skip ahead to the next tupl
     for (idx_t col_idx = 0; col_idx <= state.max_bound_column_id; col_idx++) {
+      if (can_have_nulls) {
+        auto defined_byte = *(defined_ptr + col_idx / 8);
+        defined = ((defined_byte >> (col_idx % 8)) & 0x1) == 0x1;
+      } else {
+        defined = true;
+      }
 
-      auto null_byte = *(null_ptr + col_idx / 8);
-      auto null_column = ((null_byte >> col_idx % 8) & 0x1) == 0x1;
-      // TODO interpret NULL flags here, this seems still wrong?
-      // D_ASSERT(!null_column);
+      bool skip_column = state.scan_columns[col_idx] == -1;
+      auto output_idx = skip_column ? -1 : state.scan_columns[col_idx];
+
+      auto &output_vector = output.data[output_idx];
+
+      if (!defined) {
+        FlatVector::SetNull(output_vector, output_offset, true);
+        continue;
+      }
 
       auto &info = bind_data->columns[col_idx];
 
@@ -725,11 +745,8 @@ static void PostgresScan(ClientContext &context,
         }
       }
 
-      bool skip_column = state.scan_columns[col_idx] == -1;
-      auto output_idx = skip_column ? -1 : state.scan_columns[col_idx];
-
       tuple_ptr += ProcessValue(tuple_ptr, bind_data, col_idx, skip_column,
-                                output.data[output_idx], output_offset);
+                                output_vector, output_offset);
     }
     output.SetCardinality(++output_offset);
   }

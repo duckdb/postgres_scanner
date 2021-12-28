@@ -1,18 +1,13 @@
 require tpcds
 
 statement ok
-LOAD 'build/debug/postgres_scanner.duckdb_extension';
+LOAD 'build/release/postgres_scanner.duckdb_extension';
 
 statement ok
 CALL postgres_attach('dbname=postgresscanner', source_schema='tpcds');
 
 statement ok
 PRAGMA default_null_order='NULLS LAST'
-
-query I
-SELECT *  FROM item limit 10
-----
-
 
 # check table counts
 query T

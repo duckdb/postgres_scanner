@@ -213,13 +213,15 @@ PostgresBind(ClientContext &context, vector<Value> &inputs,
     throw IOException("Unable to connect to Postgres at %s", dsn);
   }
 
-  PGExec(result->conn, "BEGIN TRANSACTION");
-  // get a read lock on lineitem so we can be sure nobody deletes the pages
-  // under our asses
-  PGExec(result->conn,
-         StringUtil::Format("LOCK TABLE \"%s\".\"%s\" IN ACCESS SHARE MODE;",
-                            schema_name, table_name)
-             .c_str());
+  // TODO disabled since tpcds needs too many connections
+  //  PGExec(result->conn, "BEGIN TRANSACTION");
+  //  // get a read lock on lineitem so we can be sure nobody deletes the pages
+  //  // under our asses
+  //  PGExec(result->conn,
+  //         StringUtil::Format("LOCK TABLE \"%s\".\"%s\" IN ACCESS SHARE
+  //         MODE;",
+  //                            schema_name, table_name)
+  //             .c_str());
 
   // find the id of the table in question to simplify below queries and avoid
   // complex joins (ha)
@@ -306,6 +308,10 @@ ORDER BY attnum
   }
   res.reset();
 
+  // TODO TEMP
+  PQfinish(result->conn);
+  result->conn = nullptr;
+
   return_types = result->types;
   names = result->names;
 
@@ -363,7 +369,8 @@ static idx_t GetAttributeLength(data_ptr_t tuple_ptr, idx_t page_size,
   idx_t len = 0;
   if (first_varlen_byte == 0x80) {
     // 1 byte external, unsupported
-    throw IOException("No external values");
+    // TODO this check is wrong!
+    // throw IOException("No external values");
   }
   // one byte length varlen
   if ((first_varlen_byte & 0x01) == 0x01) {
@@ -686,7 +693,7 @@ static void PostgresScan(ClientContext &context,
     auto tuple_start_ptr = state.page_buffer.get() + item.lp_off;
     auto tuple_ptr = tuple_start_ptr;
     auto tuple_header = Load<HeapTupleHeaderData>(tuple_ptr);
-    // TODO decode the NULL bitmask here, future work
+    auto null_ptr = tuple_ptr + 23;
 
     if (tuple_header.t_xmin > bind_data->txid ||
         (tuple_header.t_xmax != 0 && tuple_header.t_xmax < bind_data->txid)) {
@@ -697,13 +704,14 @@ static void PostgresScan(ClientContext &context,
 
     // if we are done with the last column that the query actually wants
     // we can completely skip ahead to the next tupl
-    for (idx_t col_idx2 = 0; col_idx2 <= state.max_bound_column_id;
-         col_idx2++) {
+    for (idx_t col_idx = 0; col_idx <= state.max_bound_column_id; col_idx++) {
 
-      // TODO handle NULLs here, they are not in the data
-      auto &info = bind_data->columns[col_idx2];
-      bool skip_column = state.scan_columns[col_idx2] == -1;
-      auto output_idx = skip_column ? -1 : state.scan_columns[col_idx2];
+      auto null_byte = *(null_ptr + col_idx / 8);
+      auto null_column = ((null_byte >> col_idx % 8) & 0x1) == 0x1;
+      // TODO interpret NULL flags here, this seems still wrong?
+      // D_ASSERT(!null_column);
+
+      auto &info = bind_data->columns[col_idx];
 
       // TODO clean this up, its uuugly and we dont have to start at
       // tuple_start_ptr every time
@@ -717,7 +725,10 @@ static void PostgresScan(ClientContext &context,
         }
       }
 
-      tuple_ptr += ProcessValue(tuple_ptr, bind_data, col_idx2, skip_column,
+      bool skip_column = state.scan_columns[col_idx] == -1;
+      auto output_idx = skip_column ? -1 : state.scan_columns[col_idx];
+
+      tuple_ptr += ProcessValue(tuple_ptr, bind_data, col_idx, skip_column,
                                 output.data[output_idx], output_offset);
     }
     output.SetCardinality(++output_offset);

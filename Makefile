@@ -7,11 +7,11 @@ clean:
 
 duckdb_debug:
 	cd duckdb && \
-	BUILD_TPCH=1 make debug
+	BUILD_TPCDS=1 BUILD_TPCH=1 make debug
 
 duckdb_release:
 	cd duckdb && \
-	BUILD_TPCH=1 make release
+	BUILD_TPCDS=1 BUILD_TPCH=1 make release
 
 debug: duckdb_debug
 	mkdir -p build/debug && \

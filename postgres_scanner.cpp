@@ -167,6 +167,19 @@ struct PGQueryResult {
   }
 };
 
+static void PGExec(PGconn *conn, string q) {
+  auto res = make_unique<PGQueryResult>();
+  res->res = PQexec(conn, q.c_str());
+
+  if (!res->res) {
+    throw IOException("Unable to query Postgres");
+  }
+  if (PQresultStatus(res->res) != PGRES_COMMAND_OK) {
+    throw IOException("Unable to query Postgres: %s",
+                      string(PQresultErrorMessage(res->res)));
+  }
+}
+
 static unique_ptr<PGQueryResult> PGQuery(PGconn *conn, string q) {
   auto res = make_unique<PGQueryResult>();
   res->res = PQexec(conn, q.c_str());
@@ -200,13 +213,12 @@ PostgresBind(ClientContext &context, vector<Value> &inputs,
     throw IOException("Unable to connect to Postgres at %s", dsn);
   }
 
-  PQexec(result->conn, "BEGIN TRANSACTION");
+  PGExec(result->conn, "BEGIN TRANSACTION");
   // get a read lock on lineitem so we can be sure nobody deletes the pages
   // under our asses
-  PQexec(result->conn,
-         StringUtil::Format(
-             "LOCK TABLE \"public\".\"lineitem\" IN ACCESS SHARE MODE;",
-             table_name, schema_name)
+  PGExec(result->conn,
+         StringUtil::Format("LOCK TABLE \"%s\".\"%s\" IN ACCESS SHARE MODE;",
+                            schema_name, table_name)
              .c_str());
 
   // find the id of the table in question to simplify below queries and avoid

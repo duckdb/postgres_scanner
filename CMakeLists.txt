@@ -71,3 +71,11 @@ if(WIN32)
   set(CMAKE_EXE_LINKER_FLAGS_RELEASE
       "${CMAKE_EXE_LINKER_FLAGS_RELEASE}  /DELAYLOAD:duckdb.dll")
 endif()
+
+add_executable(concurrency_test concurrency_test.cpp)
+target_link_libraries(concurrency_test duckdb)
+target_link_libraries(concurrency_test ${PostgreSQL_LIBRARIES})
+
+if("${CMAKE_BUILD_TYPE}" STREQUAL "Debug")
+  target_link_libraries(concurrency_test -fsanitize=address)
+endif()

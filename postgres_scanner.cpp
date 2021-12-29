@@ -540,12 +540,17 @@ static bool PrepareTuple(ClientContext &context,
                             state.page_offset * bind_data->page_size);
     // parse page header
     auto page_header = Load<PageHeaderData>(page_ptr);
-    page_ptr += sizeof(PageHeaderData);
 
+    // unused?
+    if (page_header.pd_upper == 0 || page_header.pd_lower == 0) {
+      return false;
+    }
+    // some sanity check
     if (page_header.pd_lower > bind_data->page_size ||
         page_header.pd_upper > bind_data->page_size) {
       throw IOException("Page upper/lower offsets exceed page size");
     }
+    page_ptr += sizeof(PageHeaderData);
     state.item_ptr = (ItemIdData *)page_ptr;
     state.item_count =
         (page_header.pd_lower - sizeof(PageHeaderData)) / sizeof(ItemIdData);
@@ -558,7 +563,8 @@ static bool PrepareTuple(ClientContext &context,
 
 static idx_t ProcessValue(data_ptr_t tuple_ptr,
                           const PostgresBindData *bind_data, idx_t &col_idx,
-                          bool skip, Vector &output, idx_t output_offset) {
+                          bool skip, DataChunk &output, idx_t output_idx,
+                          idx_t output_offset) {
   idx_t length_length;
   auto &type = bind_data->types[col_idx];
   auto &info = bind_data->columns[col_idx];
@@ -568,7 +574,7 @@ static idx_t ProcessValue(data_ptr_t tuple_ptr,
     D_ASSERT(info.attlen == sizeof(int32_t));
 
     if (!skip) {
-      auto out_ptr = FlatVector::GetData<int32_t>(output);
+      auto out_ptr = FlatVector::GetData<int32_t>(output.data[output_idx]);
       out_ptr[output_offset] = Load<int32_t>(tuple_ptr);
     }
     return sizeof(int32_t);
@@ -581,9 +587,10 @@ static idx_t ProcessValue(data_ptr_t tuple_ptr,
         GetAttributeLength(tuple_ptr, bind_data->page_size, length_length);
 
     if (!skip) {
-      auto out_ptr = FlatVector::GetData<string_t>(output);
+      auto out_ptr = FlatVector::GetData<string_t>(output.data[output_idx]);
       out_ptr[output_offset] = StringVector::AddString(
-          output, (char *)tuple_ptr + length_length, len - length_length);
+          output.data[output_idx], (char *)tuple_ptr + length_length,
+          len - length_length);
     }
     return len;
   }
@@ -592,6 +599,9 @@ static idx_t ProcessValue(data_ptr_t tuple_ptr,
 
     auto len =
         GetAttributeLength(tuple_ptr, bind_data->page_size, length_length);
+    if (skip) {
+      return len;
+    }
     if (!skip) {
       auto numeric_header = Load<uint16_t>(tuple_ptr + length_length);
       if ((numeric_header & NUMERIC_SIGN_MASK) == NUMERIC_SPECIAL) {
@@ -619,15 +629,18 @@ static idx_t ProcessValue(data_ptr_t tuple_ptr,
       switch (type.InternalType()) {
       case PhysicalType::INT16:
         ReadDecimal<int16_t>(DecimalType::GetScale(type), ndigits, weight,
-                             is_negative, digit_ptr, output, output_offset);
+                             is_negative, digit_ptr, output.data[output_idx],
+                             output_offset);
         break;
       case PhysicalType::INT32:
         ReadDecimal<int32_t>(DecimalType::GetScale(type), ndigits, weight,
-                             is_negative, digit_ptr, output, output_offset);
+                             is_negative, digit_ptr, output.data[output_idx],
+                             output_offset);
         break;
       case PhysicalType::INT64:
         ReadDecimal<int64_t>(DecimalType::GetScale(type), ndigits, weight,
-                             is_negative, digit_ptr, output, output_offset);
+                             is_negative, digit_ptr, output.data[output_idx],
+                             output_offset);
         break;
 
       default:
@@ -640,8 +653,9 @@ static idx_t ProcessValue(data_ptr_t tuple_ptr,
     D_ASSERT(info.attlen == sizeof(int32_t));
     if (!skip) {
       auto jd = Load<int32_t>(tuple_ptr);
-      auto out_ptr = FlatVector::GetData<date_t>(output);
-      out_ptr[output_offset].days = jd + POSTGRES_EPOCH_JDATE - 2440588;
+      auto out_ptr = FlatVector::GetData<date_t>(output.data[output_idx]);
+      out_ptr[output_offset].days =
+          jd + POSTGRES_EPOCH_JDATE - 2440588; // magic!
     }
     return sizeof(int32_t);
   }
@@ -715,8 +729,8 @@ static void PostgresScan(ClientContext &context,
     // we can completely skip ahead to the next tupl
     for (idx_t col_idx = 0; col_idx <= state.max_bound_column_id; col_idx++) {
       if (can_have_nulls) {
-        auto defined_byte = *(defined_ptr + col_idx / 8);
-        defined = ((defined_byte >> (col_idx % 8)) & 0x1) == 0x1;
+        defined =
+            (((*(defined_ptr + col_idx / 8)) >> (col_idx % 8)) & 0x1) == 0x1;
       } else {
         defined = true;
       }
@@ -724,29 +738,26 @@ static void PostgresScan(ClientContext &context,
       bool skip_column = state.scan_columns[col_idx] == -1;
       auto output_idx = skip_column ? -1 : state.scan_columns[col_idx];
 
-      auto &output_vector = output.data[output_idx];
-
-      if (!defined) {
-        FlatVector::SetNull(output_vector, output_offset, true);
+      if (!defined && !skip_column) {
+        D_ASSERT(output_idx != -1);
+        FlatVector::SetNull(output.data[output_idx], output_offset, true);
         continue;
       }
 
       auto &info = bind_data->columns[col_idx];
 
-      // TODO clean this up, its uuugly and we dont have to start at
-      // tuple_start_ptr every time
       if (info.attlen != -1) {
         if (info.attalign == 'i') {
           auto offset = tuple_ptr - tuple_start_ptr;
-          auto real_offset = ((offset + 3) / 4) * 4;
-          tuple_ptr = tuple_start_ptr + real_offset;
+          auto alignment = (((offset + 3) / 4) * 4) - offset;
+          tuple_ptr += alignment;
         } else {
           throw IOException("Unknown alignment %c", info.attalign);
         }
       }
 
       tuple_ptr += ProcessValue(tuple_ptr, bind_data, col_idx, skip_column,
-                                output_vector, output_offset);
+                                output, output_idx, output_offset);
     }
     output.SetCardinality(++output_offset);
   }

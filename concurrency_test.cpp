@@ -98,6 +98,29 @@ UPDATE series SET val = val + %d WHERE id=%d;
   printf("ptask %llu done %llu\n", i, n);
 }
 
+void ctask(idx_t sleep_ms) {
+  idx_t n = 0;
+  auto pconn = PQconnectdb(DSN);
+
+  if (PQstatus(pconn) == CONNECTION_BAD) {
+    throw IOException("Unable to connect to Postgres at %s", DSN);
+  }
+
+  while (carry_on) {
+
+    /* Multiple queries sent in a single PQexec call are processed in a single
+     * transaction, unless there are explicit BEGIN/COMMIT commands included in
+     * the query string to divide it into multiple transactions. */
+    PGExec(pconn, "CHECKPOINT");
+    printf("CHECKPOINT;\n");
+    std::this_thread::sleep_for(std::chrono::milliseconds(sleep_ms));
+
+    n++;
+  }
+  PQfinish(pconn);
+  printf("ctask done %llu\n", n);
+}
+
 void dtask() {
   idx_t n = 0;
   Connection dconn(db);
@@ -109,7 +132,7 @@ void dtask() {
     }
     auto val = dres->GetValue(0, 0).GetValue<int64_t>();
     if (dres->GetValue(0, 0).GetValue<int64_t>() != INVARIANT) {
-      throw InternalException("Invariant fail : %llu", val);
+      printf("Invariant fail : %llu\n", val);
     }
     n++;
   }
@@ -127,7 +150,6 @@ int main() {
   if (PQstatus(pconn) == CONNECTION_BAD) {
     throw IOException("Unable to connect to Postgres at %s", DSN);
   }
-
   PGExec(pconn, "DROP TABLE IF EXISTS series");
   PGExec(pconn, "CREATE TABLE series AS select * from generate_series (1, "
                 "1000000) id, LATERAL (SELECT 42 val) sq");
@@ -144,7 +166,7 @@ int main() {
 
   Connection dconn(db);
   auto dres =
-      dconn.Query("LOAD 'build/debug/postgres_scanner.duckdb_extension'");
+      dconn.Query("LOAD 'build/release/postgres_scanner.duckdb_extension'");
   if (!dres->success) {
     throw InternalException(dres->error);
   }
@@ -167,6 +189,7 @@ int main() {
 
   std::thread d1(dtask);
   std::thread t1(ttask, 100000);
+  std::thread c1(ctask, 500);
 
   vector<std::thread *> pthreads(THREADS);
   for (idx_t i = 0; i < THREADS; i++) {
@@ -180,6 +203,7 @@ int main() {
 
   d1.join();
   t1.join();
+  c1.join();
 
   printf("done\n");
   return 0;

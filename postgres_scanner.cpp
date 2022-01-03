@@ -22,13 +22,21 @@
 
 using namespace duckdb;
 
-// simplified from
-// https://github.com/postgres/postgres/blob/master/src/include/access/htup_details.h
-// and elsewhere
+// from itemid.h
+#define LP_UNUSED 0   /* unused (should always have lp_len=0) */
+#define LP_NORMAL 1   /* used (should always have lp_len>0) */
+#define LP_REDIRECT 2 /* HOT redirect (should have lp_len=0) */
+#define LP_DEAD 3     /* dead, may or may not have storage */
 
 struct ItemIdData {
   uint32_t lp_off : 15, lp_flags : 2, lp_len : 15;
 };
+
+// simplified from
+// https://github.com/postgres/postgres/blob/master/src/include/access/htup_details.h
+// and elsewhere
+
+#define HEAP_XMAX_INVALID 0x0800 /* t_xmax invalid/aborted */
 
 struct PageHeaderData {
   uint64_t pd_lsn;
@@ -44,9 +52,9 @@ struct PageHeaderData {
 struct HeapTupleHeaderData {
   uint32_t t_xmin;
   uint32_t t_xmax;
-  uint32_t t_cid_t_xvac;
-  uint32_t ip_blkid;
-  uint16_t ip_posid;
+  uint32_t t_cid_t_xvac; // ItemPointerData
+  uint32_t ip_blkid;     // ItemPointerData
+  uint16_t ip_posid;     // ItemPointerData
   uint16_t t_infomask2;
   uint16_t t_infomask;
   uint8_t t_hoff;
@@ -214,14 +222,13 @@ PostgresBind(ClientContext &context, vector<Value> &inputs,
   }
 
   // TODO disabled since tpcds needs too many connections
-  //  PGExec(result->conn, "BEGIN TRANSACTION");
-  //  // get a read lock on lineitem so we can be sure nobody deletes the pages
-  //  // under our asses
-  //  PGExec(result->conn,
-  //         StringUtil::Format("LOCK TABLE \"%s\".\"%s\" IN ACCESS SHARE
-  //         MODE;",
-  //                            schema_name, table_name)
-  //             .c_str());
+  PGExec(result->conn, "BEGIN TRANSACTION");
+  // get a read lock on ze table so we can be sure nobody deletes the pages
+  // under our asses
+  PGExec(result->conn,
+         StringUtil::Format("LOCK TABLE \"%s\".\"%s\" IN ACCESS SHARE MODE;",
+                            schema_name, table_name)
+             .c_str());
 
   // find the id of the table in question to simplify below queries and avoid
   // complex joins (ha)
@@ -238,7 +245,7 @@ WHERE nspname='%s' AND relname='%s'
   res = PGQuery(result->conn, StringUtil::Format(R"(
 SELECT setting || '/' || pg_relation_filepath(%d) table_path,
     current_setting('block_size') block_size,
-    txid_current()
+    (pg_control_checkpoint()).oldest_active_xid
 FROM pg_settings
 WHERE name = 'data_directory'
 )",
@@ -307,10 +314,10 @@ ORDER BY attnum
     result->columns.push_back(info);
   }
   res.reset();
-
-  // TODO TEMP
-  PQfinish(result->conn);
-  result->conn = nullptr;
+  //
+  //  // TODO TEMP
+  //  PQfinish(result->conn);
+  //  result->conn = nullptr;
 
   return_types = result->types;
   names = result->names;
@@ -393,9 +400,38 @@ static idx_t GetAttributeLength(data_ptr_t tuple_ptr, idx_t page_size,
   return len;
 }
 
-#define HEAP_HASNULL 0x0001
-#define HEAP_HASVARWIDTH 0x0002
-#define HEAP_HASEXTERNAL 0x0004
+#define HEAP_HASNULL 0x0001          /* has null attribute(s) */
+#define HEAP_HASVARWIDTH 0x0002      /* has variable-width attribute(s) */
+#define HEAP_HASEXTERNAL 0x0004      /* has external stored attribute(s) */
+#define HEAP_HASOID_OLD 0x0008       /* has an object-id field */
+#define HEAP_XMAX_KEYSHR_LOCK 0x0010 /* xmax is a key-shared locker */
+#define HEAP_COMBOCID 0x0020         /* t_cid is a combo CID */
+#define HEAP_XMAX_EXCL_LOCK 0x0040   /* xmax is exclusive locker */
+#define HEAP_XMAX_LOCK_ONLY 0x0080   /* xmax, if valid, is only a locker */
+
+/* xmax is a shared locker */
+#define HEAP_XMAX_SHR_LOCK (HEAP_XMAX_EXCL_LOCK | HEAP_XMAX_KEYSHR_LOCK)
+
+#define HEAP_LOCK_MASK                                                         \
+  (HEAP_XMAX_SHR_LOCK | HEAP_XMAX_EXCL_LOCK | HEAP_XMAX_KEYSHR_LOCK)
+#define HEAP_XMIN_COMMITTED 0x0100 /* t_xmin committed */
+#define HEAP_XMIN_INVALID 0x0200   /* t_xmin invalid/aborted */
+#define HEAP_XMIN_FROZEN (HEAP_XMIN_COMMITTED | HEAP_XMIN_INVALID)
+#define HEAP_XMAX_COMMITTED 0x0400 /* t_xmax committed */
+#define HEAP_XMAX_INVALID 0x0800   /* t_xmax invalid/aborted */
+#define HEAP_XMAX_IS_MULTI 0x1000  /* t_xmax is a MultiXactId */
+#define HEAP_UPDATED 0x2000        /* this is UPDATEd version of row */
+#define HEAP_MOVED_OFF                                                         \
+  0x4000 /* moved to another place by pre-9.0                                  \
+          * VACUUM FULL; kept for binary                                       \
+          * upgrade support */
+#define HEAP_MOVED_IN                                                          \
+  0x8000 /* moved from another place by pre-9.0                                \
+          * VACUUM FULL; kept for binary                                       \
+          * upgrade support */
+#define HEAP_MOVED (HEAP_MOVED_OFF | HEAP_MOVED_IN)
+
+#define HEAP_XACT_MASK 0xFFF0 /* visibility-related bits */
 
 #define POSTGRES_EPOCH_JDATE 2451545 /* == date2j(2000, 1, 1) */
 
@@ -663,6 +699,38 @@ static idx_t ProcessValue(data_ptr_t tuple_ptr,
     throw InternalException("Unsupported Type %s", type.ToString());
   }
 }
+//
+// A word about t_ctid: whenever a new tuple is stored on disk, its t_ctid
+//* is initialized with its own TID (location).  If the tuple is ever updated,
+//        * its t_ctid is changed to point to the replacement version of the
+//        tuple.  Or
+//* if the tuple is moved from one partition to another, due to an update of
+//        * the partition key, t_ctid is set to a special value to indicate that
+//        * (see ItemPointerSetMovedPartitions).  Thus, a tuple is the latest
+//        version
+//* of its row iff XMAX is invalid or
+//* t_ctid points to itself (in which case, if XMAX is valid, the tuple is
+//        * either locked or deleted).  One can follow the chain of t_ctid links
+//* to find the newest version of the row, unless it was moved to a different
+//* partition.  Beware however that VACUUM might
+//        * erase the pointed-to (newer) tuple before erasing the pointing
+//        (older)
+//* tuple.  Hence, when following a t_ctid link, it is necessary to check
+//        * to see if the referenced slot is empty or contains an unrelated
+//        tuple.
+//* Check that the referenced tuple has XMIN equal to the referencing tuple's
+//* XMAX to verify that it is actually the descendant version and not an
+//        * unrelated tuple stored into a slot recently freed by VACUUM.  If
+//        either
+//* check fails, one may assume that there is no live descendant version.
+//*
+
+#define HEAP_XMAX_IS_SHR_LOCKED(infomask)                                      \
+  (((infomask)&HEAP_LOCK_MASK) == HEAP_XMAX_SHR_LOCK)
+#define HEAP_XMAX_IS_EXCL_LOCKED(infomask)                                     \
+  (((infomask)&HEAP_LOCK_MASK) == HEAP_XMAX_EXCL_LOCK)
+#define HEAP_XMAX_IS_KEYSHR_LOCKED(infomask)                                   \
+  (((infomask)&HEAP_LOCK_MASK) == HEAP_XMAX_KEYSHR_LOCK)
 
 static void PostgresScan(ClientContext &context,
                          const FunctionData *bind_data_p,
@@ -694,15 +762,21 @@ static void PostgresScan(ClientContext &context,
     }
 #endif
     // unused or dead
-    if (item.lp_flags == 0 || item.lp_flags == 3) {
+    /*
+     * In some cases a line pointer is "in use" but does not have any associated
+     * storage on the page.  By convention, lp_len == 0 in every line pointer
+     * that does not have storage, independently of its lp_flags state.
+     */
+    if (item.lp_flags == LP_UNUSED || item.lp_flags == LP_DEAD ||
+        item.lp_len == 0) {
       continue;
     }
     //  redirect
-    if (item.lp_flags == 2) {
+    if (item.lp_flags == LP_REDIRECT) {
       throw IOException("REDIRECT tuples are not supported");
     }
     // normal
-    if (item.lp_flags != 1 || item.lp_len == 0) {
+    if (item.lp_flags != LP_NORMAL) {
       throw IOException("Expected NORMAL tuple with non-zero length but got "
                         "something else");
     }
@@ -712,12 +786,28 @@ static void PostgresScan(ClientContext &context,
     auto tuple_header = Load<HeapTupleHeaderData>(tuple_start_ptr);
     auto defined_ptr = tuple_start_ptr + 23;
     auto can_have_nulls = tuple_header.t_infomask & HEAP_HASNULL;
+    if (tuple_header.t_infomask & HEAP_LOCK_MASK) {
+      throw IOException("Something fishy going on");
+    }
 
-    if (tuple_header.t_xmin > bind_data->txid ||
-        (tuple_header.t_xmax != 0 && tuple_header.t_xmax < bind_data->txid)) {
+    // pretty sure we dont want to read those tuples
+    if (tuple_header.t_infomask & HEAP_XMIN_INVALID) {
+      D_ASSERT(false);
+      continue;
+    }
+
+    //      if (!(tuple_header.t_infomask & HEAP_XMIN_COMMITTED)) {
+    //                  D_ASSERT(false);
+    //          continue;
+    //      }
+
+    if (tuple_header.t_xmin >= bind_data->txid ||
+        (!(tuple_header.t_infomask & HEAP_XMAX_INVALID) &&
+         tuple_header.t_xmax < bind_data->txid)) {
       // tuple was deleted or updated elsewhere
       continue;
     }
+
     if (tuple_header.t_infomask & HEAP_HASEXTERNAL) {
       throw IOException("EXTERNAL tuples are not supported");
     }

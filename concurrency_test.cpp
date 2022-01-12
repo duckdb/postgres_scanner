@@ -62,7 +62,7 @@ static DuckDB db;
 
 static string CHECKQ = "SELECT SUM(val), COUNT(val) FROM series";
 static uint64_t INVARIANT = 42000000;
-static uint64_t THREADS = 10;
+static uint64_t THREADS = 1;
 
 static const char *DSN = "";
 
@@ -157,6 +157,7 @@ int main() {
   PGExec(pconn, "DROP TABLE IF EXISTS series");
   PGExec(pconn, "CREATE TABLE series AS select * from generate_series (1, "
                 "1000000) id, LATERAL (SELECT 42 val) sq");
+  PGExec(pconn, "CREATE INDEX series_pk ON series (id)");
   PGExec(pconn, "CHECKPOINT");
 
   // query the table schema so we can interpret the bits in the pages

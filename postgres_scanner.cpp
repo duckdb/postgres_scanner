@@ -74,6 +74,7 @@ struct ScanTask {
   string file_name;
   idx_t page_min;
   idx_t page_max;
+  bool is_last;
 };
 
 struct PostgresBindData : public FunctionData {
@@ -245,7 +246,7 @@ WHERE nspname='%s' AND relname='%s'
   res = PGQuery(result->conn, StringUtil::Format(R"(
 SELECT setting || '/' || pg_relation_filepath(%d) table_path,
     current_setting('block_size') block_size,
-    (pg_control_checkpoint()).oldest_active_xid
+    split_part((pg_control_checkpoint()).next_xid, ':', 2)::integer - 1
 FROM pg_settings
 WHERE name = 'data_directory'
 )",
@@ -254,7 +255,9 @@ WHERE name = 'data_directory'
   result->table_name = table_name;
   result->page_size = res->GetInt32(0, 1);
   result->txid = res->GetInt32(0, 2);
+
   auto base_filename = res->GetString(0, 0);
+
   res.reset();
 
   // find all the data files
@@ -283,6 +286,7 @@ WHERE name = 'data_directory'
       task.file_name = file_name;
       task.page_min = page_idx;
       task.page_max = MinValue(page_idx + PAGES_PER_TASK, pages_in_file) - 1;
+      task.is_last = task.page_max == pages_in_file - 1;
       result->tasks.push_back(move(task));
     }
   }
@@ -556,6 +560,7 @@ static bool PrepareTuple(ClientContext &context,
                          const PostgresBindData *bind_data,
                          PostgresOperatorData &state) {
   if (state.item_offset >= state.item_count) {
+
     // we need to move on to a new page or a new task
     if (!state.file_handle || state.page_offset > state.current_task.page_max) {
       // we ran out of task, do we have another one?
@@ -564,11 +569,22 @@ static bool PrepareTuple(ClientContext &context,
         return false;
       }
       state.current_task = bind_data->tasks[state.task_offset];
+
       state.file_handle = FileSystem::GetFileSystem(context).OpenFile(
           state.current_task.file_name, FileFlags::FILE_FLAGS_READ);
       state.page_offset = state.current_task.page_min;
       state.item_count = 0;
       state.task_offset++;
+
+      // TODO should not really be required but well
+      if (state.current_task.is_last) {
+        auto actual_pages =
+            state.file_handle->GetFileSize() / bind_data->page_size;
+
+        if (actual_pages != state.current_task.page_max + 1) {
+          state.current_task.page_max = actual_pages - 1;
+        }
+      }
     }
 
     auto page_ptr = state.page_buffer.get();
@@ -577,8 +593,11 @@ static bool PrepareTuple(ClientContext &context,
     // parse page header
     auto page_header = Load<PageHeaderData>(page_ptr);
 
-    // unused?
+    // unused? Move to next page.
     if (page_header.pd_upper == 0 || page_header.pd_lower == 0) {
+      state.item_ptr = nullptr; // just to be on the safe side
+      state.item_count = 0;
+      state.page_offset++;
       return false;
     }
     // some sanity check
@@ -732,6 +751,141 @@ static idx_t ProcessValue(data_ptr_t tuple_ptr,
 #define HEAP_XMAX_IS_KEYSHR_LOCKED(infomask)                                   \
   (((infomask)&HEAP_LOCK_MASK) == HEAP_XMAX_KEYSHR_LOCK)
 
+#define HEAP_XMAX_IS_LOCKED_ONLY(infomask)                                     \
+  (((infomask)&HEAP_XMAX_LOCK_ONLY) ||                                         \
+   (((infomask) & (HEAP_XMAX_IS_MULTI | HEAP_LOCK_MASK)) ==                    \
+    HEAP_XMAX_EXCL_LOCK))
+
+#define HeapTupleHeaderXminCommitted(tup)                                      \
+  (((tup)->t_infomask & HEAP_XMIN_COMMITTED) != 0)
+
+#define HeapTupleHeaderGetRawXmin(tup) ((tup)->t_xmin)
+
+#define HeapTupleHeaderXminInvalid(tup)                                        \
+  (((tup)->t_infomask & (HEAP_XMIN_COMMITTED | HEAP_XMIN_INVALID)) ==          \
+   HEAP_XMIN_INVALID)
+
+#define HeapTupleHeaderXminFrozen(tup)                                         \
+  (((tup)->t_infomask & (HEAP_XMIN_FROZEN)) == HEAP_XMIN_FROZEN)
+
+#define HeapTupleHeaderGetRawXmax(tup) ((tup)->t_xmax)
+
+bool TransactionIdPrecedes(uint32_t id1, uint32_t id2) {
+  int32_t diff;
+
+  diff = (int32_t)(id1 - id2);
+  return (diff < 0);
+}
+
+static bool TransactionIdFollowsOrEquals(uint32_t id1, uint32_t id2) {
+  int32_t diff;
+
+  diff = (int32_t)(id1 - id2);
+  return (diff >= 0);
+}
+
+static bool XidInMVCCSnapshot(uint32_t xid, uint32_t snapshot_id) {
+  /* Any xid < xmin is not in-progress */
+  if (TransactionIdPrecedes(xid, snapshot_id))
+    return false;
+  /* Any xid >= xmax is in-progress */
+  if (TransactionIdFollowsOrEquals(xid, snapshot_id)) {
+    return true;
+  }
+  return false;
+}
+
+// dance from heapam_visibility.c
+
+#define HeapTupleHeaderGetRawCommandId(tup) ((tup)->t_cid_t_xvac)
+
+static bool TupleVisible(HeapTupleHeaderData *tuple, uint32_t snapshot_txid) {
+
+  /* Used by pre-9.0 binary upgrades */
+  if (tuple->t_infomask & HEAP_MOVED_OFF || tuple->t_infomask & HEAP_MOVED_IN) {
+    throw IOException("Unexpected MOVED tuple");
+  }
+
+  if (tuple->t_infomask & HEAP_XMAX_IS_MULTI) {
+    throw IOException("Unexpected MULTI tuple");
+  }
+
+  if (tuple->t_infomask & HEAP_COMBOCID) {
+    throw IOException("Unexpected COMBO tuple");
+  }
+
+  if (tuple->t_xmin >= snapshot_txid ||
+      (!(tuple->t_infomask & HEAP_XMAX_INVALID) &&
+       tuple->t_xmax < snapshot_txid)) {
+    return false;
+  }
+  return true;
+  //
+  //  // FIXME
+  //
+  //  if (!HeapTupleHeaderXminCommitted(tuple)) {
+  //    if (HeapTupleHeaderXminInvalid(tuple))
+  //      return false;
+  //    else if (HeapTupleHeaderGetRawXmin(tuple) == snapshot_txid) {
+  //      //      if (HeapTupleHeaderGetRawCommandId(tuple) >= snapshot_cid)
+  //      //        return false; /* inserted after scan started */
+  //
+  //      if (tuple->t_infomask & HEAP_XMAX_INVALID) /* xid invalid */
+  //        return true;
+  //
+  //      if (HEAP_XMAX_IS_LOCKED_ONLY(tuple->t_infomask)) /* not deleter */
+  //        return true;
+  //
+  //      if (HeapTupleHeaderGetRawXmax(tuple) != snapshot_txid) {
+  //        return true;
+  //      }
+  //
+  ////      if (HeapTupleHeaderGetRawCommandId(tuple) >= snapshot_cid)
+  ////        return true; /* deleted after scan started */
+  ////      else
+  ////        return false; /* deleted before scan started */
+  //    }
+  //
+  //    else if (XidInMVCCSnapshot(HeapTupleHeaderGetRawXmin(tuple),
+  //    snapshot_txid))
+  //      return false;
+  //    else {
+  //      return false;
+  //    }
+  //  } else {
+  //    /* xmin is committed, but maybe not according to our snapshot */
+  //    if (!HeapTupleHeaderXminFrozen(tuple) &&
+  //        XidInMVCCSnapshot(HeapTupleHeaderGetRawXmin(tuple), snapshot_txid))
+  //      return false; /* treat as still in progress */
+  //  }
+  //
+  //  /* by here, the inserting transaction has committed */
+  //
+  //  if (tuple->t_infomask & HEAP_XMAX_INVALID) /* xid invalid or aborted */
+  //    return true;
+  //
+  //  if (HEAP_XMAX_IS_LOCKED_ONLY(tuple->t_infomask))
+  //    return true;
+  //
+  //  if (tuple->t_infomask & HEAP_XMAX_IS_MULTI) {
+  //    throw IOException("Unexpected MULTI tuple");
+  //  }
+  //
+  //  if (!(tuple->t_infomask & HEAP_XMAX_COMMITTED)) {
+  //
+  //    if (XidInMVCCSnapshot(HeapTupleHeaderGetRawXmax(tuple), snapshot_txid))
+  //      return true;
+  //
+  //  } else {
+  //    /* xmax is committed, but maybe not according to our snapshot */
+  //    if (XidInMVCCSnapshot(HeapTupleHeaderGetRawXmax(tuple), snapshot_txid))
+  //      return true; /* treat as still in progress */
+  //  }
+  //
+  //  /* xmax transaction committed */
+  //  return false;
+}
+
 static void PostgresScan(ClientContext &context,
                          const FunctionData *bind_data_p,
                          FunctionOperatorData *operator_state, DataChunk *,
@@ -743,14 +897,13 @@ static void PostgresScan(ClientContext &context,
   auto bind_data = (const PostgresBindData *)bind_data_p;
   auto &state = (PostgresOperatorData &)*operator_state;
 
-  if (state.done) {
-    return;
-  }
-
   idx_t output_offset = 0;
   while (output_offset < STANDARD_VECTOR_SIZE) {
-    if (!PrepareTuple(context, bind_data, state)) {
+    if (state.done) {
       return;
+    }
+    if (!PrepareTuple(context, bind_data, state)) {
+      continue;
     }
 
     // maybe its faster to read the items in one go, but perhaps not since
@@ -786,30 +939,9 @@ static void PostgresScan(ClientContext &context,
     auto tuple_header = Load<HeapTupleHeaderData>(tuple_start_ptr);
     auto defined_ptr = tuple_start_ptr + 23;
     auto can_have_nulls = tuple_header.t_infomask & HEAP_HASNULL;
-    if (tuple_header.t_infomask & HEAP_LOCK_MASK) {
-      throw IOException("Something fishy going on");
-    }
 
-    // pretty sure we dont want to read those tuples
-    if (tuple_header.t_infomask & HEAP_XMIN_INVALID) {
-      D_ASSERT(false);
+    if (!TupleVisible(&tuple_header, bind_data->txid)) {
       continue;
-    }
-
-    //      if (!(tuple_header.t_infomask & HEAP_XMIN_COMMITTED)) {
-    //                  D_ASSERT(false);
-    //          continue;
-    //      }
-
-    if (tuple_header.t_xmin >= bind_data->txid ||
-        (!(tuple_header.t_infomask & HEAP_XMAX_INVALID) &&
-         tuple_header.t_xmax < bind_data->txid)) {
-      // tuple was deleted or updated elsewhere
-      continue;
-    }
-
-    if (tuple_header.t_infomask & HEAP_HASEXTERNAL) {
-      throw IOException("EXTERNAL tuples are not supported");
     }
 
     auto tuple_ptr = tuple_start_ptr + tuple_header.t_hoff;

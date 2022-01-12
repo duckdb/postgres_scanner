@@ -60,7 +60,7 @@ static unique_ptr<PGQueryResult> PGQuery(PGconn *conn, string q) {
 
 static DuckDB db;
 
-static string CHECKQ = "SELECT SUM(val) FROM series";
+static string CHECKQ = "SELECT SUM(val), COUNT(val) FROM series";
 static uint64_t INVARIANT = 42000000;
 static uint64_t THREADS = 10;
 
@@ -112,7 +112,7 @@ void ctask(idx_t sleep_ms) {
      * transaction, unless there are explicit BEGIN/COMMIT commands included in
      * the query string to divide it into multiple transactions. */
     PGExec(pconn, "CHECKPOINT");
-    printf("CHECKPOINT;\n");
+    printf("CHECKPOINT\n");
     std::this_thread::sleep_for(std::chrono::milliseconds(sleep_ms));
 
     n++;
@@ -122,6 +122,8 @@ void ctask(idx_t sleep_ms) {
 }
 
 void dtask() {
+  idx_t failure = 0;
+
   idx_t n = 0;
   Connection dconn(db);
 
@@ -131,12 +133,14 @@ void dtask() {
       throw InternalException(dres->error);
     }
     auto val = dres->GetValue(0, 0).GetValue<int64_t>();
-    if (dres->GetValue(0, 0).GetValue<int64_t>() != INVARIANT) {
-      printf("Invariant fail : %llu\n", val);
+    if (val != INVARIANT) {
+      failure++;
+      printf("Invariant fail : %llu %llu\n", val,
+             dres->GetValue(1, 0).GetValue<int64_t>());
     }
     n++;
   }
-  printf("dtask done %llu\n", n);
+  printf("dtask done %llu, inconsistent %llu\n", n, failure);
 }
 
 void ttask(idx_t n) {
@@ -159,7 +163,7 @@ int main() {
   // fun fact: this query also works in DuckDB ^^
   auto pres = PGQuery(pconn, CHECKQ);
   if (pres->GetInt64(0, 0) != INVARIANT) {
-    throw InternalException("Invariant fail");
+    InternalException("Invariant fail");
   }
   pres.reset();
   PQfinish(pconn);
@@ -178,8 +182,10 @@ int main() {
   if (!dres->success) {
     throw InternalException(dres->error);
   }
-  if (dres->GetValue(0, 0).GetValue<int64_t>() != INVARIANT) {
-    throw InternalException("Invariant fail");
+  auto val = dres->GetValue(0, 0).GetValue<int64_t>();
+  if (val != INVARIANT) {
+    printf("Initial Invariant fail : %llu %llu\n", val,
+           dres->GetValue(1, 0).GetValue<int64_t>());
   }
 
   // battle plan: launch n threads, have them loop transactions that move val
@@ -188,7 +194,7 @@ int main() {
   // TODO have another thread that deletes and inserts rows?
 
   std::thread d1(dtask);
-  std::thread t1(ttask, 100000);
+  std::thread t1(ttask, 10000);
   std::thread c1(ctask, 500);
 
   vector<std::thread *> pthreads(THREADS);

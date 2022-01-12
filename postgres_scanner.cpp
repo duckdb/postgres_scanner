@@ -946,11 +946,11 @@ AttachBind(ClientContext &context, vector<Value> &inputs,
 
   for (auto &kv : named_parameters) {
     if (kv.first == "source_schema") {
-      result->source_schema = kv.second.str_value;
+      result->source_schema = StringValue::Get(kv.second);
     } else if (kv.first == "target_schema") {
-      result->target_schema = kv.second.str_value;
+      result->target_schema = StringValue::Get(kv.second);
     } else if (kv.first == "overwrite") {
-      result->overwrite = kv.second.value_.boolean;
+      result->overwrite = BooleanValue::Get(kv.second);
     }
   }
 

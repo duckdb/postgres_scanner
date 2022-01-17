@@ -203,9 +203,9 @@ static unique_ptr<PGQueryResult> PGQuery(PGconn *conn, string q) {
   return res;
 }
 
-unique_ptr<FunctionData>
+static unique_ptr<FunctionData>
 PostgresBind(ClientContext &context, vector<Value> &inputs,
-             unordered_map<string, Value> &named_parameters,
+             named_parameter_map_t &named_parameters,
              vector<LogicalType> &input_table_types,
              vector<string> &input_table_names,
              vector<LogicalType> &return_types, vector<string> &names) {
@@ -246,7 +246,7 @@ WHERE nspname='%s' AND relname='%s'
   res = PGQuery(result->conn, StringUtil::Format(R"(
 SELECT setting || '/' || pg_relation_filepath(%d) table_path,
     current_setting('block_size') block_size,
-    split_part((pg_control_checkpoint()).next_xid, ':', 2)::integer - 1
+    split_part((pg_control_checkpoint()).next_xid, ':', 2)::integer
 FROM pg_settings
 WHERE name = 'data_directory'
 )",
@@ -556,6 +556,10 @@ static void ReadDecimal(idx_t scale, int32_t ndigits, int32_t weight,
       (integral_part + fractional_part) * (is_negative ? -1 : 1);
 }
 
+// how does checkpoint actually do this?
+// https://github.com/postgres/postgres/blob/master/src/backend/access/transam/xlog.c#L9569
+// https://github.com/postgres/postgres/blob/master/src/backend/storage/buffer/bufmgr.c#L1933
+
 static bool PrepareTuple(ClientContext &context,
                          const PostgresBindData *bind_data,
                          PostgresOperatorData &state) {
@@ -814,76 +818,93 @@ static bool TupleVisible(HeapTupleHeaderData *tuple, uint32_t snapshot_txid) {
     throw IOException("Unexpected COMBO tuple");
   }
 
-  if (tuple->t_xmin >= snapshot_txid ||
-      (!(tuple->t_infomask & HEAP_XMAX_INVALID) &&
-       tuple->t_xmax < snapshot_txid)) {
+  if (tuple->t_infomask & HEAP_XMIN_INVALID || tuple->t_xmin > snapshot_txid) {
     return false;
   }
-  return true;
+
+  if (tuple->t_infomask & HEAP_XMAX_INVALID ||
+      HEAP_XMAX_IS_LOCKED_ONLY(tuple->t_infomask)) {
+    return true;
+  }
+
+  //    printf("%d %d\n", tuple->ip_blkid, tuple->ip_posid);
+
+  if (tuple->t_xmax > snapshot_txid) {
+    return true;
+  }
   //
+  //  if (HeapTupleHeaderGetRawCommandId(tuple)  > 1 ||
+  //  HeapTupleHeaderGetRawCommandId(tuple) < 0) printf("%d\n",
+  //  HeapTupleHeaderGetRawCommandId(tuple));
+  //
+  return false;
+  //  //
   //  // FIXME
   //
-  //  if (!HeapTupleHeaderXminCommitted(tuple)) {
-  //    if (HeapTupleHeaderXminInvalid(tuple))
-  //      return false;
-  //    else if (HeapTupleHeaderGetRawXmin(tuple) == snapshot_txid) {
-  //      //      if (HeapTupleHeaderGetRawCommandId(tuple) >= snapshot_cid)
-  //      //        return false; /* inserted after scan started */
+  //    if (!HeapTupleHeaderXminCommitted(tuple)) {
+  //      if (HeapTupleHeaderXminInvalid(tuple))
+  //        return false;
+  //      else if (HeapTupleHeaderGetRawXmin(tuple) == snapshot_txid) {
+  //              if (HeapTupleHeaderGetRawCommandId(tuple) >= 0)
+  //                return false; /* inserted after scan started */
   //
-  //      if (tuple->t_infomask & HEAP_XMAX_INVALID) /* xid invalid */
-  //        return true;
+  //        if (tuple->t_infomask & HEAP_XMAX_INVALID) /* xid invalid */
+  //          return true;
   //
-  //      if (HEAP_XMAX_IS_LOCKED_ONLY(tuple->t_infomask)) /* not deleter */
-  //        return true;
+  //        if (HEAP_XMAX_IS_LOCKED_ONLY(tuple->t_infomask)) /* not deleter */
+  //          return true;
   //
-  //      if (HeapTupleHeaderGetRawXmax(tuple) != snapshot_txid) {
-  //        return true;
+  //        if (HeapTupleHeaderGetRawXmax(tuple) != snapshot_txid) {
+  //          return true;
+  //        }
+  //
+  //        if (HeapTupleHeaderGetRawCommandId(tuple) >= 0)
+  //          return true; /* deleted after scan started */
+  //        else
+  //          return false; /* deleted before scan started */
   //      }
   //
-  ////      if (HeapTupleHeaderGetRawCommandId(tuple) >= snapshot_cid)
-  ////        return true; /* deleted after scan started */
-  ////      else
-  ////        return false; /* deleted before scan started */
+  //      else if (XidInMVCCSnapshot(HeapTupleHeaderGetRawXmin(tuple),
+  //      snapshot_txid))
+  //        return false;
+  //      else {
+  //        return false;
+  //      }
+  //    } else {
+  //      /* xmin is committed, but maybe not according to our snapshot */
+  //      if (!HeapTupleHeaderXminFrozen(tuple) &&
+  //          XidInMVCCSnapshot(HeapTupleHeaderGetRawXmin(tuple),
+  //          snapshot_txid))
+  //        return false; /* treat as still in progress */
   //    }
   //
-  //    else if (XidInMVCCSnapshot(HeapTupleHeaderGetRawXmin(tuple),
-  //    snapshot_txid))
-  //      return false;
-  //    else {
-  //      return false;
-  //    }
-  //  } else {
-  //    /* xmin is committed, but maybe not according to our snapshot */
-  //    if (!HeapTupleHeaderXminFrozen(tuple) &&
-  //        XidInMVCCSnapshot(HeapTupleHeaderGetRawXmin(tuple), snapshot_txid))
-  //      return false; /* treat as still in progress */
-  //  }
+  //    /* by here, the inserting transaction has committed */
   //
-  //  /* by here, the inserting transaction has committed */
-  //
-  //  if (tuple->t_infomask & HEAP_XMAX_INVALID) /* xid invalid or aborted */
-  //    return true;
-  //
-  //  if (HEAP_XMAX_IS_LOCKED_ONLY(tuple->t_infomask))
-  //    return true;
-  //
-  //  if (tuple->t_infomask & HEAP_XMAX_IS_MULTI) {
-  //    throw IOException("Unexpected MULTI tuple");
-  //  }
-  //
-  //  if (!(tuple->t_infomask & HEAP_XMAX_COMMITTED)) {
-  //
-  //    if (XidInMVCCSnapshot(HeapTupleHeaderGetRawXmax(tuple), snapshot_txid))
+  //    if (tuple->t_infomask & HEAP_XMAX_INVALID) /* xid invalid or aborted */
   //      return true;
   //
-  //  } else {
-  //    /* xmax is committed, but maybe not according to our snapshot */
-  //    if (XidInMVCCSnapshot(HeapTupleHeaderGetRawXmax(tuple), snapshot_txid))
-  //      return true; /* treat as still in progress */
-  //  }
+  //    if (HEAP_XMAX_IS_LOCKED_ONLY(tuple->t_infomask))
+  //      return true;
   //
-  //  /* xmax transaction committed */
-  //  return false;
+  //    if (tuple->t_infomask & HEAP_XMAX_IS_MULTI) {
+  //      throw IOException("Unexpected MULTI tuple");
+  //    }
+  //
+  //    if (!(tuple->t_infomask & HEAP_XMAX_COMMITTED)) {
+  //
+  //      if (XidInMVCCSnapshot(HeapTupleHeaderGetRawXmax(tuple),
+  //      snapshot_txid))
+  //        return true;
+  //
+  //    } else {
+  //      /* xmax is committed, but maybe not according to our snapshot */
+  //      if (XidInMVCCSnapshot(HeapTupleHeaderGetRawXmax(tuple),
+  //      snapshot_txid))
+  //        return true; /* treat as still in progress */
+  //    }
+  //
+  //    /* xmax transaction committed */
+  //    return false;
 }
 
 static void PostgresScan(ClientContext &context,
@@ -1069,10 +1090,11 @@ struct AttachFunctionData : public TableFunctionData {
 
 static unique_ptr<FunctionData>
 AttachBind(ClientContext &context, vector<Value> &inputs,
-           unordered_map<string, Value> &named_parameters,
+           named_parameter_map_t &named_parameters,
            vector<LogicalType> &input_table_types,
            vector<string> &input_table_names, vector<LogicalType> &return_types,
            vector<string> &names) {
+
   auto result = make_unique<AttachFunctionData>();
   result->dsn = inputs[0].GetValue<string>();
 

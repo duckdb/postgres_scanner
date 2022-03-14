@@ -1,4 +1,4 @@
-.PHONY: all clean format debug release duckdb_debug duckdb_release
+.PHONY: all clean format debug release duckdb_debug duckdb_release update
 all: release
 GEN=ninja
 clean:
@@ -32,3 +32,6 @@ format:
 	clang-format --sort-includes=0 -style=file -i postgres_scanner.cpp
 	clang-format --sort-includes=0 -style=file -i concurrency_test.cpp
 	cmake-format -i CMakeLists.txt
+
+update:
+	git submodule update --remote --merge

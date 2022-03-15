@@ -79,6 +79,8 @@ void ptask(idx_t i) {
     throw IOException("Unable to connect to Postgres at %s", DSN);
   }
 
+  PGExec(pconn, "BEGIN TRANSACTION");
+
   while (carry_on) {
     auto source = ids_rng(rng);
     auto target = ids_rng(rng);
@@ -92,8 +94,12 @@ UPDATE series SET val = val - %d WHERE id=%d;
 UPDATE series SET val = val + %d WHERE id=%d;
         )",
                                      amount, source, amount, target));
+
     n++;
   }
+
+  PGExec(pconn, "COMMIT");
+
   PQfinish(pconn);
   printf("ptask %llu done %llu\n", i, n);
 }

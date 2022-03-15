@@ -31,13 +31,6 @@ struct PostgresColumnInfo {
   string typname;
 };
 
-struct ScanTask {
-  string file_name;
-  idx_t page_min;
-  idx_t page_max;
-  bool is_last;
-};
-
 struct PostgresBindData : public FunctionData {
   string schema_name;
   string table_name;
@@ -48,13 +41,15 @@ struct PostgresBindData : public FunctionData {
   idx_t page_size = 0;
   idx_t txid = 0;
 
-  vector<ScanTask> tasks;
   vector<PostgresColumnInfo> columns;
   vector<string> names;
   vector<LogicalType> types;
 
   idx_t pages_per_task = 10000;
   string dsn;
+
+  string snapshot;
+
   PGconn *conn = nullptr;
   ~PostgresBindData() {
     if (conn) {
@@ -89,8 +84,7 @@ struct PGQueryResult {
 
 struct PostgresOperatorData : public FunctionOperatorData {
   bool done = false;
-  vector<idx_t> scan_columns;
-  idx_t max_bound_column_id;
+  vector<column_t> column_ids;
   PGconn *conn = nullptr;
 
   ~PostgresOperatorData() {
@@ -100,27 +94,12 @@ struct PostgresOperatorData : public FunctionOperatorData {
       conn = nullptr;
     }
   }
-
-  void InitScanColumns(idx_t ncol, const vector<column_t> &column_ids) {
-    idx_t col_idx = 0;
-    max_bound_column_id = 0;
-    scan_columns.resize(ncol, -1);
-    for (auto &col : column_ids) {
-      if (col == COLUMN_IDENTIFIER_ROW_ID) {
-        continue;
-      }
-      scan_columns[col] = col_idx;
-      col_idx++;
-      if (col > max_bound_column_id) {
-        max_bound_column_id = col;
-      }
-    }
-  }
 };
 
 struct PostgresParallelState : public ParallelState {
+  PostgresParallelState() : page_idx(0) {}
   mutex lock;
-  idx_t page_idx = 0;
+  idx_t page_idx;
 };
 
 static LogicalType DuckDBType(const string &pgtypename, const int atttypmod) {
@@ -186,13 +165,7 @@ PostgresBind(ClientContext &context, vector<Value> &inputs,
   }
 
   // TODO disabled since tpcds needs too many connections
-  PGExec(bind_data->conn, "BEGIN TRANSACTION");
-  // get a read lock on ze table so we can be sure nobody deletes the pages
-  // under our asses
-  PGExec(bind_data->conn,
-         StringUtil::Format("LOCK TABLE \"%s\".\"%s\" IN ACCESS SHARE MODE;",
-                            bind_data->schema_name, bind_data->table_name)
-             .c_str());
+  PGExec(bind_data->conn, "BEGIN TRANSACTION ISOLATION LEVEL REPEATABLE READ");
 
   // find the id of the table in question to simplify below queries and avoid
   // complex joins (ha)
@@ -238,6 +211,9 @@ ORDER BY attnum
   }
   res.reset();
 
+  res = PGQuery(bind_data->conn, "SELECT pg_export_snapshot()");
+  bind_data->snapshot = res->GetString(0, 0);
+
   return_types = bind_data->types;
   names = bind_data->names;
 
@@ -259,21 +235,29 @@ static void PostgresInitInternal(ClientContext &context,
     throw IOException("Unable to connect to Postgres at %s", bind_data->dsn);
   }
 
-  PGExec(local_state->conn, "BEGIN TRANSACTION");
+  PGExec(local_state->conn,
+         "BEGIN TRANSACTION ISOLATION LEVEL REPEATABLE READ");
+  PGExec(local_state->conn, StringUtil::Format("SET TRANSACTION SNAPSHOT '%s'",
+                                               bind_data->snapshot));
+
+  auto col_names = StringUtil::Join(
+      local_state->column_ids.data(), local_state->column_ids.size(), ", ",
+      [&](const idx_t column_id) {
+        return column_id == COLUMN_IDENTIFIER_ROW_ID
+                   ? '"' + bind_data->names[0] + '"'
+                   : '"' + bind_data->names[column_id] + '"';
+      });
 
   // https://www.postgresql.org/docs/current/sql-declare.html
   auto sql = StringUtil::Format(
       R"(
-DECLARE duckdb_scan_cursor BINARY INSENSITIVE NO SCROLL CURSOR WITHOUT HOLD FOR SELECT * FROM "%s"."%s" WHERE ctid BETWEEN '(%d,0)'::tid AND '(%d,0)'::tid;
+DECLARE duckdb_scan_cursor BINARY INSENSITIVE NO SCROLL CURSOR WITHOUT HOLD FOR SELECT %s FROM "%s"."%s" WHERE ctid BETWEEN '(%d,0)'::tid AND '(%d,0)'::tid;
 )",
-      bind_data->schema_name, bind_data->table_name, task_min, task_max + 1);
-  auto res = PQexec(local_state->conn, sql.c_str());
+      col_names, bind_data->schema_name, bind_data->table_name, task_min,
+      task_max + 1);
 
-  if (PQresultStatus(res) != PGRES_COMMAND_OK) {
-    throw IOException("Unable to query Postgres: %s",
-                      string(PQresultErrorMessage(res)));
-  }
-  PQclear(res);
+  PGExec(local_state->conn, sql);
+  // construct string here so we don
   local_state->done = false;
 }
 
@@ -283,10 +267,8 @@ PostgresInit(ClientContext &context, const FunctionData *bind_data_p,
   D_ASSERT(bind_data_p);
   auto bind_data = (const PostgresBindData *)bind_data_p;
   auto result = make_unique<PostgresOperatorData>();
-
-  PostgresInitInternal(context, bind_data, result.get(), 0,
-                       bind_data->tasks.size());
-  result->InitScanColumns(bind_data->types.size(), column_ids);
+  result->column_ids = column_ids;
+  PostgresInitInternal(context, bind_data, result.get(), 0, bind_data->pages);
   return move(result);
 }
 
@@ -405,13 +387,11 @@ static void ReadDecimal(idx_t scale, int32_t ndigits, int32_t weight,
   }
 
   // finally
-  out_ptr[output_offset] =
-      (integral_part + fractional_part) * (is_negative ? -1 : 1);
-}
 
-// how does checkpoint actually do this?
-// https://github.com/postgres/postgres/blob/master/src/backend/access/transam/xlog.c#L9569
-// https://github.com/postgres/postgres/blob/master/src/backend/storage/buffer/bufmgr.c#L1933
+  auto base_res = (integral_part + fractional_part);
+
+  out_ptr[output_offset] = (is_negative ? -base_res : base_res);
+}
 
 static void ProcessValue(data_ptr_t value_ptr, idx_t value_len,
                          const PostgresBindData *bind_data, idx_t col_idx,
@@ -520,7 +500,11 @@ static void PostgresScan(ClientContext &context,
     return;
   }
 
-  auto res = PGQuery(local_state.conn, "FETCH 1024 FROM duckdb_scan_cursor");
+  auto sql = StringUtil::Format("FETCH %d FROM duckdb_scan_cursor",
+                                STANDARD_VECTOR_SIZE);
+
+  auto res = PGQuery(local_state.conn, sql);
+  D_ASSERT(res); // TODO complain
 
   auto read_now =
       MinValue((idx_t)STANDARD_VECTOR_SIZE, (idx_t)(PQntuples(res->res)));
@@ -530,13 +514,20 @@ static void PostgresScan(ClientContext &context,
   }
   output.SetCardinality(read_now);
 
-  for (idx_t row = 0; row < read_now; row++) {
-    for (idx_t col = 0; col < output.ColumnCount(); col++) {
-      auto raw_val = (data_ptr_t)PQgetvalue(res->res, row, col);
-      auto raw_len = PQgetlength(res->res, row, col);
-      D_ASSERT(PQfformat(res->res, col) == 1);
+  for (idx_t output_offset = 0; output_offset < read_now; output_offset++) {
+    for (idx_t output_idx = 0; output_idx < output.ColumnCount();
+         output_idx++) {
+      auto col_idx = local_state.column_ids[output_idx];
+      if (col_idx == COLUMN_IDENTIFIER_ROW_ID) {
+        col_idx = 0;
+      }
+      auto raw_val =
+          (data_ptr_t)PQgetvalue(res->res, output_offset, output_idx);
+      auto raw_len = PQgetlength(res->res, output_offset, output_idx);
+      D_ASSERT(PQfformat(res->res, output_idx) == 1);
 
-      ProcessValue(raw_val, raw_len, bind_data, col, false, output, col, row);
+      ProcessValue(raw_val, raw_len, bind_data, col_idx, false, output,
+                   output_idx, output_offset);
     }
   }
 }
@@ -553,22 +544,20 @@ static unique_ptr<ParallelState>
 PostgresInitParallelState(ClientContext &context, const FunctionData *,
                           const vector<column_t> &column_ids,
                           TableFilterCollection *) {
-  auto result = make_unique<PostgresParallelState>();
-  result->page_idx = 0;
-  return move(result);
+  return make_unique<PostgresParallelState>();
 }
 
 static bool PostgresParallelStateNext(ClientContext &context,
                                       const FunctionData *bind_data_p,
-                                      FunctionOperatorData *state_p,
+                                      FunctionOperatorData *local_state_p,
                                       ParallelState *parallel_state_p) {
   D_ASSERT(bind_data_p);
-  D_ASSERT(state_p);
+  D_ASSERT(local_state_p);
   D_ASSERT(parallel_state_p);
 
   auto bind_data = (const PostgresBindData *)bind_data_p;
   auto &parallel_state = (PostgresParallelState &)*parallel_state_p;
-  auto local_state = (PostgresOperatorData *)state_p;
+  auto local_state = (PostgresOperatorData *)local_state_p;
 
   lock_guard<mutex> parallel_lock(parallel_state.lock);
 
@@ -587,15 +576,13 @@ PostgresParallelInit(ClientContext &context, const FunctionData *bind_data_p,
                      ParallelState *parallel_state_p,
                      const vector<column_t> &column_ids,
                      TableFilterCollection *) {
-  auto result = make_unique<PostgresOperatorData>();
-  if (!PostgresParallelStateNext(context, bind_data_p, result.get(),
+  auto local_state = make_unique<PostgresOperatorData>();
+  local_state->column_ids = column_ids;
+  if (!PostgresParallelStateNext(context, bind_data_p, local_state.get(),
                                  parallel_state_p)) {
-    result->done = true;
+    local_state->done = true;
   }
-  auto bind_data = (const PostgresBindData *)bind_data_p;
-
-  result->InitScanColumns(bind_data->types.size(), column_ids);
-  return move(result);
+  return move(local_state);
 }
 
 static string PostgresScanToString(const FunctionData *bind_data_p) {
@@ -729,8 +716,8 @@ public:
             PostgresScan, PostgresBind, PostgresInit, nullptr, nullptr, nullptr,
             PostgresCardinality, nullptr, PostgresScanToString,
             PostgresMaxThreads, PostgresInitParallelState, nullptr,
-            PostgresParallelInit, PostgresParallelStateNext, false /* TODO */,
-            false, nullptr) {}
+            PostgresParallelInit, PostgresParallelStateNext, true, false,
+            nullptr) {}
 };
 
 extern "C" {

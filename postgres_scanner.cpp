@@ -22,45 +22,6 @@
 
 using namespace duckdb;
 
-// from itemid.h
-#define LP_UNUSED 0   /* unused (should always have lp_len=0) */
-#define LP_NORMAL 1   /* used (should always have lp_len>0) */
-#define LP_REDIRECT 2 /* HOT redirect (should have lp_len=0) */
-#define LP_DEAD 3     /* dead, may or may not have storage */
-
-struct ItemIdData {
-  uint32_t lp_off : 15, lp_flags : 2, lp_len : 15;
-};
-
-// simplified from
-// https://github.com/postgres/postgres/blob/master/src/include/access/htup_details.h
-// and elsewhere
-
-#define HEAP_XMAX_INVALID 0x0800 /* t_xmax invalid/aborted */
-
-struct PageHeaderData {
-  uint64_t pd_lsn;
-  uint16_t pd_checksum;
-  uint16_t pd_flags;
-  uint16_t pd_lower;
-  uint16_t pd_upper;
-  uint16_t pd_special;
-  uint16_t pd_pagesize_version;
-  uint32_t pd_prune_xid;
-};
-
-struct HeapTupleHeaderData {
-  uint32_t t_xmin;
-  uint32_t t_xmax;
-  uint32_t t_cid_t_xvac; // ItemPointerData
-  uint32_t ip_blkid;     // ItemPointerData
-  uint16_t ip_posid;     // ItemPointerData
-  uint16_t t_infomask2;
-  uint16_t t_infomask;
-  uint8_t t_hoff;
-  /* ^ - 23 bytes - ^ */
-};
-
 struct PostgresColumnInfo {
   string attname;
   idx_t attlen;
@@ -78,9 +39,12 @@ struct ScanTask {
 };
 
 struct PostgresBindData : public FunctionData {
+  string schema_name;
   string table_name;
   idx_t oid = 0;
   idx_t cardinality = 0;
+  idx_t pages = 0;
+
   idx_t page_size = 0;
   idx_t txid = 0;
 
@@ -89,73 +53,20 @@ struct PostgresBindData : public FunctionData {
   vector<string> names;
   vector<LogicalType> types;
 
+  idx_t pages_per_task = 10000;
+  string dsn;
   PGconn *conn = nullptr;
   ~PostgresBindData() {
     if (conn) {
-      PQexec(conn, "ROLLBACK");
       PQfinish(conn);
       conn = nullptr;
     }
   }
 };
 
-struct PostgresOperatorData : public FunctionOperatorData {
-  bool done = false;
-  vector<idx_t> scan_columns;
-  idx_t max_bound_column_id;
-  unique_ptr<FileHandle> file_handle;
-  idx_t task_offset;
-  idx_t task_max;
-  ScanTask current_task;
-  idx_t page_offset;
-  unique_ptr<data_t[]> page_buffer;
-  idx_t item_count;
-  idx_t item_offset;
-  ItemIdData *item_ptr;
-
-  void InitScanColumns(idx_t ncol, const vector<column_t> &column_ids) {
-    idx_t col_idx = 0;
-    max_bound_column_id = 0;
-    scan_columns.resize(ncol, -1);
-    for (auto &col : column_ids) {
-      if (col == COLUMN_IDENTIFIER_ROW_ID) {
-        continue;
-      }
-      scan_columns[col] = col_idx;
-      col_idx++;
-      if (col > max_bound_column_id) {
-        max_bound_column_id = col;
-      }
-    }
-  }
-};
-
-struct PostgresParallelState : public ParallelState {
-  mutex lock;
-  idx_t task_idx;
-};
-
-static constexpr idx_t PAGES_PER_TASK = 10000;
-
-static LogicalType DuckDBType(const string &pgtypename, const int atttypmod) {
-  if (pgtypename == "int4") {
-    return LogicalType::INTEGER;
-  } else if (pgtypename == "int8") {
-    return LogicalType::BIGINT;
-  } else if (pgtypename == "numeric") {
-    auto width = ((atttypmod - sizeof(int32_t)) >> 16) & 0xffff;
-    auto scale = (((atttypmod - sizeof(int32_t)) & 0x7ff) ^ 1024) - 1024;
-    return LogicalType::DECIMAL(width, scale);
-  } else if (pgtypename == "bpchar" || pgtypename == "varchar") {
-    return LogicalType::VARCHAR;
-  } else if (pgtypename == "date") {
-    return LogicalType::DATE;
-  } else {
-    throw IOException("Unsupported Postgres type %s", pgtypename);
-  }
-}
-
 struct PGQueryResult {
+
+  PGQueryResult(PGresult *res_p) : res(res_p) {}
   ~PGQueryResult() {
     if (res) {
       PQclear(res);
@@ -176,9 +87,62 @@ struct PGQueryResult {
   }
 };
 
+struct PostgresOperatorData : public FunctionOperatorData {
+  bool done = false;
+  vector<idx_t> scan_columns;
+  idx_t max_bound_column_id;
+  PGconn *conn = nullptr;
+
+  ~PostgresOperatorData() {
+    if (conn) {
+      PQexec(conn, "ROLLBACK");
+      PQfinish(conn);
+      conn = nullptr;
+    }
+  }
+
+  void InitScanColumns(idx_t ncol, const vector<column_t> &column_ids) {
+    idx_t col_idx = 0;
+    max_bound_column_id = 0;
+    scan_columns.resize(ncol, -1);
+    for (auto &col : column_ids) {
+      if (col == COLUMN_IDENTIFIER_ROW_ID) {
+        continue;
+      }
+      scan_columns[col] = col_idx;
+      col_idx++;
+      if (col > max_bound_column_id) {
+        max_bound_column_id = col;
+      }
+    }
+  }
+};
+
+struct PostgresParallelState : public ParallelState {
+  mutex lock;
+  idx_t page_idx = 0;
+};
+
+static LogicalType DuckDBType(const string &pgtypename, const int atttypmod) {
+  if (pgtypename == "int4") {
+    return LogicalType::INTEGER;
+  } else if (pgtypename == "int8") {
+    return LogicalType::BIGINT;
+  } else if (pgtypename == "numeric") {
+    auto width = ((atttypmod - sizeof(int32_t)) >> 16) & 0xffff;
+    auto scale = (((atttypmod - sizeof(int32_t)) & 0x7ff) ^ 1024) - 1024;
+    return LogicalType::DECIMAL(width, scale);
+  } else if (pgtypename == "bpchar" || pgtypename == "varchar") {
+    return LogicalType::VARCHAR;
+  } else if (pgtypename == "date") {
+    return LogicalType::DATE;
+  } else {
+    throw IOException("Unsupported Postgres type %s", pgtypename);
+  }
+}
+
 static void PGExec(PGconn *conn, string q) {
-  auto res = make_unique<PGQueryResult>();
-  res->res = PQexec(conn, q.c_str());
+  auto res = make_unique<PGQueryResult>(PQexec(conn, q.c_str()));
 
   if (!res->res) {
     throw IOException("Unable to query Postgres");
@@ -190,8 +154,7 @@ static void PGExec(PGconn *conn, string q) {
 }
 
 static unique_ptr<PGQueryResult> PGQuery(PGconn *conn, string q) {
-  auto res = make_unique<PGQueryResult>();
-  res->res = PQexec(conn, q.c_str());
+  auto res = make_unique<PGQueryResult>(PQexec(conn, q.c_str()));
 
   if (!res->res) {
     throw IOException("Unable to query Postgres");
@@ -210,98 +173,54 @@ PostgresBind(ClientContext &context, vector<Value> &inputs,
              vector<string> &input_table_names,
              vector<LogicalType> &return_types, vector<string> &names) {
 
-  auto result = make_unique<PostgresBindData>();
+  auto bind_data = make_unique<PostgresBindData>();
 
-  auto dsn = inputs[0].GetValue<string>();
-  auto schema_name = inputs[1].GetValue<string>();
-  auto table_name = inputs[2].GetValue<string>();
+  bind_data->dsn = inputs[0].GetValue<string>();
+  bind_data->schema_name = inputs[1].GetValue<string>();
+  bind_data->table_name = inputs[2].GetValue<string>();
 
-  result->conn = PQconnectdb(dsn.c_str());
+  bind_data->conn = PQconnectdb(bind_data->dsn.c_str());
 
-  if (PQstatus(result->conn) == CONNECTION_BAD) {
-    throw IOException("Unable to connect to Postgres at %s", dsn);
+  if (PQstatus(bind_data->conn) == CONNECTION_BAD) {
+    throw IOException("Unable to connect to Postgres at %s", bind_data->dsn);
   }
 
   // TODO disabled since tpcds needs too many connections
-  PGExec(result->conn, "BEGIN TRANSACTION");
+  PGExec(bind_data->conn, "BEGIN TRANSACTION");
   // get a read lock on ze table so we can be sure nobody deletes the pages
   // under our asses
-  PGExec(result->conn,
+  PGExec(bind_data->conn,
          StringUtil::Format("LOCK TABLE \"%s\".\"%s\" IN ACCESS SHARE MODE;",
-                            schema_name, table_name)
+                            bind_data->schema_name, bind_data->table_name)
              .c_str());
 
   // find the id of the table in question to simplify below queries and avoid
   // complex joins (ha)
-  auto res = PGQuery(result->conn, StringUtil::Format(R"(
-SELECT pg_class.oid, reltuples
+  auto res =
+      PGQuery(bind_data->conn, StringUtil::Format(R"(
+SELECT pg_class.oid, reltuples, relpages
 FROM pg_class JOIN pg_namespace ON relnamespace = pg_namespace.oid
 WHERE nspname='%s' AND relname='%s'
 )",
-                                                      schema_name, table_name));
-  result->oid = res->GetInt64(0, 0);
-  result->cardinality = res->GetInt64(0, 1);
-
-  // somewhat hacky query to find out where the data file in question is
-  res = PGQuery(result->conn, StringUtil::Format(R"(
-SELECT setting || '/' || pg_relation_filepath(%d) table_path,
-    current_setting('block_size') block_size,
-    split_part((pg_control_checkpoint()).next_xid, ':', 2)::integer
-FROM pg_settings
-WHERE name = 'data_directory'
-)",
-                                                 result->oid));
-
-  result->table_name = table_name;
-  result->page_size = res->GetInt32(0, 1);
-  result->txid = res->GetInt32(0, 2);
-
-  auto base_filename = res->GetString(0, 0);
+                                                  bind_data->schema_name,
+                                                  bind_data->table_name));
+  bind_data->oid = res->GetInt64(0, 0);
+  bind_data->cardinality = res->GetInt64(0, 1);
+  bind_data->pages = res->GetInt64(0, 2);
 
   res.reset();
 
-  // find all the data files
-  vector<string> file_list;
-  file_list.push_back(base_filename);
-  auto &file_system = FileSystem::GetFileSystem(context);
-  auto additional_files = file_system.Glob(base_filename + ".*");
-  file_list.insert(file_list.end(), additional_files.begin(),
-                   additional_files.end());
-
-  for (auto &file_name : file_list) {
-    auto file_handle =
-        file_system.OpenFile(file_name, FileFlags::FILE_FLAGS_READ);
-    auto file_size = file_handle->GetFileSize();
-
-    if (file_size % result->page_size != 0) {
-      throw IOException(
-          "Postgres data file length %s not a multiple of page size",
-          file_name);
-    }
-
-    auto pages_in_file = file_size / result->page_size;
-    for (idx_t page_idx = 0; page_idx < pages_in_file;
-         page_idx += PAGES_PER_TASK) {
-      ScanTask task;
-      task.file_name = file_name;
-      task.page_min = page_idx;
-      task.page_max = MinValue(page_idx + PAGES_PER_TASK, pages_in_file) - 1;
-      task.is_last = task.page_max == pages_in_file - 1;
-      result->tasks.push_back(move(task));
-    }
-  }
-
   // query the table schema so we can interpret the bits in the pages
   // fun fact: this query also works in DuckDB ^^
-  res = PGQuery(result->conn, StringUtil::Format(
-                                  R"(
+  res = PGQuery(bind_data->conn, StringUtil::Format(
+                                     R"(
 SELECT attname, attlen, attalign, attnotnull, atttypmod, typname
 FROM pg_attribute
     JOIN pg_type ON atttypid=pg_type.oid
 WHERE attrelid=%d AND attnum > 0
 ORDER BY attnum
 )",
-                                  result->oid));
+                                     bind_data->oid));
 
   for (idx_t row = 0; row < PQntuples(res->res); row++) {
     PostgresColumnInfo info;
@@ -312,39 +231,50 @@ ORDER BY attnum
     info.atttypmod = res->GetInt32(row, 4);
     info.typname = res->GetString(row, 5);
 
-    result->names.push_back(info.attname);
-    result->types.push_back(DuckDBType(info.typname, info.atttypmod));
+    bind_data->names.push_back(info.attname);
+    bind_data->types.push_back(DuckDBType(info.typname, info.atttypmod));
 
-    result->columns.push_back(info);
+    bind_data->columns.push_back(info);
   }
   res.reset();
-  //
-  //  // TODO TEMP
-  //  PQfinish(result->conn);
-  //  result->conn = nullptr;
 
-  return_types = result->types;
-  names = result->names;
+  return_types = bind_data->types;
+  names = bind_data->names;
 
-  return move(result);
+  return move(bind_data);
 }
 
 static void PostgresInitInternal(ClientContext &context,
-                                 const PostgresBindData *bind_data,
+                                 const PostgresBindData *bind_data_p,
                                  PostgresOperatorData *local_state,
                                  idx_t task_min, idx_t task_max) {
-  D_ASSERT(bind_data);
+  D_ASSERT(bind_data_p);
   D_ASSERT(local_state);
   D_ASSERT(task_min <= task_max);
 
-  local_state->done = false;
-  local_state->task_max = task_max;
-  local_state->task_offset = task_min;
+  auto bind_data = (const PostgresBindData *)bind_data_p;
 
-  local_state->page_buffer =
-      unique_ptr<data_t[]>(new data_t[bind_data->page_size]);
-  local_state->item_offset = 0;
-  local_state->item_count = 0;
+  local_state->conn = PQconnectdb(bind_data->dsn.c_str());
+  if (PQstatus(local_state->conn) == CONNECTION_BAD) {
+    throw IOException("Unable to connect to Postgres at %s", bind_data->dsn);
+  }
+
+  PGExec(local_state->conn, "BEGIN TRANSACTION");
+
+  // https://www.postgresql.org/docs/current/sql-declare.html
+  auto sql = StringUtil::Format(
+      R"(
+DECLARE duckdb_scan_cursor BINARY INSENSITIVE NO SCROLL CURSOR WITHOUT HOLD FOR SELECT * FROM "%s"."%s" WHERE ctid BETWEEN '(%d,0)'::tid AND '(%d,0)'::tid;
+)",
+      bind_data->schema_name, bind_data->table_name, task_min, task_max + 1);
+  auto res = PQexec(local_state->conn, sql.c_str());
+
+  if (PQresultStatus(res) != PGRES_COMMAND_OK) {
+    throw IOException("Unable to query Postgres: %s",
+                      string(PQresultErrorMessage(res)));
+  }
+  PQclear(res);
+  local_state->done = false;
 }
 
 static unique_ptr<FunctionOperatorData>
@@ -359,83 +289,6 @@ PostgresInit(ClientContext &context, const FunctionData *bind_data_p,
   result->InitScanColumns(bind_data->types.size(), column_ids);
   return move(result);
 }
-
-//
-// 188  * xxxxxx00 4-byte length word, aligned, uncompressed data (up to 1G)
-// 189  * xxxxxx10 4-byte length word, aligned, *compressed* data (up to 1G)
-// 190  * 00000001 1-byte length word, unaligned, TOAST pointer
-// 191  * xxxxxxx1 1-byte length word, unaligned, uncompressed data (up to 126b)
-// 192  *
-// 193  * The "xxx" bits are the length field (which includes itself in all
-// cases). 194  * In the big-endian case we mask to extract the length, in the
-// little-endian 195  * case we shift.  Note that in both cases the flag bits
-// are in the physically 196  * first byte.  Also, it is not possible for a
-// 1-byte length word to be zero; 197  * this lets us disambiguate alignment
-// padding bytes from the start of an 198  * unaligned datum.  (We now *require*
-// pad bytes to be filled with zero!) 199  *
-
-static idx_t GetAttributeLength(data_ptr_t tuple_ptr, idx_t page_size,
-                                idx_t &length_length_out) {
-  auto first_varlen_byte = Load<uint8_t>(tuple_ptr);
-  idx_t len = 0;
-  if (first_varlen_byte == 0x80) {
-    // 1 byte external, unsupported
-    // TODO this check is wrong!
-    // throw IOException("No external values");
-  }
-  // one byte length varlen
-  if ((first_varlen_byte & 0x01) == 0x01) {
-    length_length_out = 1;
-    len = (first_varlen_byte >> 1) & 0x7F;
-
-  } else {
-    auto four_byte_len = Load<uint32_t>(tuple_ptr);
-    length_length_out = 4;
-    if ((four_byte_len & 0x3) == 0x2) {
-      throw IOException("No compressed values");
-    }
-    len = (four_byte_len >> 2) & 0x3FFFFFFF;
-  }
-  if (len > page_size) {
-    throw IOException(
-        "Can't have attribute length of %lld on page of size %lld", len,
-        page_size);
-  }
-  return len;
-}
-
-#define HEAP_HASNULL 0x0001          /* has null attribute(s) */
-#define HEAP_HASVARWIDTH 0x0002      /* has variable-width attribute(s) */
-#define HEAP_HASEXTERNAL 0x0004      /* has external stored attribute(s) */
-#define HEAP_HASOID_OLD 0x0008       /* has an object-id field */
-#define HEAP_XMAX_KEYSHR_LOCK 0x0010 /* xmax is a key-shared locker */
-#define HEAP_COMBOCID 0x0020         /* t_cid is a combo CID */
-#define HEAP_XMAX_EXCL_LOCK 0x0040   /* xmax is exclusive locker */
-#define HEAP_XMAX_LOCK_ONLY 0x0080   /* xmax, if valid, is only a locker */
-
-/* xmax is a shared locker */
-#define HEAP_XMAX_SHR_LOCK (HEAP_XMAX_EXCL_LOCK | HEAP_XMAX_KEYSHR_LOCK)
-
-#define HEAP_LOCK_MASK                                                         \
-  (HEAP_XMAX_SHR_LOCK | HEAP_XMAX_EXCL_LOCK | HEAP_XMAX_KEYSHR_LOCK)
-#define HEAP_XMIN_COMMITTED 0x0100 /* t_xmin committed */
-#define HEAP_XMIN_INVALID 0x0200   /* t_xmin invalid/aborted */
-#define HEAP_XMIN_FROZEN (HEAP_XMIN_COMMITTED | HEAP_XMIN_INVALID)
-#define HEAP_XMAX_COMMITTED 0x0400 /* t_xmax committed */
-#define HEAP_XMAX_INVALID 0x0800   /* t_xmax invalid/aborted */
-#define HEAP_XMAX_IS_MULTI 0x1000  /* t_xmax is a MultiXactId */
-#define HEAP_UPDATED 0x2000        /* this is UPDATEd version of row */
-#define HEAP_MOVED_OFF                                                         \
-  0x4000 /* moved to another place by pre-9.0                                  \
-          * VACUUM FULL; kept for binary                                       \
-          * upgrade support */
-#define HEAP_MOVED_IN                                                          \
-  0x8000 /* moved from another place by pre-9.0                                \
-          * VACUUM FULL; kept for binary                                       \
-          * upgrade support */
-#define HEAP_MOVED (HEAP_MOVED_OFF | HEAP_MOVED_IN)
-
-#define HEAP_XACT_MASK 0xFFF0 /* visibility-related bits */
 
 #define POSTGRES_EPOCH_JDATE 2451545 /* == date2j(2000, 1, 1) */
 
@@ -560,351 +413,96 @@ static void ReadDecimal(idx_t scale, int32_t ndigits, int32_t weight,
 // https://github.com/postgres/postgres/blob/master/src/backend/access/transam/xlog.c#L9569
 // https://github.com/postgres/postgres/blob/master/src/backend/storage/buffer/bufmgr.c#L1933
 
-static bool PrepareTuple(ClientContext &context,
-                         const PostgresBindData *bind_data,
-                         PostgresOperatorData &state) {
-  if (state.item_offset >= state.item_count) {
-
-    // we need to move on to a new page or a new task
-    if (!state.file_handle || state.page_offset > state.current_task.page_max) {
-      // we ran out of task, do we have another one?
-      if (state.task_offset >= state.task_max) {
-        state.done = true;
-        return false;
-      }
-      state.current_task = bind_data->tasks[state.task_offset];
-
-      state.file_handle = FileSystem::GetFileSystem(context).OpenFile(
-          state.current_task.file_name, FileFlags::FILE_FLAGS_READ);
-      state.page_offset = state.current_task.page_min;
-      state.item_count = 0;
-      state.task_offset++;
-
-      // TODO should not really be required but well
-      if (state.current_task.is_last) {
-        auto actual_pages =
-            state.file_handle->GetFileSize() / bind_data->page_size;
-
-        if (actual_pages != state.current_task.page_max + 1) {
-          state.current_task.page_max = actual_pages - 1;
-        }
-      }
-    }
-
-    auto page_ptr = state.page_buffer.get();
-    state.file_handle->Read(page_ptr, bind_data->page_size,
-                            state.page_offset * bind_data->page_size);
-    // parse page header
-    auto page_header = Load<PageHeaderData>(page_ptr);
-
-    // unused? Move to next page.
-    if (page_header.pd_upper == 0 || page_header.pd_lower == 0) {
-      state.item_ptr = nullptr; // just to be on the safe side
-      state.item_count = 0;
-      state.page_offset++;
-      return false;
-    }
-    // some sanity check
-    if (page_header.pd_lower > bind_data->page_size ||
-        page_header.pd_upper > bind_data->page_size) {
-      throw IOException("Page upper/lower offsets exceed page size");
-    }
-    page_ptr += sizeof(PageHeaderData);
-    state.item_ptr = (ItemIdData *)page_ptr;
-    state.item_count =
-        (page_header.pd_lower - sizeof(PageHeaderData)) / sizeof(ItemIdData);
-    state.item_offset = 0;
-    state.page_offset++;
-  }
-
-  return true;
-}
-
-static idx_t ProcessValue(data_ptr_t tuple_ptr,
-                          const PostgresBindData *bind_data, idx_t &col_idx,
-                          bool skip, DataChunk &output, idx_t output_idx,
-                          idx_t output_offset) {
-  idx_t length_length;
+static void ProcessValue(data_ptr_t value_ptr, idx_t value_len,
+                         const PostgresBindData *bind_data, idx_t col_idx,
+                         bool skip, DataChunk &output, idx_t output_idx,
+                         idx_t output_offset) {
   auto &type = bind_data->types[col_idx];
   auto &info = bind_data->columns[col_idx];
+  auto &out_vec = output.data[output_idx];
 
   switch (type.id()) {
   case LogicalTypeId::INTEGER: {
     D_ASSERT(info.attlen == sizeof(int32_t));
 
     if (!skip) {
-      auto out_ptr = FlatVector::GetData<int32_t>(output.data[output_idx]);
-      out_ptr[output_offset] = Load<int32_t>(tuple_ptr);
+      auto out_ptr = FlatVector::GetData<int32_t>(out_vec);
+      out_ptr[output_offset] = ntohl(Load<int32_t>(value_ptr));
     }
-    return sizeof(int32_t);
+    break;
   }
 
   case LogicalTypeId::VARCHAR: {
     D_ASSERT(info.attlen == -1);
 
-    auto len =
-        GetAttributeLength(tuple_ptr, bind_data->page_size, length_length);
-
     if (!skip) {
-      auto out_ptr = FlatVector::GetData<string_t>(output.data[output_idx]);
-      out_ptr[output_offset] = StringVector::AddString(
-          output.data[output_idx], (char *)tuple_ptr + length_length,
-          len - length_length);
+      auto out_ptr = FlatVector::GetData<string_t>(out_vec);
+      out_ptr[output_offset] =
+          StringVector::AddString(out_vec, (char *)value_ptr, value_len);
     }
-    return len;
+    break;
   }
   case LogicalTypeId::DECIMAL: {
-    D_ASSERT(info.attlen == -1);
+    auto decimal_ptr = (uint16_t *)value_ptr;
+    // we need at least 8 bytes here
+    D_ASSERT(value_len >=
+             sizeof(uint16_t) * 4); // TODO this should probably be an exception
 
-    auto len =
-        GetAttributeLength(tuple_ptr, bind_data->page_size, length_length);
-    if (skip) {
-      return len;
+    // convert everything to little endian
+    for (int i = 0; i < value_len / sizeof(uint16_t); i++) {
+      decimal_ptr[i] = ntohs(decimal_ptr[i]);
     }
-    if (!skip) {
-      auto numeric_header = Load<uint16_t>(tuple_ptr + length_length);
-      if ((numeric_header & NUMERIC_SIGN_MASK) == NUMERIC_SPECIAL) {
-        throw IOException(
-            "'Special' numerics not supported. Please insert more coin.");
-      }
 
-      auto is_short = (numeric_header & NUMERIC_SIGN_MASK) == NUMERIC_SHORT;
-      auto total_header_length =
-          length_length + (is_short ? sizeof(uint16_t) : sizeof(uint32_t));
-      int ndigits = (len - total_header_length) / sizeof(int16_t);
+    auto ndigits = decimal_ptr[0];
+    D_ASSERT(value_len ==
+             sizeof(uint16_t) *
+                 (4 + ndigits)); // TODO this should probably be an exception
+    auto weight = (int16_t)decimal_ptr[1];
+    auto sign = decimal_ptr[2];
 
-      int16_t long_header = 0;
-      if (!is_short) {
-        long_header =
-            Load<uint16_t>(tuple_ptr + length_length + sizeof(uint16_t));
-      }
-
-      int weight = NUMERIC_WEIGHT(is_short, numeric_header, long_header);
-      auto is_negative = NUMERIC_SIGN(is_short, numeric_header) == NUMERIC_NEG;
-      int dscale = NUMERIC_DSCALE(is_short, numeric_header);
-      auto digit_ptr = (uint16_t *)(tuple_ptr + total_header_length);
-      D_ASSERT(dscale == DecimalType::GetScale(type));
-
-      switch (type.InternalType()) {
-      case PhysicalType::INT16:
-        ReadDecimal<int16_t>(DecimalType::GetScale(type), ndigits, weight,
-                             is_negative, digit_ptr, output.data[output_idx],
-                             output_offset);
-        break;
-      case PhysicalType::INT32:
-        ReadDecimal<int32_t>(DecimalType::GetScale(type), ndigits, weight,
-                             is_negative, digit_ptr, output.data[output_idx],
-                             output_offset);
-        break;
-      case PhysicalType::INT64:
-        ReadDecimal<int64_t>(DecimalType::GetScale(type), ndigits, weight,
-                             is_negative, digit_ptr, output.data[output_idx],
-                             output_offset);
-        break;
-
-      default:
-        throw InternalException("Unsupported decimal storage type");
-      }
+    if (!(sign == NUMERIC_POS || sign == NUMERIC_NAN || sign == NUMERIC_PINF ||
+          sign == NUMERIC_NINF || sign == NUMERIC_NEG)) {
+      D_ASSERT(0);
+      // TODO complain
     }
-    return len;
+    auto dscale = decimal_ptr[3];
+    auto is_negative = sign == NUMERIC_NEG;
+
+    D_ASSERT(dscale == DecimalType::GetScale(type));
+    auto digit_ptr = (const uint16_t *)decimal_ptr + 4;
+
+    switch (type.InternalType()) {
+    case PhysicalType::INT16:
+      ReadDecimal<int16_t>(DecimalType::GetScale(type), ndigits, weight,
+                           is_negative, digit_ptr, out_vec, output_offset);
+      break;
+    case PhysicalType::INT32:
+      ReadDecimal<int32_t>(DecimalType::GetScale(type), ndigits, weight,
+                           is_negative, digit_ptr, out_vec, output_offset);
+      break;
+    case PhysicalType::INT64:
+      ReadDecimal<int64_t>(DecimalType::GetScale(type), ndigits, weight,
+                           is_negative, digit_ptr, out_vec, output_offset);
+      break;
+
+    default:
+      throw InternalException("Unsupported decimal storage type");
+    }
+    break;
   }
+
   case LogicalTypeId::DATE: {
-    D_ASSERT(info.attlen == sizeof(int32_t));
     if (!skip) {
-      auto jd = Load<int32_t>(tuple_ptr);
-      auto out_ptr = FlatVector::GetData<date_t>(output.data[output_idx]);
+      auto jd = ntohl(Load<int32_t>(value_ptr));
+      auto out_ptr = FlatVector::GetData<date_t>(out_vec);
       out_ptr[output_offset].days =
           jd + POSTGRES_EPOCH_JDATE - 2440588; // magic!
     }
-    return sizeof(int32_t);
+    break;
   }
   default:
     throw InternalException("Unsupported Type %s", type.ToString());
   }
-}
-//
-// A word about t_ctid: whenever a new tuple is stored on disk, its t_ctid
-//* is initialized with its own TID (location).  If the tuple is ever updated,
-//        * its t_ctid is changed to point to the replacement version of the
-//        tuple.  Or
-//* if the tuple is moved from one partition to another, due to an update of
-//        * the partition key, t_ctid is set to a special value to indicate that
-//        * (see ItemPointerSetMovedPartitions).  Thus, a tuple is the latest
-//        version
-//* of its row iff XMAX is invalid or
-//* t_ctid points to itself (in which case, if XMAX is valid, the tuple is
-//        * either locked or deleted).  One can follow the chain of t_ctid links
-//* to find the newest version of the row, unless it was moved to a different
-//* partition.  Beware however that VACUUM might
-//        * erase the pointed-to (newer) tuple before erasing the pointing
-//        (older)
-//* tuple.  Hence, when following a t_ctid link, it is necessary to check
-//        * to see if the referenced slot is empty or contains an unrelated
-//        tuple.
-//* Check that the referenced tuple has XMIN equal to the referencing tuple's
-//* XMAX to verify that it is actually the descendant version and not an
-//        * unrelated tuple stored into a slot recently freed by VACUUM.  If
-//        either
-//* check fails, one may assume that there is no live descendant version.
-//*
-
-#define HEAP_XMAX_IS_SHR_LOCKED(infomask)                                      \
-  (((infomask)&HEAP_LOCK_MASK) == HEAP_XMAX_SHR_LOCK)
-#define HEAP_XMAX_IS_EXCL_LOCKED(infomask)                                     \
-  (((infomask)&HEAP_LOCK_MASK) == HEAP_XMAX_EXCL_LOCK)
-#define HEAP_XMAX_IS_KEYSHR_LOCKED(infomask)                                   \
-  (((infomask)&HEAP_LOCK_MASK) == HEAP_XMAX_KEYSHR_LOCK)
-
-#define HEAP_XMAX_IS_LOCKED_ONLY(infomask)                                     \
-  (((infomask)&HEAP_XMAX_LOCK_ONLY) ||                                         \
-   (((infomask) & (HEAP_XMAX_IS_MULTI | HEAP_LOCK_MASK)) ==                    \
-    HEAP_XMAX_EXCL_LOCK))
-
-#define HeapTupleHeaderXminCommitted(tup)                                      \
-  (((tup)->t_infomask & HEAP_XMIN_COMMITTED) != 0)
-
-#define HeapTupleHeaderGetRawXmin(tup) ((tup)->t_xmin)
-
-#define HeapTupleHeaderXminInvalid(tup)                                        \
-  (((tup)->t_infomask & (HEAP_XMIN_COMMITTED | HEAP_XMIN_INVALID)) ==          \
-   HEAP_XMIN_INVALID)
-
-#define HeapTupleHeaderXminFrozen(tup)                                         \
-  (((tup)->t_infomask & (HEAP_XMIN_FROZEN)) == HEAP_XMIN_FROZEN)
-
-#define HeapTupleHeaderGetRawXmax(tup) ((tup)->t_xmax)
-
-bool TransactionIdPrecedes(uint32_t id1, uint32_t id2) {
-  int32_t diff;
-
-  diff = (int32_t)(id1 - id2);
-  return (diff < 0);
-}
-
-static bool TransactionIdFollowsOrEquals(uint32_t id1, uint32_t id2) {
-  int32_t diff;
-
-  diff = (int32_t)(id1 - id2);
-  return (diff >= 0);
-}
-
-static bool XidInMVCCSnapshot(uint32_t xid, uint32_t snapshot_id) {
-  /* Any xid < xmin is not in-progress */
-  if (TransactionIdPrecedes(xid, snapshot_id))
-    return false;
-  /* Any xid >= xmax is in-progress */
-  if (TransactionIdFollowsOrEquals(xid, snapshot_id)) {
-    return true;
-  }
-  return false;
-}
-
-// dance from heapam_visibility.c
-
-#define HeapTupleHeaderGetRawCommandId(tup) ((tup)->t_cid_t_xvac)
-
-static bool TupleVisible(HeapTupleHeaderData *tuple, uint32_t snapshot_txid) {
-
-  /* Used by pre-9.0 binary upgrades */
-  if (tuple->t_infomask & HEAP_MOVED_OFF || tuple->t_infomask & HEAP_MOVED_IN) {
-    throw IOException("Unexpected MOVED tuple");
-  }
-
-  if (tuple->t_infomask & HEAP_XMAX_IS_MULTI) {
-    throw IOException("Unexpected MULTI tuple");
-  }
-
-  if (tuple->t_infomask & HEAP_COMBOCID) {
-    throw IOException("Unexpected COMBO tuple");
-  }
-
-  if (tuple->t_infomask & HEAP_XMIN_INVALID || tuple->t_xmin > snapshot_txid) {
-    return false;
-  }
-
-  if (tuple->t_infomask & HEAP_XMAX_INVALID ||
-      HEAP_XMAX_IS_LOCKED_ONLY(tuple->t_infomask)) {
-    return true;
-  }
-
-  //    printf("%d %d\n", tuple->ip_blkid, tuple->ip_posid);
-
-  if (tuple->t_xmax > snapshot_txid) {
-    return true;
-  }
-  //
-  //  if (HeapTupleHeaderGetRawCommandId(tuple)  > 1 ||
-  //  HeapTupleHeaderGetRawCommandId(tuple) < 0) printf("%d\n",
-  //  HeapTupleHeaderGetRawCommandId(tuple));
-  //
-  return false;
-  //  //
-  //  // FIXME
-  //
-  //    if (!HeapTupleHeaderXminCommitted(tuple)) {
-  //      if (HeapTupleHeaderXminInvalid(tuple))
-  //        return false;
-  //      else if (HeapTupleHeaderGetRawXmin(tuple) == snapshot_txid) {
-  //              if (HeapTupleHeaderGetRawCommandId(tuple) >= 0)
-  //                return false; /* inserted after scan started */
-  //
-  //        if (tuple->t_infomask & HEAP_XMAX_INVALID) /* xid invalid */
-  //          return true;
-  //
-  //        if (HEAP_XMAX_IS_LOCKED_ONLY(tuple->t_infomask)) /* not deleter */
-  //          return true;
-  //
-  //        if (HeapTupleHeaderGetRawXmax(tuple) != snapshot_txid) {
-  //          return true;
-  //        }
-  //
-  //        if (HeapTupleHeaderGetRawCommandId(tuple) >= 0)
-  //          return true; /* deleted after scan started */
-  //        else
-  //          return false; /* deleted before scan started */
-  //      }
-  //
-  //      else if (XidInMVCCSnapshot(HeapTupleHeaderGetRawXmin(tuple),
-  //      snapshot_txid))
-  //        return false;
-  //      else {
-  //        return false;
-  //      }
-  //    } else {
-  //      /* xmin is committed, but maybe not according to our snapshot */
-  //      if (!HeapTupleHeaderXminFrozen(tuple) &&
-  //          XidInMVCCSnapshot(HeapTupleHeaderGetRawXmin(tuple),
-  //          snapshot_txid))
-  //        return false; /* treat as still in progress */
-  //    }
-  //
-  //    /* by here, the inserting transaction has committed */
-  //
-  //    if (tuple->t_infomask & HEAP_XMAX_INVALID) /* xid invalid or aborted */
-  //      return true;
-  //
-  //    if (HEAP_XMAX_IS_LOCKED_ONLY(tuple->t_infomask))
-  //      return true;
-  //
-  //    if (tuple->t_infomask & HEAP_XMAX_IS_MULTI) {
-  //      throw IOException("Unexpected MULTI tuple");
-  //    }
-  //
-  //    if (!(tuple->t_infomask & HEAP_XMAX_COMMITTED)) {
-  //
-  //      if (XidInMVCCSnapshot(HeapTupleHeaderGetRawXmax(tuple),
-  //      snapshot_txid))
-  //        return true;
-  //
-  //    } else {
-  //      /* xmax is committed, but maybe not according to our snapshot */
-  //      if (XidInMVCCSnapshot(HeapTupleHeaderGetRawXmax(tuple),
-  //      snapshot_txid))
-  //        return true; /* treat as still in progress */
-  //    }
-  //
-  //    /* xmax transaction committed */
-  //    return false;
 }
 
 static void PostgresScan(ClientContext &context,
@@ -916,101 +514,39 @@ static void PostgresScan(ClientContext &context,
   D_ASSERT(bind_data_p);
 
   auto bind_data = (const PostgresBindData *)bind_data_p;
-  auto &state = (PostgresOperatorData &)*operator_state;
+  auto &local_state = (PostgresOperatorData &)*operator_state;
 
-  idx_t output_offset = 0;
-  while (output_offset < STANDARD_VECTOR_SIZE) {
-    if (state.done) {
-      return;
+  if (local_state.done) {
+    return;
+  }
+
+  auto res = PGQuery(local_state.conn, "FETCH 1024 FROM duckdb_scan_cursor");
+
+  auto read_now =
+      MinValue((idx_t)STANDARD_VECTOR_SIZE, (idx_t)(PQntuples(res->res)));
+  if (read_now < 1) {
+    local_state.done = true;
+    return;
+  }
+  output.SetCardinality(read_now);
+
+  for (idx_t row = 0; row < read_now; row++) {
+    for (idx_t col = 0; col < output.ColumnCount(); col++) {
+      auto raw_val = (data_ptr_t)PQgetvalue(res->res, row, col);
+      auto raw_len = PQgetlength(res->res, row, col);
+      D_ASSERT(PQfformat(res->res, col) == 1);
+
+      ProcessValue(raw_val, raw_len, bind_data, col, false, output, col, row);
     }
-    if (!PrepareTuple(context, bind_data, state)) {
-      continue;
-    }
-
-    // maybe its faster to read the items in one go, but perhaps not since
-    // the page is rather small and fits in cache move to next page item
-    auto item = state.item_ptr[state.item_offset++];
-#ifdef DEBUG // this check is somewhat optional
-    if (item.lp_off + item.lp_len > bind_data->page_size) {
-      throw IOException("Item pointer and length exceed page size");
-    }
-#endif
-    // unused or dead
-    /*
-     * In some cases a line pointer is "in use" but does not have any associated
-     * storage on the page.  By convention, lp_len == 0 in every line pointer
-     * that does not have storage, independently of its lp_flags state.
-     */
-    if (item.lp_flags == LP_UNUSED || item.lp_flags == LP_DEAD ||
-        item.lp_len == 0) {
-      continue;
-    }
-    //  redirect
-    if (item.lp_flags == LP_REDIRECT) {
-      throw IOException("REDIRECT tuples are not supported");
-    }
-    // normal
-    if (item.lp_flags != LP_NORMAL) {
-      throw IOException("Expected NORMAL tuple with non-zero length but got "
-                        "something else");
-    }
-
-    // read tuple header
-    auto tuple_start_ptr = state.page_buffer.get() + item.lp_off;
-    auto tuple_header = Load<HeapTupleHeaderData>(tuple_start_ptr);
-    auto defined_ptr = tuple_start_ptr + 23;
-    auto can_have_nulls = tuple_header.t_infomask & HEAP_HASNULL;
-
-    if (!TupleVisible(&tuple_header, bind_data->txid)) {
-      continue;
-    }
-
-    auto tuple_ptr = tuple_start_ptr + tuple_header.t_hoff;
-
-    bool defined;
-    // if we are done with the last column that the query actually wants
-    // we can completely skip ahead to the next tupl
-    for (idx_t col_idx = 0; col_idx <= state.max_bound_column_id; col_idx++) {
-      if (can_have_nulls) {
-        defined =
-            (((*(defined_ptr + col_idx / 8)) >> (col_idx % 8)) & 0x1) == 0x1;
-      } else {
-        defined = true;
-      }
-
-      bool skip_column = state.scan_columns[col_idx] == -1;
-      auto output_idx = skip_column ? -1 : state.scan_columns[col_idx];
-
-      if (!defined && !skip_column) {
-        D_ASSERT(output_idx != -1);
-        FlatVector::SetNull(output.data[output_idx], output_offset, true);
-        continue;
-      }
-
-      auto &info = bind_data->columns[col_idx];
-
-      if (info.attlen != -1) {
-        if (info.attalign == 'i') {
-          auto offset = tuple_ptr - tuple_start_ptr;
-          auto alignment = (((offset + 3) / 4) * 4) - offset;
-          tuple_ptr += alignment;
-        } else {
-          throw IOException("Unknown alignment %c", info.attalign);
-        }
-      }
-
-      tuple_ptr += ProcessValue(tuple_ptr, bind_data, col_idx, skip_column,
-                                output, output_idx, output_offset);
-    }
-    output.SetCardinality(++output_offset);
   }
 }
+
 static idx_t PostgresMaxThreads(ClientContext &context,
                                 const FunctionData *bind_data_p) {
   D_ASSERT(bind_data_p);
 
   auto bind_data = (const PostgresBindData *)bind_data_p;
-  return bind_data->tasks.size();
+  return bind_data->pages / bind_data->pages_per_task;
 }
 
 static unique_ptr<ParallelState>
@@ -1018,7 +554,7 @@ PostgresInitParallelState(ClientContext &context, const FunctionData *,
                           const vector<column_t> &column_ids,
                           TableFilterCollection *) {
   auto result = make_unique<PostgresParallelState>();
-  result->task_idx = 0;
+  result->page_idx = 0;
   return move(result);
 }
 
@@ -1036,10 +572,11 @@ static bool PostgresParallelStateNext(ClientContext &context,
 
   lock_guard<mutex> parallel_lock(parallel_state.lock);
 
-  if (parallel_state.task_idx < bind_data->tasks.size()) {
+  if (parallel_state.page_idx < bind_data->pages) {
     PostgresInitInternal(context, bind_data, local_state,
-                         parallel_state.task_idx, parallel_state.task_idx + 1);
-    parallel_state.task_idx++;
+                         parallel_state.page_idx,
+                         parallel_state.page_idx + bind_data->pages_per_task);
+    parallel_state.page_idx += bind_data->pages_per_task;
     return true;
   }
   return false;
@@ -1192,8 +729,8 @@ public:
             PostgresScan, PostgresBind, PostgresInit, nullptr, nullptr, nullptr,
             PostgresCardinality, nullptr, PostgresScanToString,
             PostgresMaxThreads, PostgresInitParallelState, nullptr,
-            PostgresParallelInit, PostgresParallelStateNext, true, false,
-            nullptr) {}
+            PostgresParallelInit, PostgresParallelStateNext, false /* TODO */,
+            false, nullptr) {}
 };
 
 extern "C" {

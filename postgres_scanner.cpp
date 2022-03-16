@@ -31,6 +31,8 @@ struct PostgresColumnInfo {
   string typname;
 };
 
+static constexpr uint32_t POSTGRES_TID_MAX = 4294967295;
+
 struct PostgresBindData : public FunctionData {
   string schema_name;
   string table_name;
@@ -45,7 +47,7 @@ struct PostgresBindData : public FunctionData {
   vector<string> names;
   vector<LogicalType> types;
 
-  idx_t pages_per_task = 10000;
+  idx_t pages_per_task = 1000;
   string dsn;
 
   string snapshot;
@@ -85,11 +87,11 @@ struct PGQueryResult {
 struct PostgresOperatorData : public FunctionOperatorData {
   bool done = false;
   vector<column_t> column_ids;
+  string col_names;
   PGconn *conn = nullptr;
 
   ~PostgresOperatorData() {
     if (conn) {
-      PQexec(conn, "ROLLBACK");
       PQfinish(conn);
       conn = nullptr;
     }
@@ -230,16 +232,6 @@ static void PostgresInitInternal(ClientContext &context,
 
   auto bind_data = (const PostgresBindData *)bind_data_p;
 
-  local_state->conn = PQconnectdb(bind_data->dsn.c_str());
-  if (PQstatus(local_state->conn) == CONNECTION_BAD) {
-    throw IOException("Unable to connect to Postgres at %s", bind_data->dsn);
-  }
-
-  PGExec(local_state->conn,
-         "BEGIN TRANSACTION ISOLATION LEVEL REPEATABLE READ");
-  PGExec(local_state->conn, StringUtil::Format("SET TRANSACTION SNAPSHOT '%s'",
-                                               bind_data->snapshot));
-
   auto col_names = StringUtil::Join(
       local_state->column_ids.data(), local_state->column_ids.size(), ", ",
       [&](const idx_t column_id) {
@@ -251,14 +243,26 @@ static void PostgresInitInternal(ClientContext &context,
   // https://www.postgresql.org/docs/current/sql-declare.html
   auto sql = StringUtil::Format(
       R"(
+CLOSE ALL;
 DECLARE duckdb_scan_cursor BINARY INSENSITIVE NO SCROLL CURSOR WITHOUT HOLD FOR SELECT %s FROM "%s"."%s" WHERE ctid BETWEEN '(%d,0)'::tid AND '(%d,0)'::tid;
 )",
       col_names, bind_data->schema_name, bind_data->table_name, task_min,
-      task_max + 1);
+      task_max);
 
   PGExec(local_state->conn, sql);
   // construct string here so we don
   local_state->done = false;
+}
+
+static PGconn *PostgresScanConnect(string dsn, string snapshot) {
+  auto conn = PQconnectdb(dsn.c_str());
+  if (!conn || PQstatus(conn) == CONNECTION_BAD) {
+    throw IOException("Unable to connect to Postgres at %s", dsn);
+  }
+
+  PGExec(conn, "BEGIN TRANSACTION ISOLATION LEVEL REPEATABLE READ");
+  PGExec(conn, StringUtil::Format("SET TRANSACTION SNAPSHOT '%s'", snapshot));
+  return conn;
 }
 
 static unique_ptr<FunctionOperatorData>
@@ -266,10 +270,12 @@ PostgresInit(ClientContext &context, const FunctionData *bind_data_p,
              const vector<column_t> &column_ids, TableFilterCollection *) {
   D_ASSERT(bind_data_p);
   auto bind_data = (const PostgresBindData *)bind_data_p;
-  auto result = make_unique<PostgresOperatorData>();
-  result->column_ids = column_ids;
-  PostgresInitInternal(context, bind_data, result.get(), 0, bind_data->pages);
-  return move(result);
+  auto local_state = make_unique<PostgresOperatorData>();
+  local_state->column_ids = column_ids;
+  local_state->conn = PostgresScanConnect(bind_data->dsn, bind_data->snapshot);
+  PostgresInitInternal(context, bind_data, local_state.get(), 0,
+                       POSTGRES_TID_MAX);
+  return move(local_state);
 }
 
 #define POSTGRES_EPOCH_JDATE 2451545 /* == date2j(2000, 1, 1) */
@@ -562,9 +568,14 @@ static bool PostgresParallelStateNext(ClientContext &context,
   lock_guard<mutex> parallel_lock(parallel_state.lock);
 
   if (parallel_state.page_idx < bind_data->pages) {
+    auto page_max = parallel_state.page_idx + bind_data->pages_per_task;
+    if (parallel_state.page_idx + bind_data->pages_per_task >
+        bind_data->pages) {
+      // the relpages entry is not the real max, so make the last task bigger
+      page_max = POSTGRES_TID_MAX;
+    }
     PostgresInitInternal(context, bind_data, local_state,
-                         parallel_state.page_idx,
-                         parallel_state.page_idx + bind_data->pages_per_task);
+                         parallel_state.page_idx, page_max);
     parallel_state.page_idx += bind_data->pages_per_task;
     return true;
   }
@@ -576,8 +587,12 @@ PostgresParallelInit(ClientContext &context, const FunctionData *bind_data_p,
                      ParallelState *parallel_state_p,
                      const vector<column_t> &column_ids,
                      TableFilterCollection *) {
+  D_ASSERT(bind_data_p);
+  auto bind_data = (const PostgresBindData *)bind_data_p;
+
   auto local_state = make_unique<PostgresOperatorData>();
   local_state->column_ids = column_ids;
+  local_state->conn = PostgresScanConnect(bind_data->dsn, bind_data->snapshot);
   if (!PostgresParallelStateNext(context, bind_data_p, local_state.get(),
                                  parallel_state_p)) {
     local_state->done = true;

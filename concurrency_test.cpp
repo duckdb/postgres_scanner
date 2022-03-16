@@ -62,7 +62,7 @@ static DuckDB db;
 
 static string CHECKQ = "SELECT SUM(val), COUNT(val) FROM series";
 static uint64_t INVARIANT = 42000000;
-static uint64_t THREADS = 1;
+static uint64_t THREADS = 4;
 
 static const char *DSN = "";
 
@@ -78,8 +78,6 @@ void ptask(idx_t i) {
   if (PQstatus(pconn) == CONNECTION_BAD) {
     throw IOException("Unable to connect to Postgres at %s", DSN);
   }
-
-  PGExec(pconn, "BEGIN TRANSACTION");
 
   while (carry_on) {
     auto source = ids_rng(rng);
@@ -98,8 +96,6 @@ UPDATE series SET val = val + %d WHERE id=%d;
     n++;
   }
 
-  PGExec(pconn, "COMMIT");
-
   PQfinish(pconn);
   printf("ptask %llu done %llu\n", i, n);
 }
@@ -113,18 +109,32 @@ void ctask(idx_t sleep_ms) {
   }
 
   while (carry_on) {
-
-    /* Multiple queries sent in a single PQexec call are processed in a single
-     * transaction, unless there are explicit BEGIN/COMMIT commands included in
-     * the query string to divide it into multiple transactions. */
     PGExec(pconn, "CHECKPOINT");
-    printf("CHECKPOINT\n");
     std::this_thread::sleep_for(std::chrono::milliseconds(sleep_ms));
 
     n++;
   }
   PQfinish(pconn);
   printf("ctask done %llu\n", n);
+}
+
+void pctask() {
+  idx_t failure = 0;
+  idx_t n = 0;
+  auto pconn = PQconnectdb(DSN);
+
+  while (carry_on) {
+
+    auto pres = PGQuery(pconn, CHECKQ);
+    if (pres->GetInt64(0, 0) != INVARIANT) {
+      InternalException("Invariant fail");
+    }
+    pres.reset();
+    n++;
+  }
+  PQfinish(pconn);
+
+  printf("pctask done %llu, inconsistent %llu\n", n, failure);
 }
 
 void dtask() {
@@ -134,6 +144,7 @@ void dtask() {
   Connection dconn(db);
 
   while (carry_on) {
+
     auto dres = dconn.Query(CHECKQ);
     if (!dres->success) {
       throw InternalException(dres->error);
@@ -146,6 +157,7 @@ void dtask() {
     }
     n++;
   }
+
   printf("dtask done %llu, inconsistent %llu\n", n, failure);
 }
 
@@ -198,9 +210,9 @@ int main() {
   // battle plan: launch n threads, have them loop transactions that move val
   // around between random ids launch another thread that loops the duckdb query
 
-  // TODO have another thread that deletes and inserts rows?
-
   std::thread d1(dtask);
+  std::thread pc1(pctask);
+
   std::thread t1(ttask, 10000);
   std::thread c1(ctask, 500);
 
@@ -215,6 +227,8 @@ int main() {
   }
 
   d1.join();
+  pc1.join();
+
   t1.join();
   c1.join();
 

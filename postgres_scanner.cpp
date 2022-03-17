@@ -531,9 +531,6 @@ static void PostgresScan(ClientContext &context,
 
   // then we take berlin
 
-  char tuple_header_buf[5];
-
-  auto len = 0;
 
   idx_t output_offset = 0;
   while (true) {

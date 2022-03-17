@@ -47,7 +47,7 @@ struct PostgresBindData : public FunctionData {
   vector<string> names;
   vector<LogicalType> types;
 
-  idx_t pages_per_task = 100;
+  idx_t pages_per_task = 1000;
   string dsn;
 
   string snapshot;
@@ -86,10 +86,11 @@ struct PGQueryResult {
 
 struct PostgresOperatorData : public FunctionOperatorData {
   bool done = false;
+  bool exec = false;
+  string sql;
   vector<column_t> column_ids;
   string col_names;
   PGconn *conn = nullptr;
-
   ~PostgresOperatorData() {
     if (conn) {
       PQfinish(conn);
@@ -122,29 +123,20 @@ static LogicalType DuckDBType(const string &pgtypename, const int atttypmod) {
   }
 }
 
-static void PGExec(PGconn *conn, string q) {
+static unique_ptr<PGQueryResult>
+PGQuery(PGconn *conn, string q,
+        ExecStatusType response_code = PGRES_TUPLES_OK) {
   auto res = make_unique<PGQueryResult>(PQexec(conn, q.c_str()));
-
-  if (!res->res) {
-    throw IOException("Unable to query Postgres");
-  }
-  if (PQresultStatus(res->res) != PGRES_COMMAND_OK) {
-    throw IOException("Unable to query Postgres: %s",
-                      string(PQresultErrorMessage(res->res)));
-  }
-}
-
-static unique_ptr<PGQueryResult> PGQuery(PGconn *conn, string q) {
-  auto res = make_unique<PGQueryResult>(PQexec(conn, q.c_str()));
-
-  if (!res->res) {
-    throw IOException("Unable to query Postgres");
-  }
-  if (PQresultStatus(res->res) != PGRES_TUPLES_OK) {
-    throw IOException("Unable to query Postgres: %s",
+  if (!res->res || PQresultStatus(res->res) != response_code) {
+    throw IOException("Unable to query Postgres: %s %s",
+                      string(PQerrorMessage(conn)),
                       string(PQresultErrorMessage(res->res)));
   }
   return res;
+}
+
+static void PGExec(PGconn *conn, string q) {
+  PGQuery(conn, q, PGRES_COMMAND_OK);
 }
 
 static unique_ptr<FunctionData>
@@ -167,7 +159,8 @@ PostgresBind(ClientContext &context, vector<Value> &inputs,
   }
 
   // TODO disabled since tpcds needs too many connections
-  PGExec(bind_data->conn, "BEGIN TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY");
+  PGExec(bind_data->conn,
+         "BEGIN TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY");
 
   // find the id of the table in question to simplify below queries and avoid
   // complex joins (ha)
@@ -240,22 +233,14 @@ static void PostgresInitInternal(ClientContext &context,
                    : '"' + bind_data->names[column_id] + '"';
       });
 
-  // PQbinaryTuples
-  // PQgetCopyData
-  //  PQgetCopyData
-
-
-  // https://www.postgresql.org/docs/current/sql-declare.html
-  auto sql = StringUtil::Format(
+  local_state->sql = StringUtil::Format(
       R"(
-CLOSE ALL;
-DECLARE duckdb_scan_cursor BINARY INSENSITIVE NO SCROLL CURSOR WITHOUT HOLD FOR SELECT %s FROM "%s"."%s" WHERE ctid BETWEEN '(%d,0)'::tid AND '(%d,0)'::tid;
+COPY (SELECT %s FROM "%s"."%s" WHERE ctid BETWEEN '(%d,0)'::tid AND '(%d,0)'::tid) TO STDOUT (FORMAT binary);
 )",
       col_names, bind_data->schema_name, bind_data->table_name, task_min,
       task_max);
 
-  PGExec(local_state->conn, sql);
-  // construct string here so we don
+  local_state->exec = false;
   local_state->done = false;
 }
 
@@ -496,8 +481,6 @@ static void ProcessValue(data_ptr_t value_ptr, idx_t value_len,
   }
 }
 
-
-// TODO does this get faster without the cursor?
 static void PostgresScan(ClientContext &context,
                          const FunctionData *bind_data_p,
                          FunctionOperatorData *operator_state, DataChunk *,
@@ -507,41 +490,110 @@ static void PostgresScan(ClientContext &context,
   D_ASSERT(bind_data_p);
 
   auto bind_data = (const PostgresBindData *)bind_data_p;
-  auto &local_state = (PostgresOperatorData &)*operator_state;
+  auto local_state = (PostgresOperatorData *)operator_state;
 
-  if (local_state.done) {
+  if (local_state->done) {
     return;
   }
 
-  auto sql = StringUtil::Format("FETCH %d FROM duckdb_scan_cursor",
-                                STANDARD_VECTOR_SIZE);
+  // TODO clean up buffer handling here its a mess
 
-  auto res = PGQuery(local_state.conn, sql);
+  char *buffer = nullptr, *buffer_org = nullptr;
 
-  auto read_now =
-      MinValue((idx_t)STANDARD_VECTOR_SIZE, (idx_t)(PQntuples(res->res)));
-  if (read_now < 1) {
-    local_state.done = true;
-    return;
+  if (!local_state->exec) {
+    PGQuery(local_state->conn, local_state->sql, PGRES_COPY_OUT);
+
+    // first we take the header
+    auto len = PQgetCopyData(local_state->conn, &buffer, 0);
+    buffer_org = buffer;
+
+    if (!buffer || len == -2) { // -2 means an error occured
+      throw IOException("Unable to query Postgres: %s",
+                        string(PQerrorMessage(local_state->conn)));
+    }
+
+    if (len == -1) { // -1 means COPY is done, e.g. no tuples
+      local_state->done = true;
+      return;
+    }
+
+    if (!memcmp(buffer, "PGCOPY\\n\\377\\r\\n\\0", 11)) {
+      throw IOException("Expected Postgres binary header, got something else");
+    }
+    buffer += 11;
+    D_ASSERT(buffer);
+
+    buffer += 8; // as far as i can tell the "Flags field" and the "Header
+                 // extension area length" do not contain anything interesting
+
+    local_state->exec = true;
   }
-  output.SetCardinality(read_now);
 
-  // TODO make this a columnar op (gasp)
-  for (idx_t output_offset = 0; output_offset < read_now; output_offset++) {
+  // then we take berlin
+
+  char tuple_header_buf[5];
+
+  auto len = 0;
+
+  idx_t output_offset = 0;
+  while (true) {
+    output.SetCardinality(output_offset);
+
+    if (output_offset == STANDARD_VECTOR_SIZE) {
+      break;
+    }
+    if (!buffer) {
+
+      auto len = PQgetCopyData(local_state->conn, &buffer, 0);
+
+      buffer_org = buffer;
+      if (!buffer || len == -2) { // -2 means an error occured
+        throw IOException("Unable to query Postgres: %s",
+                          string(PQerrorMessage(local_state->conn)));
+      }
+
+      if (len == -1) { // -1 means COPY is done, e.g. no tuples
+        local_state->done = true;
+        break;
+      }
+    }
+
+    auto tuple_count = (int16_t)ntohs(Load<uint16_t>((const_data_ptr_t)buffer));
+    buffer += sizeof(int16_t);
+
+    // TODO we could possibly skip this whole read and check and abort if len ==
+    // 2
+    if (tuple_count == -1) { // done
+      local_state->done = true;
+      break;
+    }
+
+    if (tuple_count != local_state->column_ids.size()) {
+      throw IOException("Expected %d fields, got %d",
+                        local_state->column_ids.size(), tuple_count);
+    }
+
     for (idx_t output_idx = 0; output_idx < output.ColumnCount();
          output_idx++) {
-      auto col_idx = local_state.column_ids[output_idx];
+      auto col_idx = local_state->column_ids[output_idx];
       if (col_idx == COLUMN_IDENTIFIER_ROW_ID) {
         col_idx = 0;
       }
-      auto raw_val =
-          (data_ptr_t)PQgetvalue(res->res, output_offset, output_idx);
-      auto raw_len = PQgetlength(res->res, output_offset, output_idx);
-      D_ASSERT(PQfformat(res->res, output_idx) == 1);
+
+      auto raw_len = ntohl(Load<int32_t>((const_data_ptr_t)buffer));
+      // TODO handle -1 len, indicates NULL
+      buffer += sizeof(int32_t);
+      auto raw_val = (data_ptr_t)buffer;
+      buffer += raw_len;
 
       ProcessValue(raw_val, raw_len, bind_data, col_idx, false, output,
                    output_idx, output_offset);
     }
+
+    PQfreemem(buffer_org);
+    buffer = nullptr;
+
+    output_offset++;
   }
 }
 

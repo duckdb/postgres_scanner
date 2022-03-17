@@ -47,7 +47,7 @@ struct PostgresBindData : public FunctionData {
   vector<string> names;
   vector<LogicalType> types;
 
-  idx_t pages_per_task = 1000;
+  idx_t pages_per_task = 100;
   string dsn;
 
   string snapshot;
@@ -167,7 +167,7 @@ PostgresBind(ClientContext &context, vector<Value> &inputs,
   }
 
   // TODO disabled since tpcds needs too many connections
-  PGExec(bind_data->conn, "BEGIN TRANSACTION ISOLATION LEVEL REPEATABLE READ");
+  PGExec(bind_data->conn, "BEGIN TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY");
 
   // find the id of the table in question to simplify below queries and avoid
   // complex joins (ha)
@@ -240,6 +240,11 @@ static void PostgresInitInternal(ClientContext &context,
                    : '"' + bind_data->names[column_id] + '"';
       });
 
+  // PQbinaryTuples
+  // PQgetCopyData
+  //  PQgetCopyData
+
+
   // https://www.postgresql.org/docs/current/sql-declare.html
   auto sql = StringUtil::Format(
       R"(
@@ -260,7 +265,7 @@ static PGconn *PostgresScanConnect(string dsn, string snapshot) {
     throw IOException("Unable to connect to Postgres at %s", dsn);
   }
 
-  PGExec(conn, "BEGIN TRANSACTION ISOLATION LEVEL REPEATABLE READ");
+  PGExec(conn, "BEGIN TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY");
   PGExec(conn, StringUtil::Format("SET TRANSACTION SNAPSHOT '%s'", snapshot));
   return conn;
 }
@@ -491,6 +496,8 @@ static void ProcessValue(data_ptr_t value_ptr, idx_t value_len,
   }
 }
 
+
+// TODO does this get faster without the cursor?
 static void PostgresScan(ClientContext &context,
                          const FunctionData *bind_data_p,
                          FunctionOperatorData *operator_state, DataChunk *,
@@ -510,7 +517,6 @@ static void PostgresScan(ClientContext &context,
                                 STANDARD_VECTOR_SIZE);
 
   auto res = PGQuery(local_state.conn, sql);
-  D_ASSERT(res); // TODO complain
 
   auto read_now =
       MinValue((idx_t)STANDARD_VECTOR_SIZE, (idx_t)(PQntuples(res->res)));
@@ -520,6 +526,7 @@ static void PostgresScan(ClientContext &context,
   }
   output.SetCardinality(read_now);
 
+  // TODO make this a columnar op (gasp)
   for (idx_t output_offset = 0; output_offset < read_now; output_offset++) {
     for (idx_t output_idx = 0; output_idx < output.ColumnCount();
          output_idx++) {

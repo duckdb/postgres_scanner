@@ -18,6 +18,8 @@ jobs:
 
     - name: Setup Postgres
       run: |
+        mkdir pgdata
+        chown postgres pgdata
         sudo -u postgres initdb -D pgdata
         sudo -u postgres pg_ctl -D pgdata start
 

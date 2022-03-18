@@ -8,23 +8,19 @@ jobs:
   build:
     name: CentOS 7
     runs-on: ubuntu-latest
-    container: 
-      image: centos:7
-      options: --privileged
-
-    env: 
-      PGDATA: /tmp/pgdata
+    container: centos:7
 
     steps:
 
     - name: Install
       run: |
-        mkdir -p $PGDATA
         yum install -y gcc gcc-c++ make python3 postgresql-server git
 
     - name: Setup Postgres
       run: |
-        systemctl start postgresql
+        pg_config
+        initdb -D pgdata
+        pg_ctl -D pgdata start
 
     - name: Install even more
       run: |

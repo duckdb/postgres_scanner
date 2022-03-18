@@ -14,14 +14,15 @@ jobs:
 
     - name: Install
       run: |
-        yum install -y gcc gcc-c++ cmake3 make python3 postgresql-server
+        yum install -y gcc gcc-c++ cmake3 make python3
         ln -s /usr/bin/cmake3 /usr/bin/cmake
         cmake --version
 
     - name: Install recent git yay
       run: |
         yum -y install https://packages.endpointdev.com/rhel/7/os/x86_64/endpoint-repo.x86_64.rpm
-        yum install -y git
+        yum -y install https://download.postgresql.org/pub/repos/yum/reporpms/EL-7-x86_64/pgdg-redhat-repo-latest.noarch.rpm
+        yum install -y git postgresql14-server
 
     - name: Install AWS client
       run: |

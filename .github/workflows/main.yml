@@ -14,11 +14,10 @@ jobs:
 
     - name: Install
       run: |
-        yum install -y gcc gcc-c++ make python3 postgresql-server git
+        yum install -y gcc gcc-c++ make python3 postgresql-server git sudo
 
     - name: Setup Postgres
       run: |
-        pg_config
         sudo -u postgres initdb -D pgdata
         sudo -u postgres pg_ctl -D pgdata start
 

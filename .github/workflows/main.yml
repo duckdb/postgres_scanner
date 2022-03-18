@@ -22,8 +22,9 @@ jobs:
         chown postgres pgdata
         sudo -u postgres initdb -D pgdata
         sudo -u postgres pg_ctl -D pgdata start
-        createdb test
-        psql -d test "SELECT 42"
+        sleep 5
+        createdb
+        psql "SELECT 42"
 
     - name: Install recent git yay
       run: |

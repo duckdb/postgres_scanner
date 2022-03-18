@@ -15,8 +15,7 @@ jobs:
     - name: Install
       run: |
         yum install -y gcc gcc-c++ cmake3 make python3
-        ln -s /usr/bin/cmake3 /usr/bin/cmake
-        cmake --version
+        cmake3 --version
 
     - name: Install recent git yay
       run: |

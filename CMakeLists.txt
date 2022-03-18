@@ -23,6 +23,7 @@ else()
 endif()
 
 project(postgres_scanner)
+set(PostgreSQL_ADDITIONAL_VERSIONS 14)
 
 find_package(PostgreSQL REQUIRED)
 

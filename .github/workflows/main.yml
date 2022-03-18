@@ -24,7 +24,7 @@ jobs:
         sudo -u postgres pg_ctl -D pgdata start
         sleep 5
         sudo -u postgres createuser root
-        createdb
+        sudo -u postgres createdb -O root root
         psql "SELECT 42"
 
     - name: Install recent git yay

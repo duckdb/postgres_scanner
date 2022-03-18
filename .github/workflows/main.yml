@@ -38,7 +38,9 @@ jobs:
         git submodule update --remote --merge
 
     - name: Build
-      run: make release
+      run:
+        export PATH=/github/home/.local:$PATH
+        make release
 
     - name: Make test databases
       run: |

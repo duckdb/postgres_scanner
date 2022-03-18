@@ -19,8 +19,8 @@ jobs:
     - name: Setup Postgres
       run: |
         pg_config
-        initdb -D pgdata
-        pg_ctl -D pgdata start
+        su postgres initdb -D pgdata
+        su postgres pg_ctl -D pgdata start
 
     - name: Install even more
       run: |

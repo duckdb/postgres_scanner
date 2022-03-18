@@ -1,0 +1,54 @@
+on: [push, pull_request]
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  build:
+    name: CentOS 7
+    runs-on: ubuntu-latest
+    container: centos:7
+
+    steps:
+
+    - name: Install
+      run: yum install -y gcc gcc-c++ cmake make python3 postgresql-server
+
+    - name: Install recent git yay
+      run: |
+        yum -y install https://packages.endpoint.com/rhel/7/os/x86_64/endpoint-repo-1.9-1.x86_64.rpm
+        yum install -y git
+
+    - name: Install AWS client
+      run: |
+        curl -O https://bootstrap.pypa.io/get-pip.py
+        python3 get-pip.py --user
+        python3 -m pip install awscli --upgrade --user
+
+    - uses: actions/checkout@v2
+      with:
+        fetch-depth: 0
+
+    - name: Update DuckDB submodule
+      run: |
+        git submodule init
+        git submodule update --remote --merge
+
+    - name: Build
+      run: make release
+
+    - name: Make test databases
+      run: |
+        ./create-postgres-tables.sh
+
+    - name: Test
+      run: | 
+        ./duckdb/build/release/test/unittest --test-dir . "[postgres_scanner]"
+        ./build/release/concurrency_test
+
+    - uses: actions/upload-artifact@v2
+      with:
+        name: postgres-scanner
+        path: |
+          build/release/postgres_scanner.duckdb_extension

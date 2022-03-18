@@ -3,6 +3,8 @@
 
 #include <libpq-fe.h>
 
+#include <arpa/inet.h>
+
 #include "duckdb/function/table_function.hpp"
 #include "duckdb/common/types/date.hpp"
 #include "duckdb/common/types/timestamp.hpp"

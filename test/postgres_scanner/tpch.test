@@ -7,6 +7,7 @@ statement ok
 CALL postgres_attach('dbname=postgresscanner', source_schema='tpch');
 
 loop i 1 9
+
 query I
 PRAGMA tpch(${i})
 ----

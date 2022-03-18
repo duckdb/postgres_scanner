@@ -593,14 +593,12 @@ static void PostgresScan(ClientContext &context,
       auto col_idx = local_state->column_ids[output_idx];
       auto &out_vec = output.data[output_idx];
       auto raw_len = (int32_t)ntohl(buf.Read<uint32_t>());
-
       if (raw_len == -1) { // NULL
-        FlatVector::Validity(out_vec).Set(output_offset, true);
+        FlatVector::Validity(out_vec).Set(output_offset, false);
       } else {
-        auto raw_val = (data_ptr_t)buf.buffer_ptr;
-        buf.buffer_ptr += raw_len;
-        ProcessValue(raw_val, raw_len, bind_data, col_idx, false, out_vec,
+        ProcessValue((data_ptr_t)buf.buffer_ptr, raw_len, bind_data, col_idx, false, out_vec,
                      output_offset);
+         buf.buffer_ptr += raw_len;
       }
     }
 

@@ -14,13 +14,10 @@ jobs:
 
     - name: Install
       run: |
-        yum install -y gcc gcc-c++ make python3 postgresql-server
+        yum install -y gcc gcc-c++ make python3 postgresql-server git
 
-    - name: Install more
+    - name: Setup Postgres
       run: |
-        yum -y install centos-release-scl-rh 
-        yum -y install https://packages.endpointdev.com/rhel/7/os/x86_64/endpoint-repo.x86_64.rpm
-        ls /usr/pgsql*
         pg_config
         postgresql-setup initdb
         systemctl start postgresql

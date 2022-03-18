@@ -14,16 +14,16 @@ jobs:
 
     - name: Install
       run: |
-        yum install -y gcc gcc-c++ make python3
+        yum install -y gcc gcc-c++ make python3 postgresql-server
 
     - name: Install more
       run: |
-        yum -y install centos-release-scl-rh epel-release
+        yum -y install centos-release-scl-rh 
         yum -y install https://packages.endpointdev.com/rhel/7/os/x86_64/endpoint-repo.x86_64.rpm
-        yum -y install https://download.postgresql.org/pub/repos/yum/reporpms/EL-7-x86_64/pgdg-redhat-repo-latest.noarch.rpm
-        yum install -y git postgresql14-server postgresql14-devel postgresql14-libs
-        service postgresql-14.service start
-        PATH="$PATH:/usr/pgsql-14/bin" pg_config
+        ls /usr/pgsql*
+        pg_config
+        postgresql-setup initdb
+        systemctl start postgresql
 
     - name: Install even more
       run: |
@@ -42,7 +42,7 @@ jobs:
 
     - name: Build
       run: |
-        export PATH=/github/home/.local/bin:/usr/pgsql-14/bin:$PATH
+        export PATH=/github/home/.local/bin:/usr/pgsql-9.2/bin:$PATH
         make release
 
     - name: Make test databases
@@ -50,7 +50,7 @@ jobs:
         ./create-postgres-tables.sh
 
     - name: Test
-      run: | 
+      run: |
         ./duckdb/build/release/test/unittest --test-dir . "[postgres_scanner]"
         ./build/release/concurrency_test
 

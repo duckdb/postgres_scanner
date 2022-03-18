@@ -24,8 +24,9 @@ jobs:
         sudo -u postgres pg_ctl -D pgdata start
         sleep 5
         sudo -u postgres createuser root
-        sudo -u postgres createdb -O root root
-        psql "SELECT 42"
+        sudo -u postgres psql -c "ALTER USER root CREATEDB"
+        createdb
+        psql -c "SELECT 42"
 
     - name: Install recent git yay
       run: |

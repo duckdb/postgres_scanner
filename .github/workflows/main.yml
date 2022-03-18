@@ -13,7 +13,10 @@ jobs:
     steps:
 
     - name: Install
-      run: yum install -y gcc gcc-c++ cmake make python3 postgresql-server
+      run: |
+        yum install -y gcc gcc-c++ cmake3 make python3 postgresql-server
+        ln -s /usr/bin/cmake3 /usr/bin/cmake
+        cmake --version
 
     - name: Install recent git yay
       run: |

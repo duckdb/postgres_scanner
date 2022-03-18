@@ -36,9 +36,8 @@ static constexpr uint32_t POSTGRES_TID_MAX = 4294967295;
 struct PostgresBindData : public FunctionData {
   string schema_name;
   string table_name;
-  idx_t oid = 0;
   idx_t cardinality = 0;
-  idx_t pages = 0;
+  idx_t pages_approx = 0;
 
   idx_t page_size = 0;
   idx_t txid = 0;
@@ -158,23 +157,26 @@ PostgresBind(ClientContext &context, vector<Value> &inputs,
     throw IOException("Unable to connect to Postgres at %s", bind_data->dsn);
   }
 
-  // TODO disabled since tpcds needs too many connections
+  // we create a transaction here, and get the snapshot id so the parallel
+  // reader threads can use the same snapshot
   PGExec(bind_data->conn,
          "BEGIN TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY");
 
+  auto res = PGQuery(bind_data->conn, "SELECT pg_export_snapshot()");
+  bind_data->snapshot = res->GetString(0, 0);
+
   // find the id of the table in question to simplify below queries and avoid
   // complex joins (ha)
-  auto res =
-      PGQuery(bind_data->conn, StringUtil::Format(R"(
+  res = PGQuery(bind_data->conn, StringUtil::Format(R"(
 SELECT pg_class.oid, reltuples, relpages
 FROM pg_class JOIN pg_namespace ON relnamespace = pg_namespace.oid
 WHERE nspname='%s' AND relname='%s'
 )",
-                                                  bind_data->schema_name,
-                                                  bind_data->table_name));
-  bind_data->oid = res->GetInt64(0, 0);
+                                                    bind_data->schema_name,
+                                                    bind_data->table_name));
+  auto oid = res->GetInt64(0, 0);
   bind_data->cardinality = res->GetInt64(0, 1);
-  bind_data->pages = res->GetInt64(0, 2);
+  bind_data->pages_approx = res->GetInt64(0, 2);
 
   res.reset();
 
@@ -188,7 +190,7 @@ FROM pg_attribute
 WHERE attrelid=%d AND attnum > 0
 ORDER BY attnum
 )",
-                                     bind_data->oid));
+                                     oid));
 
   for (idx_t row = 0; row < PQntuples(res->res); row++) {
     PostgresColumnInfo info;
@@ -206,9 +208,6 @@ ORDER BY attnum
   }
   res.reset();
 
-  res = PGQuery(bind_data->conn, "SELECT pg_export_snapshot()");
-  bind_data->snapshot = res->GetString(0, 0);
-
   return_types = bind_data->types;
   names = bind_data->names;
 
@@ -225,12 +224,17 @@ static void PostgresInitInternal(ClientContext &context,
 
   auto bind_data = (const PostgresBindData *)bind_data_p;
 
+  // we just return the first column for ROW_ID
+  for (idx_t i = 0; i < local_state->column_ids.size(); i++) {
+    if (local_state->column_ids[i] == COLUMN_IDENTIFIER_ROW_ID) {
+      local_state->column_ids[i] = 0;
+    }
+  }
+
   auto col_names = StringUtil::Join(
       local_state->column_ids.data(), local_state->column_ids.size(), ", ",
       [&](const idx_t column_id) {
-        return column_id == COLUMN_IDENTIFIER_ROW_ID
-                   ? '"' + bind_data->names[0] + '"'
-                   : '"' + bind_data->names[column_id] + '"';
+        return '"' + bind_data->names[column_id] + '"';
       });
 
   local_state->sql = StringUtil::Format(
@@ -391,11 +395,9 @@ static void ReadDecimal(idx_t scale, int32_t ndigits, int32_t weight,
 
 static void ProcessValue(data_ptr_t value_ptr, idx_t value_len,
                          const PostgresBindData *bind_data, idx_t col_idx,
-                         bool skip, DataChunk &output, idx_t output_idx,
-                         idx_t output_offset) {
+                         bool skip, Vector &out_vec, idx_t output_offset) {
   auto &type = bind_data->types[col_idx];
   auto &info = bind_data->columns[col_idx];
-  auto &out_vec = output.data[output_idx];
 
   switch (type.id()) {
   case LogicalTypeId::INTEGER: {
@@ -481,6 +483,66 @@ static void ProcessValue(data_ptr_t value_ptr, idx_t value_len,
   }
 }
 
+struct PostgresBinaryBuffer {
+
+  PostgresBinaryBuffer(PGconn *conn_p) : conn(conn_p) { D_ASSERT(conn); }
+  void Next() {
+    Reset();
+    len = PQgetCopyData(conn, &buffer, 0);
+
+    // len -2 is error
+    // len -1 is supposed to signal end but does not actually happen in practise
+    // we expect at least 2 bytes in each message for the tuple count
+    if (!buffer || len < sizeof(int16_t)) {
+      throw IOException("Unable to read binary COPY data from Postgres: %s",
+                        string(PQerrorMessage(conn)));
+    }
+    buffer_ptr = buffer;
+  }
+  void Reset() {
+    if (buffer) {
+      PQfreemem(buffer);
+    }
+    buffer = nullptr;
+    buffer_ptr = nullptr;
+    len = 0;
+  }
+  bool Ready() { return buffer_ptr != nullptr; }
+  ~PostgresBinaryBuffer() { Reset(); }
+
+  void CheckHeader() {
+    auto magic_len = 11;
+    auto flags_len = 8;
+    auto header_len = magic_len + flags_len;
+
+    if (len < header_len) {
+      throw IOException(
+          "Unable to read binary COPY data from Postgres, invalid header");
+    }
+    if (!memcmp(buffer_ptr, "PGCOPY\\n\\377\\r\\n\\0", magic_len)) {
+      throw IOException(
+          "Expected Postgres binary COPY header, got something else");
+    }
+    buffer_ptr += header_len;
+    // as far as i can tell the "Flags field" and the "Header
+    // extension area length" do not contain anything interesting
+  }
+
+  template <typename T> const T Read() {
+    T ret;
+    D_ASSERT(len > 0);
+    D_ASSERT(buffer);
+    D_ASSERT(buffer_ptr);
+    memcpy(&ret, buffer_ptr, sizeof(ret));
+    buffer_ptr += sizeof(T);
+    return ret;
+  }
+
+  char *buffer = nullptr, *buffer_ptr = nullptr;
+  int len = 0;
+  PGconn *conn = nullptr;
+};
+
 static void PostgresScan(ClientContext &context,
                          const FunctionData *bind_data_p,
                          FunctionOperatorData *operator_state, DataChunk *,
@@ -496,41 +558,15 @@ static void PostgresScan(ClientContext &context,
     return;
   }
 
-  // TODO clean up buffer handling here its a mess
-
-  char *buffer = nullptr, *buffer_org = nullptr;
-
+  PostgresBinaryBuffer buf(local_state->conn);
   if (!local_state->exec) {
     PGQuery(local_state->conn, local_state->sql, PGRES_COPY_OUT);
-
-    // first we take the header
-    auto len = PQgetCopyData(local_state->conn, &buffer, 0);
-    buffer_org = buffer;
-
-    if (!buffer || len == -2) { // -2 means an error occured
-      throw IOException("Unable to query Postgres: %s",
-                        string(PQerrorMessage(local_state->conn)));
-    }
-
-    if (len == -1) { // -1 means COPY is done, e.g. no tuples
-      local_state->done = true;
-      return;
-    }
-
-    if (!memcmp(buffer, "PGCOPY\\n\\377\\r\\n\\0", 11)) {
-      throw IOException("Expected Postgres binary header, got something else");
-    }
-    buffer += 11;
-    D_ASSERT(buffer);
-
-    buffer += 8; // as far as i can tell the "Flags field" and the "Header
-                 // extension area length" do not contain anything interesting
-
     local_state->exec = true;
+    buf.Next();
+    buf.CheckHeader();
+    // the first tuple immediately follows the header in the first message, so
+    // we have to keep the buffer alive for now.
   }
-
-  // then we take berlin
-
 
   idx_t output_offset = 0;
   while (true) {
@@ -539,57 +575,36 @@ static void PostgresScan(ClientContext &context,
     if (output_offset == STANDARD_VECTOR_SIZE) {
       break;
     }
-    if (!buffer) {
 
-      auto len = PQgetCopyData(local_state->conn, &buffer, 0);
-
-      buffer_org = buffer;
-      if (!buffer || len == -2) { // -2 means an error occured
-        throw IOException("Unable to query Postgres: %s",
-                          string(PQerrorMessage(local_state->conn)));
-      }
-
-      if (len == -1) { // -1 means COPY is done, e.g. no tuples
-        local_state->done = true;
-        break;
-      }
+    if (!buf.Ready()) {
+      buf.Next();
     }
 
-    auto tuple_count = (int16_t)ntohs(Load<uint16_t>((const_data_ptr_t)buffer));
-    buffer += sizeof(int16_t);
-
-    // TODO we could possibly skip this whole read and check and abort if len ==
-    // 2
+    auto tuple_count = (int16_t)ntohs(buf.Read<uint16_t>());
     if (tuple_count == -1) { // done
       local_state->done = true;
       break;
     }
 
-    if (tuple_count != local_state->column_ids.size()) {
-      throw IOException("Expected %d fields, got %d",
-                        local_state->column_ids.size(), tuple_count);
-    }
+    D_ASSERT(tuple_count == local_state->column_ids.size());
 
     for (idx_t output_idx = 0; output_idx < output.ColumnCount();
          output_idx++) {
       auto col_idx = local_state->column_ids[output_idx];
-      if (col_idx == COLUMN_IDENTIFIER_ROW_ID) {
-        col_idx = 0;
+      auto &out_vec = output.data[output_idx];
+      auto raw_len = (int32_t)ntohl(buf.Read<uint32_t>());
+
+      if (raw_len == -1) { // NULL
+        FlatVector::Validity(out_vec).Set(output_offset, true);
+      } else {
+        auto raw_val = (data_ptr_t)buf.buffer_ptr;
+        buf.buffer_ptr += raw_len;
+        ProcessValue(raw_val, raw_len, bind_data, col_idx, false, out_vec,
+                     output_offset);
       }
-
-      auto raw_len = ntohl(Load<int32_t>((const_data_ptr_t)buffer));
-      // TODO handle -1 len, indicates NULL
-      buffer += sizeof(int32_t);
-      auto raw_val = (data_ptr_t)buffer;
-      buffer += raw_len;
-
-      ProcessValue(raw_val, raw_len, bind_data, col_idx, false, output,
-                   output_idx, output_offset);
     }
 
-    PQfreemem(buffer_org);
-    buffer = nullptr;
-
+    buf.Reset();
     output_offset++;
   }
 }
@@ -599,7 +614,7 @@ static idx_t PostgresMaxThreads(ClientContext &context,
   D_ASSERT(bind_data_p);
 
   auto bind_data = (const PostgresBindData *)bind_data_p;
-  return bind_data->pages / bind_data->pages_per_task;
+  return bind_data->pages_approx / bind_data->pages_per_task;
 }
 
 static unique_ptr<ParallelState>
@@ -623,10 +638,10 @@ static bool PostgresParallelStateNext(ClientContext &context,
 
   lock_guard<mutex> parallel_lock(parallel_state.lock);
 
-  if (parallel_state.page_idx < bind_data->pages) {
+  if (parallel_state.page_idx < bind_data->pages_approx) {
     auto page_max = parallel_state.page_idx + bind_data->pages_per_task;
     if (parallel_state.page_idx + bind_data->pages_per_task >
-        bind_data->pages) {
+        bind_data->pages_approx) {
       // the relpages entry is not the real max, so make the last task bigger
       page_max = POSTGRES_TID_MAX;
     }

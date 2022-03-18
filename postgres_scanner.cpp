@@ -777,7 +777,7 @@ AND table_type='BASE TABLE'
     auto table_name = res->GetString(row, 0);
     view_info.view_name = table_name;
     table_name_ptr->value = Value(table_name);
-    // CREATE VIEW AS SELECT * FROM sqlite_scan()
+    // CREATE VIEW AS SELECT * FROM postgres_scan(...)
     auto binder = Binder::CreateBinder(context);
     auto bound_statement = binder->Bind(*view_info.query->Copy());
     view_info.types = bound_statement.types;

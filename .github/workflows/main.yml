@@ -21,8 +21,6 @@ jobs:
 
     - name: Setup Postgres
       run: |
-        pg_config
-        postgresql-setup initdb
         systemctl start postgresql
 
     - name: Install even more

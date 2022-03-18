@@ -23,8 +23,7 @@ jobs:
         sudo -u postgres initdb -D pgdata
         sudo -u postgres pg_ctl -D pgdata start
         sleep 5
-        sudo -u postgres createuser root
-        sudo -u postgres psql -c "ALTER USER root CREATEDB"
+        sudo -u postgres createuser root -d
         createdb
         psql -c "SELECT 42"
 

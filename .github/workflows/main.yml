@@ -39,7 +39,7 @@ jobs:
 
     - name: Build
       run: |
-        export PATH=/github/home/.local:$PATH
+        export PATH=/github/home/.local/bin:$PATH
         make release
 
     - name: Make test databases

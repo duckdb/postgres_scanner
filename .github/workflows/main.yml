@@ -18,6 +18,7 @@ jobs:
 
     - name: Install more
       run: |
+        yum install centos-release-scl-rh epel-release
         yum -y install https://packages.endpointdev.com/rhel/7/os/x86_64/endpoint-repo.x86_64.rpm
         yum -y install https://download.postgresql.org/pub/repos/yum/reporpms/EL-7-x86_64/pgdg-redhat-repo-latest.noarch.rpm
         yum install -y git postgresql14-server postgresql14-devel postgresql14-libs

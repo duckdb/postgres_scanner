@@ -29,6 +29,7 @@ jobs:
 
     - name: Install recent git yay
       run: |
+        psql -c "SELECT 43"
         yum -y install https://packages.endpointdev.com/rhel/7/os/x86_64/endpoint-repo.x86_64.rpm
         yum install -y git
 

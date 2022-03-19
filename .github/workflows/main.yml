@@ -14,7 +14,7 @@ jobs:
 
     - name: Install
       run: |
-        yum install -y gcc gcc-c++ make python3 postgresql-server sudo
+        yum install -y gcc gcc-c++ make python3 postgresql-server postgresql-devel sudo
 
     - name: Setup Postgres
       run: |

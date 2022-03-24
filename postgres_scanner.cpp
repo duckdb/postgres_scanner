@@ -426,35 +426,33 @@ static void ProcessValue(data_ptr_t value_ptr, idx_t value_len,
 
   case LogicalTypeId::INTEGER:
     D_ASSERT(info.attlen == sizeof(int32_t));
-     FlatVector::GetData<int32_t>(out_vec)[output_offset] = ntohl(Load<int32_t>(value_ptr));
+    FlatVector::GetData<int32_t>(out_vec)[output_offset] =
+        ntohl(Load<int32_t>(value_ptr));
     break;
-
 
   case LogicalTypeId::SMALLINT:
     D_ASSERT(info.attlen == sizeof(int16_t));
-     FlatVector::GetData<int16_t>(out_vec)[output_offset] = ntohs(Load<int16_t>(value_ptr));
+    FlatVector::GetData<int16_t>(out_vec)[output_offset] =
+        ntohs(Load<int16_t>(value_ptr));
     break;
-
 
   case LogicalTypeId::BIGINT:
     D_ASSERT(info.attlen == sizeof(int64_t));
-      FlatVector::GetData<int64_t>(out_vec)[output_offset] = ntohll(Load<int64_t>(value_ptr));
+    FlatVector::GetData<int64_t>(out_vec)[output_offset] =
+        ntohll(Load<int64_t>(value_ptr));
     break;
-
 
   case LogicalTypeId::FLOAT: {
     D_ASSERT(info.attlen == sizeof(float));
-
-    auto out_ptr = FlatVector::GetData<float>(out_vec);
-    out_ptr[output_offset] = Load<float>(value_ptr);
+    auto i = ntohl(Load<int32_t>(value_ptr));
+    FlatVector::GetData<float>(out_vec)[output_offset] = *((float *)&i);
     break;
   }
 
   case LogicalTypeId::DOUBLE: {
     D_ASSERT(info.attlen == sizeof(double));
-
-    auto out_ptr = FlatVector::GetData<double>(out_vec);
-    out_ptr[output_offset] = Load<double>(value_ptr);
+    auto i = ntohll(Load<int64_t>(value_ptr));
+    FlatVector::GetData<double>(out_vec)[output_offset] = *((double *)&i);
     break;
   }
 

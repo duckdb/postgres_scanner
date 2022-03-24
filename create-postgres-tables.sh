@@ -13,6 +13,8 @@ createdb postgresscanner
 
 psql -d postgresscanner < /tmp/postgresscannertmp/schema.sql
 psql -d postgresscanner < /tmp/postgresscannertmp/load.sql
+psql -d postgresscanner < all_pg_types.sql
+
 rm -rf /tmp/postgresscannertmp
 
 echo "

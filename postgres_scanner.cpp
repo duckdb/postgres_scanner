@@ -123,22 +123,23 @@ static LogicalType DuckDBType(const string &pgtypename, const int atttypmod) {
     auto width = ((atttypmod - sizeof(int32_t)) >> 16) & 0xffff;
     auto scale = (((atttypmod - sizeof(int32_t)) & 0x7ff) ^ 1024) - 1024;
     return LogicalType::DECIMAL(width, scale);
-  } else if (pgtypename == "bpchar" || pgtypename == "varchar" || pgtypename == "text") {
+  } else if (pgtypename == "bpchar" || pgtypename == "varchar" ||
+             pgtypename == "text") {
     return LogicalType::VARCHAR;
   } else if (pgtypename == "date") {
     return LogicalType::DATE;
   } else if (pgtypename == "bytea") {
     return LogicalType::BLOB;
   } else if (pgtypename == "json") {
-      return LogicalType::JSON;
+    return LogicalType::JSON;
   } else if (pgtypename == "time") {
-      return LogicalType::TIME;
-  }  else if (pgtypename == "timetz") {
-      return LogicalType::TIME_TZ;
+    return LogicalType::TIME;
+  } else if (pgtypename == "timetz") {
+    return LogicalType::TIME_TZ;
   } else if (pgtypename == "timestamp") {
-      return LogicalType::TIMESTAMP;
+    return LogicalType::TIMESTAMP;
   } else if (pgtypename == "timestamptz") {
-      return LogicalType::TIMESTAMP_TZ;
+    return LogicalType::TIMESTAMP_TZ;
   } else {
     throw IOException("Unsupported Postgres type %s", pgtypename);
   }
@@ -419,27 +420,55 @@ static void ProcessValue(data_ptr_t value_ptr, idx_t value_len,
   auto &type = bind_data->types[col_idx];
   auto &info = bind_data->columns[col_idx];
 
-  switch (type.id()) {
-  case LogicalTypeId::INTEGER: {
-    D_ASSERT(info.attlen == sizeof(int32_t));
+  D_ASSERT(!skip);
 
-    if (!skip) {
-      auto out_ptr = FlatVector::GetData<int32_t>(out_vec);
-      out_ptr[output_offset] = ntohl(Load<int32_t>(value_ptr));
-    }
+  switch (type.id()) {
+
+  case LogicalTypeId::INTEGER:
+    D_ASSERT(info.attlen == sizeof(int32_t));
+     FlatVector::GetData<int32_t>(out_vec)[output_offset] = ntohl(Load<int32_t>(value_ptr));
+    break;
+
+
+  case LogicalTypeId::SMALLINT:
+    D_ASSERT(info.attlen == sizeof(int16_t));
+     FlatVector::GetData<int16_t>(out_vec)[output_offset] = ntohs(Load<int16_t>(value_ptr));
+    break;
+
+
+  case LogicalTypeId::BIGINT:
+    D_ASSERT(info.attlen == sizeof(int64_t));
+      FlatVector::GetData<int64_t>(out_vec)[output_offset] = ntohll(Load<int64_t>(value_ptr));
+    break;
+
+
+  case LogicalTypeId::FLOAT: {
+    D_ASSERT(info.attlen == sizeof(float));
+
+    auto out_ptr = FlatVector::GetData<float>(out_vec);
+    out_ptr[output_offset] = Load<float>(value_ptr);
+    break;
+  }
+
+  case LogicalTypeId::DOUBLE: {
+    D_ASSERT(info.attlen == sizeof(double));
+
+    auto out_ptr = FlatVector::GetData<double>(out_vec);
+    out_ptr[output_offset] = Load<double>(value_ptr);
     break;
   }
 
   case LogicalTypeId::VARCHAR: {
     D_ASSERT(info.attlen == -1);
 
-    if (!skip) {
-      auto out_ptr = FlatVector::GetData<string_t>(out_vec);
-      out_ptr[output_offset] =
-          StringVector::AddString(out_vec, (char *)value_ptr, value_len);
-    }
+    auto out_ptr = FlatVector::GetData<string_t>(out_vec);
+    out_ptr[output_offset] =
+        StringVector::AddString(out_vec, (char *)value_ptr, value_len);
     break;
   }
+  case LogicalTypeId::BOOLEAN:
+    (FlatVector::GetData<bool>(out_vec))[output_offset] = *value_ptr > 0;
+    break;
   case LogicalTypeId::DECIMAL: {
     auto decimal_ptr = (uint16_t *)value_ptr;
     // we need at least 8 bytes here
@@ -490,14 +519,10 @@ static void ProcessValue(data_ptr_t value_ptr, idx_t value_len,
   }
 
   case LogicalTypeId::DATE: {
-    if (!skip) {
-      auto jd = ntohl(Load<int32_t>(value_ptr));
-      auto out_ptr = FlatVector::GetData<date_t>(out_vec);
-      out_ptr[output_offset].days =
-          jd + POSTGRES_EPOCH_JDATE - 2440588; // magic!
-    }
-    break;
-  }
+    auto jd = ntohl(Load<int32_t>(value_ptr));
+    auto out_ptr = FlatVector::GetData<date_t>(out_vec);
+    out_ptr[output_offset].days = jd + POSTGRES_EPOCH_JDATE - 2440588; // magic!
+  } break;
   default:
     throw InternalException("Unsupported Type %s", type.ToString());
   }

@@ -12,3 +12,11 @@ False	-42	-42	-42	-42.009998	-42.010000	-42.0
 True	42	42	42	42.009998	42.010000	42.0
 NULL	NULL	NULL	NULL	NULL	NULL	NULL
 
+
+query IIIIIII
+select * from pg_bytetypes;
+----
+a	         	(empty)	(empty)	(empty)	(empty)	42
+a	aaaaaaaaa	a	aaaaaaaaa	dpfkg	dpfkg	{"a":42}
+Z	ZZZZZZZZZ	Z	ZZZZZZZZZ	dpfkg	dpfkg	{"a":42}
+NULL	NULL	NULL	NULL	NULL	NULL	NULL

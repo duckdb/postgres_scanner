@@ -426,46 +426,58 @@ static void ProcessValue(data_ptr_t value_ptr, idx_t value_len,
 
   case LogicalTypeId::INTEGER:
     D_ASSERT(info.attlen == sizeof(int32_t));
+    D_ASSERT(value_len == sizeof(int32_t));
+
     FlatVector::GetData<int32_t>(out_vec)[output_offset] =
-        ntohl(Load<int32_t>(value_ptr));
+        ntohl(Load<uint32_t>(value_ptr));
     break;
 
   case LogicalTypeId::SMALLINT:
     D_ASSERT(info.attlen == sizeof(int16_t));
+    D_ASSERT(value_len == sizeof(int16_t));
+
     FlatVector::GetData<int16_t>(out_vec)[output_offset] =
         ntohs(Load<int16_t>(value_ptr));
     break;
 
   case LogicalTypeId::BIGINT:
     D_ASSERT(info.attlen == sizeof(int64_t));
+    D_ASSERT(value_len == sizeof(int64_t));
+
     FlatVector::GetData<int64_t>(out_vec)[output_offset] =
-        ntohll(Load<int64_t>(value_ptr));
+        ntohll(Load<uint64_t>(value_ptr));
     break;
 
   case LogicalTypeId::FLOAT: {
     D_ASSERT(info.attlen == sizeof(float));
-    auto i = ntohl(Load<int32_t>(value_ptr));
+    D_ASSERT(value_len == sizeof(float));
+
+    auto i = ntohl(Load<uint32_t>(value_ptr));
     FlatVector::GetData<float>(out_vec)[output_offset] = *((float *)&i);
     break;
   }
 
   case LogicalTypeId::DOUBLE: {
     D_ASSERT(info.attlen == sizeof(double));
-    auto i = ntohll(Load<int64_t>(value_ptr));
+    D_ASSERT(value_len == sizeof(double));
+
+    auto i = ntohll(Load<uint64_t>(value_ptr));
     FlatVector::GetData<double>(out_vec)[output_offset] = *((double *)&i);
     break;
   }
 
-  case LogicalTypeId::VARCHAR: {
+  case LogicalTypeId::JSON:
+  case LogicalTypeId::BLOB:
+  case LogicalTypeId::VARCHAR:
     D_ASSERT(info.attlen == -1);
-
-    auto out_ptr = FlatVector::GetData<string_t>(out_vec);
-    out_ptr[output_offset] =
-        StringVector::AddString(out_vec, (char *)value_ptr, value_len);
+    FlatVector::GetData<string_t>(out_vec)[output_offset] =
+        StringVector::AddStringOrBlob(out_vec, (char *)value_ptr, value_len);
     break;
-  }
+
   case LogicalTypeId::BOOLEAN:
-    (FlatVector::GetData<bool>(out_vec))[output_offset] = *value_ptr > 0;
+    D_ASSERT(info.attlen == sizeof(bool));
+    D_ASSERT(value_len == sizeof(bool));
+    FlatVector::GetData<bool>(out_vec)[output_offset] = *value_ptr > 0;
     break;
   case LogicalTypeId::DECIMAL: {
     auto decimal_ptr = (uint16_t *)value_ptr;
@@ -517,10 +529,15 @@ static void ProcessValue(data_ptr_t value_ptr, idx_t value_len,
   }
 
   case LogicalTypeId::DATE: {
-    auto jd = ntohl(Load<int32_t>(value_ptr));
+    D_ASSERT(info.attlen == sizeof(int32_t));
+    D_ASSERT(value_len == sizeof(int32_t));
+
+    auto jd = ntohl(Load<uint32_t>(value_ptr));
     auto out_ptr = FlatVector::GetData<date_t>(out_vec);
     out_ptr[output_offset].days = jd + POSTGRES_EPOCH_JDATE - 2440588; // magic!
-  } break;
+    break;
+  }
+
   default:
     throw InternalException("Unsupported Type %s", type.ToString());
   }

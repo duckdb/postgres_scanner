@@ -107,18 +107,38 @@ struct PostgresParallelState : public ParallelState {
 };
 
 static LogicalType DuckDBType(const string &pgtypename, const int atttypmod) {
-  if (pgtypename == "int4") {
+  if (pgtypename == "bool") {
+    return LogicalType::BOOLEAN;
+  } else if (pgtypename == "int2") {
+    return LogicalType::SMALLINT;
+  } else if (pgtypename == "int4") {
     return LogicalType::INTEGER;
   } else if (pgtypename == "int8") {
     return LogicalType::BIGINT;
+  } else if (pgtypename == "float4") {
+    return LogicalType::FLOAT;
+  } else if (pgtypename == "float8") {
+    return LogicalType::DOUBLE;
   } else if (pgtypename == "numeric") {
     auto width = ((atttypmod - sizeof(int32_t)) >> 16) & 0xffff;
     auto scale = (((atttypmod - sizeof(int32_t)) & 0x7ff) ^ 1024) - 1024;
     return LogicalType::DECIMAL(width, scale);
-  } else if (pgtypename == "bpchar" || pgtypename == "varchar") {
+  } else if (pgtypename == "bpchar" || pgtypename == "varchar" || pgtypename == "text") {
     return LogicalType::VARCHAR;
   } else if (pgtypename == "date") {
     return LogicalType::DATE;
+  } else if (pgtypename == "bytea") {
+    return LogicalType::BLOB;
+  } else if (pgtypename == "json") {
+      return LogicalType::JSON;
+  } else if (pgtypename == "time") {
+      return LogicalType::TIME;
+  }  else if (pgtypename == "timetz") {
+      return LogicalType::TIME_TZ;
+  } else if (pgtypename == "timestamp") {
+      return LogicalType::TIMESTAMP;
+  } else if (pgtypename == "timestamptz") {
+      return LogicalType::TIMESTAMP_TZ;
   } else {
     throw IOException("Unsupported Postgres type %s", pgtypename);
   }

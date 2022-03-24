@@ -8,7 +8,7 @@ EXPORT DATABASE '/tmp/postgresscannertmp';
 " | \
 ./duckdb/build/release/duckdb 
 
-dropdb postgresscanner
+dropdb --if-exists postgresscanner
 createdb postgresscanner
 
 psql -d postgresscanner < /tmp/postgresscannertmp/schema.sql

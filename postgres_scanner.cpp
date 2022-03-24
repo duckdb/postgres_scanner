@@ -140,18 +140,16 @@ static void PGExec(PGconn *conn, string q) {
   PGQuery(conn, q, PGRES_COMMAND_OK);
 }
 
-static unique_ptr<FunctionData>
-PostgresBind(ClientContext &context, vector<Value> &inputs,
-             named_parameter_map_t &named_parameters,
-             vector<LogicalType> &input_table_types,
-             vector<string> &input_table_names,
-             vector<LogicalType> &return_types, vector<string> &names) {
+static unique_ptr<FunctionData> PostgresBind(ClientContext &context,
+                                             TableFunctionBindInput &input,
+                                             vector<LogicalType> &return_types,
+                                             vector<string> &names) {
 
   auto bind_data = make_unique<PostgresBindData>();
 
-  bind_data->dsn = inputs[0].GetValue<string>();
-  bind_data->schema_name = inputs[1].GetValue<string>();
-  bind_data->table_name = inputs[2].GetValue<string>();
+  bind_data->dsn = input.inputs[0].GetValue<string>();
+  bind_data->schema_name = input.inputs[1].GetValue<string>();
+  bind_data->table_name = input.inputs[2].GetValue<string>();
 
   bind_data->conn = PQconnectdb(bind_data->dsn.c_str());
 
@@ -598,9 +596,9 @@ static void PostgresScan(ClientContext &context,
       if (raw_len == -1) { // NULL
         FlatVector::Validity(out_vec).Set(output_offset, false);
       } else {
-        ProcessValue((data_ptr_t)buf.buffer_ptr, raw_len, bind_data, col_idx, false, out_vec,
-                     output_offset);
-         buf.buffer_ptr += raw_len;
+        ProcessValue((data_ptr_t)buf.buffer_ptr, raw_len, bind_data, col_idx,
+                     false, out_vec, output_offset);
+        buf.buffer_ptr += raw_len;
       }
     }
 
@@ -698,17 +696,15 @@ struct AttachFunctionData : public TableFunctionData {
   string dsn = "";
 };
 
-static unique_ptr<FunctionData>
-AttachBind(ClientContext &context, vector<Value> &inputs,
-           named_parameter_map_t &named_parameters,
-           vector<LogicalType> &input_table_types,
-           vector<string> &input_table_names, vector<LogicalType> &return_types,
-           vector<string> &names) {
+static unique_ptr<FunctionData> AttachBind(ClientContext &context,
+                                           TableFunctionBindInput &input,
+                                           vector<LogicalType> &return_types,
+                                           vector<string> &names) {
 
   auto result = make_unique<AttachFunctionData>();
-  result->dsn = inputs[0].GetValue<string>();
+  result->dsn = input.inputs[0].GetValue<string>();
 
-  for (auto &kv : named_parameters) {
+  for (auto &kv : input.named_parameters) {
     if (kv.first == "source_schema") {
       result->source_schema = StringValue::Get(kv.second);
     } else if (kv.first == "target_schema") {

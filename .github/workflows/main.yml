@@ -12,13 +12,19 @@ jobs:
 
     steps:
 
-    - uses: actions/checkout@v2
-      with:
-        fetch-depth: 0
 
     - name: Install
       run: |
         yum install -y gcc gcc-c++ make python3 postgresql-server postgresql-devel sudo
+
+    - name: Install recent git yay
+      run: |
+        yum -y install https://packages.endpointdev.com/rhel/7/os/x86_64/endpoint-repo.x86_64.rpm
+        yum install -y git
+
+    - uses: actions/checkout@v2
+      with:
+        fetch-depth: 0
 
     - name: Setup Postgres
       run: |
@@ -31,17 +37,13 @@ jobs:
         createdb
         psql -c "SELECT 42"
 
-    - name: Install recent git yay
-      run: |
-        yum -y install https://packages.endpointdev.com/rhel/7/os/x86_64/endpoint-repo.x86_64.rpm
-        yum install -y git
+
 
     - name: Install even more
       run: |
         curl -O https://bootstrap.pypa.io/pip/3.6/get-pip.py
         python3 get-pip.py --user
         python3 -m pip install awscli cmake --upgrade --user
-
 
     - name: Update DuckDB submodule
       run: |

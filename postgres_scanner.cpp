@@ -4,6 +4,10 @@
 #include <libpq-fe.h>
 
 #include <arpa/inet.h>
+// htonll is not available on Linux it seems
+#ifndef htonll
+#define htonll(x) ((((long long)htonl(x)) << 32) + (htonl((x) >> 32)))
+#endif
 
 #include "duckdb/function/table_function.hpp"
 #include "duckdb/common/types/date.hpp"

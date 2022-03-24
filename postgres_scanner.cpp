@@ -5,8 +5,8 @@
 
 #include <arpa/inet.h>
 // htonll is not available on Linux it seems
-#ifndef htonll
-#define htonll(x) ((((long long)htonl(x)) << 32) + (htonl((x) >> 32)))
+#ifndef ntohll
+#define ntohll(x) ((((uint64_t)ntohl(x & 0xFFFFFFFF)) << 32) + ntohl(x >> 32))
 #endif
 
 #include "duckdb/function/table_function.hpp"
@@ -539,6 +539,45 @@ static void ProcessValue(data_ptr_t value_ptr, idx_t value_len,
     auto jd = ntohl(Load<uint32_t>(value_ptr));
     auto out_ptr = FlatVector::GetData<date_t>(out_vec);
     out_ptr[output_offset].days = jd + POSTGRES_EPOCH_JDATE - 2440588; // magic!
+    break;
+  }
+
+  case LogicalTypeId::TIME: {
+    D_ASSERT(info.attlen == sizeof(int64_t));
+    D_ASSERT(value_len == sizeof(int64_t));
+    D_ASSERT(info.atttypmod == -1);
+
+    FlatVector::GetData<dtime_t>(out_vec)[output_offset].micros =
+        ntohll(Load<uint64_t>(value_ptr));
+    break;
+  }
+
+  case LogicalTypeId::TIME_TZ: {
+    D_ASSERT(info.attlen == sizeof(int64_t) + sizeof(int32_t));
+    D_ASSERT(value_len == sizeof(int64_t) + sizeof(int32_t));
+    D_ASSERT(info.atttypmod == -1);
+
+    auto usec = ntohll(Load<uint64_t>(value_ptr));
+    auto tzoffset = (int32_t)ntohl(Load<uint32_t>(value_ptr + sizeof(int64_t)));
+    FlatVector::GetData<dtime_t>(out_vec)[output_offset].micros =
+        usec + tzoffset * Interval::MICROS_PER_SEC;
+    break;
+  }
+
+  case LogicalTypeId::TIMESTAMP_TZ:
+  case LogicalTypeId::TIMESTAMP: {
+    D_ASSERT(info.attlen == sizeof(int64_t));
+    D_ASSERT(value_len == sizeof(int64_t));
+    D_ASSERT(info.atttypmod == -1);
+
+    auto usec = ntohll(Load<uint64_t>(value_ptr));
+    auto time = usec % Interval::MICROS_PER_DAY;
+    // adjust date
+    auto date =
+        (usec / Interval::MICROS_PER_DAY) + POSTGRES_EPOCH_JDATE - 2440588;
+    // glue it back together
+    FlatVector::GetData<timestamp_t>(out_vec)[output_offset].value =
+        date * Interval::MICROS_PER_DAY + time;
     break;
   }
 

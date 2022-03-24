@@ -2,6 +2,9 @@ statement ok
 LOAD 'build/release/postgres_scanner.duckdb_extension';
 
 statement ok
+pragma enable_verification
+
+statement ok
 CALL postgres_attach('dbname=postgresscanner');
 
 query IIIIIII
@@ -12,7 +15,6 @@ False	-42	-42	-42	-42.009998	-42.010000	-42.0
 True	42	42	42	42.009998	42.010000	42.0
 NULL	NULL	NULL	NULL	NULL	NULL	NULL
 
-
 query IIIIIII
 select * from pg_bytetypes;
 ----
@@ -20,3 +22,9 @@ a	         	(empty)	(empty)	(empty)	(empty)	42
 a	aaaaaaaaa	a	aaaaaaaaa	dpfkg	dpfkg	{"a":42}
 Z	ZZZZZZZZZ	Z	ZZZZZZZZZ	dpfkg	dpfkg	{"a":42}
 NULL	NULL	NULL	NULL	NULL	NULL	NULL
+
+query IIIII
+select * from pg_datetypes;
+----
+2021-03-01	12:45:01	07:00:01+00	2021-03-01 12:45:01	2021-03-01 07:00:01+00
+NULL	NULL	NULL	NULL	NULL

@@ -29,7 +29,6 @@ jobs:
 
     - name: Install recent git yay
       run: |
-        psql -c "SELECT 43"
         yum -y install https://packages.endpointdev.com/rhel/7/os/x86_64/endpoint-repo.x86_64.rpm
         yum install -y git
 
@@ -55,7 +54,8 @@ jobs:
 
     - name: Make test databases
       run: |
-        ./create-postgres-tables.sh
+        psql -c "SELECT 43"
+        source ./create-postgres-tables.sh
 
     - name: Test
       run: |

@@ -12,6 +12,10 @@ jobs:
 
     steps:
 
+    - uses: actions/checkout@v2
+      with:
+        fetch-depth: 0
+
     - name: Install
       run: |
         yum install -y gcc gcc-c++ make python3 postgresql-server postgresql-devel sudo
@@ -38,9 +42,6 @@ jobs:
         python3 get-pip.py --user
         python3 -m pip install awscli cmake --upgrade --user
 
-    - uses: actions/checkout@v2
-      with:
-        fetch-depth: 0
 
     - name: Update DuckDB submodule
       run: |
@@ -54,7 +55,6 @@ jobs:
 
     - name: Make test databases
       run: |
-        sudo -u postgres pg_ctl -D pgdata start
         psql -c "SELECT 43"
         source ./create-postgres-tables.sh
         ./duckdb/build/release/test/unittest --test-dir . "[postgres_scanner]"

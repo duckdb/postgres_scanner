@@ -10,6 +10,7 @@ EXPORT DATABASE '/tmp/postgresscannertmp';
 
 dropdb postgresscanner
 createdb postgresscanner
+
 psql -d postgresscanner < /tmp/postgresscannertmp/schema.sql
 psql -d postgresscanner < /tmp/postgresscannertmp/load.sql
 rm -rf /tmp/postgresscannertmp

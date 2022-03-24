@@ -54,11 +54,9 @@ jobs:
 
     - name: Make test databases
       run: |
+        sudo -u postgres pg_ctl -D pgdata start
         psql -c "SELECT 43"
         source ./create-postgres-tables.sh
-
-    - name: Test
-      run: |
         ./duckdb/build/release/test/unittest --test-dir . "[postgres_scanner]"
         ./build/release/concurrency_test
 

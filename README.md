@@ -35,7 +35,7 @@ Then you can query those views normally using SQL.
 If you prefer to not attach all tables, but just query a single table, that is possible using the `POSTGRES_SCAN` table-producing function, e.g.
 
 ```SQL
-select * from postgres_scan('', 'public', 'mytable');
+SELECT * FROM POSTGRES_SCAN('', 'public', 'mytable');
 ```
 
 `POSTGRES_SCAN` takes three string parameters, the `libpq` connection string (see above), a Postgres schema name and a table name. The schema name is often `public`.

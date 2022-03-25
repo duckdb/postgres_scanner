@@ -149,6 +149,17 @@ static LogicalType DuckDBType(const string &pgtypename, const int atttypmod) {
   }
 }
 
+static PGconn *PGConnect(string &dsn) {
+  PGconn *conn = PQconnectdb(dsn.c_str());
+
+  // both PQStatus and PQerrorMessage check for nullptr
+  if (PQstatus(conn) == CONNECTION_BAD) {
+    throw IOException("Unable to connect to Postgres at %s: %s", dsn,
+                      string(PQerrorMessage(conn)));
+  }
+  return conn;
+}
+
 static unique_ptr<PGQueryResult>
 PGQuery(PGconn *conn, string q,
         ExecStatusType response_code = PGRES_TUPLES_OK) {
@@ -176,11 +187,7 @@ static unique_ptr<FunctionData> PostgresBind(ClientContext &context,
   bind_data->schema_name = input.inputs[1].GetValue<string>();
   bind_data->table_name = input.inputs[2].GetValue<string>();
 
-  bind_data->conn = PQconnectdb(bind_data->dsn.c_str());
-
-  if (PQstatus(bind_data->conn) == CONNECTION_BAD) {
-    throw IOException("Unable to connect to Postgres at %s", bind_data->dsn);
-  }
+  bind_data->conn = PGConnect(bind_data->dsn);
 
   // we create a transaction here, and get the snapshot id so the parallel
   // reader threads can use the same snapshot
@@ -274,11 +281,7 @@ COPY (SELECT %s FROM "%s"."%s" WHERE ctid BETWEEN '(%d,0)'::tid AND '(%d,0)'::ti
 }
 
 static PGconn *PostgresScanConnect(string dsn, string snapshot) {
-  auto conn = PQconnectdb(dsn.c_str());
-  if (!conn || PQstatus(conn) == CONNECTION_BAD) {
-    throw IOException("Unable to connect to Postgres at %s", dsn);
-  }
-
+  auto conn = PGConnect(dsn);
   PGExec(conn, "BEGIN TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY");
   PGExec(conn, StringUtil::Format("SET TRANSACTION SNAPSHOT '%s'", snapshot));
   return conn;
@@ -831,11 +834,7 @@ static void AttachFunction(ClientContext &context,
     return;
   }
 
-  auto conn = PQconnectdb(data.dsn.c_str());
-
-  if (PQstatus(conn) == CONNECTION_BAD) {
-    throw IOException("Unable to connect to Postgres at %s", data.dsn);
-  }
+  auto conn = PGConnect(data.dsn);
 
   // create a template create view info that is filled in the loop below
   CreateViewInfo view_info;

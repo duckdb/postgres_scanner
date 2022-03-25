@@ -2,8 +2,8 @@
 echo "
 CREATE SCHEMA tpch; 
 CREATE SCHEMA tpcds;
-CALL dbgen(sf=1, schema='tpch');
-CALL dsdgen(sf=1, schema='tpcds');
+CALL dbgen(sf=0.01, schema='tpch');
+CALL dsdgen(sf=0.01, schema='tpcds');
 EXPORT DATABASE '/tmp/postgresscannertmp';
 " | \
 ./duckdb/build/release/duckdb 

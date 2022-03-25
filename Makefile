@@ -25,8 +25,8 @@ release: duckdb_release
 	cmake  -DCMAKE_BUILD_TYPE=RelWithDebInfo ../.. && \
 	cmake --build .
 
-test: debug
-	./duckdb/build/debug/test/unittest --test-dir . "[postgres_scanner]"
+test: release
+	./duckdb/build/release/test/unittest --test-dir . "[postgres_scanner]"
 
 format:
 	clang-format --sort-includes=0 -style=file -i postgres_scanner.cpp

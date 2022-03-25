@@ -60,7 +60,6 @@ jobs:
         psql -c "SELECT 43"
         source ./create-postgres-tables.sh
         ./duckdb/build/release/test/unittest --test-dir . "[postgres_scanner]"
-        ./build/release/concurrency_test
 
     - uses: actions/upload-artifact@v2
       with:

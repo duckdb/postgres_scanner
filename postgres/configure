@@ -1,0 +1,23 @@
+#!/bin/sh
+rm -rf postgres
+mkdir postgres
+curl -s -L https://github.com/postgres/postgres/archive/refs/tags/REL_14_2.tar.gz | tar x --strip-components 1 -C postgres
+(cd postgres && ./configure \
+  --without-llvm        \
+  --without-icu         \
+  --without-tcl         \
+  --without-perl        \
+  --without-python      \
+  --without-gssapi      \
+  --without-pam         \
+  --without-bsd-auth    \
+  --without-ldap        \
+  --without-bonjour     \
+  --without-selinux     \
+  --without-systemd     \
+  --without-readline    \
+  --without-libxml      \
+  --without-libxslt     \
+  --without-zlib        \
+  --without-lz4         \
+  --without-openssl  > /dev/null)

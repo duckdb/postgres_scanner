@@ -11,11 +11,9 @@ jobs:
     container: centos:7
 
     steps:
-
-
     - name: Install
       run: |
-        yum install -y gcc gcc-c++ make python3 postgresql-server postgresql-devel sudo
+        yum install -y gcc gcc-c++ make python3 postgresql-server sudo
 
     - name: Install recent git yay
       run: |
@@ -36,8 +34,6 @@ jobs:
         sudo -u postgres createuser root -s
         createdb
         psql -c "SELECT 42"
-
-
 
     - name: Install even more
       run: |

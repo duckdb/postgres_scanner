@@ -23,9 +23,8 @@ else()
 endif()
 
 project(postgres_scanner)
-set(PostgreSQL_ADDITIONAL_VERSIONS 14)
 
-find_package(PostgreSQL REQUIRED)
+add_subdirectory(postgres)
 
 # skip building extensions on mingw
 if(WIN32 AND NOT MSVC)
@@ -35,7 +34,8 @@ endif()
 include_directories(duckdb/src/include)
 include_directories(duckdb/third_party/fmt/include)
 
-include_directories(${PostgreSQL_INCLUDE_DIRS})
+include_directories(postgres/postgres/src/include)
+include_directories(postgres/postgres/src/interfaces/libpq)
 
 if("${CMAKE_BUILD_TYPE}" STREQUAL "Debug")
   add_compile_options(-Wall -pedantic -fsanitize=address -fno-sanitize=vptr)
@@ -44,12 +44,9 @@ else()
   link_directories(duckdb/build/release/src)
 endif()
 
-link_directories(${PostgreSQL_LIBRARY_DIRS})
-
 add_library(postgres_scanner SHARED postgres_scanner.cpp)
 set_target_properties(postgres_scanner PROPERTIES PREFIX "")
-target_link_libraries(postgres_scanner duckdb)
-target_link_libraries(postgres_scanner ${PostgreSQL_LIBRARIES})
+target_link_libraries(postgres_scanner duckdb duckdb_libpq)
 
 if("${CMAKE_BUILD_TYPE}" STREQUAL "Debug")
   target_link_libraries(postgres_scanner -fsanitize=address)
@@ -74,8 +71,7 @@ if(WIN32)
 endif()
 
 add_executable(concurrency_test concurrency_test.cpp)
-target_link_libraries(concurrency_test duckdb)
-target_link_libraries(concurrency_test ${PostgreSQL_LIBRARIES})
+target_link_libraries(concurrency_test duckdb duckdb_libpq)
 
 if("${CMAKE_BUILD_TYPE}" STREQUAL "Debug")
   target_link_libraries(concurrency_test -fsanitize=address)

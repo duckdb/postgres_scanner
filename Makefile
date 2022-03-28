@@ -4,22 +4,26 @@ GEN=ninja
 clean:
 	rm -rf build
 	rm -rf duckdb/build
+	rm -rf postgres/postgres
 
 duckdb_debug:
 	cd duckdb && \
 	BUILD_TPCDS=1 BUILD_TPCH=1 make debug
 
+postgres/postgres:
+	cd postgres && ./configure
+
 duckdb_release:
 	cd duckdb && \
 	BUILD_TPCDS=1 BUILD_TPCH=1 make release
 
-debug: duckdb_debug
+debug: postgres/postgres duckdb_debug
 	mkdir -p build/debug && \
 	cd build/debug && \
 	cmake  -DCMAKE_BUILD_TYPE=Debug ../.. && \
 	cmake --build .
 
-release: duckdb_release
+release: postgres/postgres duckdb_release
 	mkdir -p build/release && \
 	cd build/release && \
 	cmake  -DCMAKE_BUILD_TYPE=RelWithDebInfo ../.. && \
@@ -32,6 +36,8 @@ format:
 	clang-format --sort-includes=0 -style=file -i postgres_scanner.cpp
 	clang-format --sort-includes=0 -style=file -i concurrency_test.cpp
 	cmake-format -i CMakeLists.txt
+	cmake-format -i postgres/CMakeLists.txt
+
 
 update:
 	git submodule update --remote --merge

@@ -46,7 +46,7 @@ endif()
 
 add_library(postgres_scanner SHARED postgres_scanner.cpp)
 set_target_properties(postgres_scanner PROPERTIES PREFIX "")
-target_link_libraries(postgres_scanner duckdb duckdb_libpq)
+target_link_libraries(postgres_scanner duckdb duckdb_libpq Threads::Threads)
 
 if("${CMAKE_BUILD_TYPE}" STREQUAL "Debug")
   target_link_libraries(postgres_scanner -fsanitize=address)
@@ -71,7 +71,7 @@ if(WIN32)
 endif()
 
 add_executable(concurrency_test concurrency_test.cpp)
-target_link_libraries(concurrency_test duckdb duckdb_libpq)
+target_link_libraries(concurrency_test duckdb duckdb_libpq Threads::Threads)
 
 if("${CMAKE_BUILD_TYPE}" STREQUAL "Debug")
   target_link_libraries(concurrency_test -fsanitize=address)

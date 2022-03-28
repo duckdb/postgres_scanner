@@ -22,8 +22,9 @@ else()
   set(CMAKE_CXX_STANDARD 11)
 endif()
 
-project(postgres_scanner)
+project(postgres_scanner C CXX)
 
+find_package(Threads REQUIRED)
 add_subdirectory(postgres)
 
 # skip building extensions on mingw

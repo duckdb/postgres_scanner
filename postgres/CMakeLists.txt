@@ -7,6 +7,8 @@ endif()
 
 add_definitions(-DFRONTEND=1)
 
+include_directories(include postgres/src/include postgres/src/backend)
+
 add_library(
   duckdb_libpq STATIC
   postgres/src/interfaces/libpq/fe-auth-scram.c
@@ -47,8 +49,6 @@ add_library(
   postgres/src/port/strerror.c
   postgres/src/port/thread.c)
 
-include_directories(postgres/src/include postgres/src/backend)
-
-include_directories(include)
+set_property(TARGET duckdb_libpq PROPERTY C_STANDARD 99)
 
 set_target_properties(duckdb_libpq PROPERTIES POSITION_INDEPENDENT_CODE ON)

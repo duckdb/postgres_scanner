@@ -9,45 +9,50 @@ add_definitions(-DFRONTEND=1)
 
 include_directories(include postgres/src/include postgres/src/backend)
 
-add_library(
-  duckdb_libpq STATIC
-  postgres/src/interfaces/libpq/fe-auth-scram.c
-  postgres/src/interfaces/libpq/fe-connect.c
-  postgres/src/interfaces/libpq/fe-exec.c
-  postgres/src/interfaces/libpq/fe-lobj.c
-  postgres/src/interfaces/libpq/fe-misc.c
-  postgres/src/interfaces/libpq/fe-print.c
-  postgres/src/interfaces/libpq/fe-protocol3.c
-  postgres/src/interfaces/libpq/fe-secure.c
-  postgres/src/interfaces/libpq/fe-trace.c
-  postgres/src/interfaces/libpq/legacy-pqsignal.c
-  postgres/src/interfaces/libpq/libpq-events.c
-  postgres/src/interfaces/libpq/pqexpbuffer.c
-  postgres/src/interfaces/libpq/fe-auth.c
-  postgres/src/common/base64.c
-  postgres/src/common/cryptohash.c
-  postgres/src/common/encnames.c
-  postgres/src/common/hmac.c
-  postgres/src/common/ip.c
-  postgres/src/common/link-canary.c
-  postgres/src/common/md5.c
-  postgres/src/common/md5_common.c
-  postgres/src/common/saslprep.c
-  postgres/src/common/scram-common.c
-  postgres/src/common/sha1.c
-  postgres/src/common/sha2.c
-  postgres/src/common/string.c
-  postgres/src/common/unicode_norm.c
-  postgres/src/common/wchar.c
-  postgres/src/port/chklocale.c
-  postgres/src/port/explicit_bzero.c
-  postgres/src/port/inet_net_ntop.c
-  postgres/src/port/noblock.c
-  postgres/src/port/pg_strong_random.c
-  postgres/src/port/pgstrcasecmp.c
-  postgres/src/port/snprintf.c
-  postgres/src/port/strerror.c
-  postgres/src/port/thread.c)
+set(LIBPG_SOURCES
+    postgres/src/interfaces/libpq/fe-auth-scram.c
+    postgres/src/interfaces/libpq/fe-connect.c
+    postgres/src/interfaces/libpq/fe-exec.c
+    postgres/src/interfaces/libpq/fe-lobj.c
+    postgres/src/interfaces/libpq/fe-misc.c
+    postgres/src/interfaces/libpq/fe-print.c
+    postgres/src/interfaces/libpq/fe-protocol3.c
+    postgres/src/interfaces/libpq/fe-secure.c
+    postgres/src/interfaces/libpq/fe-trace.c
+    postgres/src/interfaces/libpq/legacy-pqsignal.c
+    postgres/src/interfaces/libpq/libpq-events.c
+    postgres/src/interfaces/libpq/pqexpbuffer.c
+    postgres/src/interfaces/libpq/fe-auth.c
+    postgres/src/common/base64.c
+    postgres/src/common/cryptohash.c
+    postgres/src/common/encnames.c
+    postgres/src/common/hmac.c
+    postgres/src/common/ip.c
+    postgres/src/common/link-canary.c
+    postgres/src/common/md5.c
+    postgres/src/common/md5_common.c
+    postgres/src/common/saslprep.c
+    postgres/src/common/scram-common.c
+    postgres/src/common/sha1.c
+    postgres/src/common/sha2.c
+    postgres/src/common/string.c
+    postgres/src/common/unicode_norm.c
+    postgres/src/common/wchar.c
+    postgres/src/port/chklocale.c
+    postgres/src/port/explicit_bzero.c
+    postgres/src/port/inet_net_ntop.c
+    postgres/src/port/noblock.c
+    postgres/src/port/pg_strong_random.c
+    postgres/src/port/pgstrcasecmp.c
+    postgres/src/port/snprintf.c
+    postgres/src/port/strerror.c
+    postgres/src/port/thread.c)
+
+if("${CMAKE_SYSTEM_NAME}" MATCHES "Linux")
+  set(LIBPG_SOURCES ${LIBPG_SOURCES} postgres/src/port/strlcpy.c)
+endif()
+
+add_library(duckdb_libpq STATIC ${LIBPG_SOURCES})
 
 set_property(TARGET duckdb_libpq PROPERTY C_STANDARD 99)
 

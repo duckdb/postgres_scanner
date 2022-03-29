@@ -49,7 +49,8 @@ set(LIBPG_SOURCES
     postgres/src/port/thread.c)
 
 if("${CMAKE_SYSTEM_NAME}" MATCHES "Linux")
-  set(LIBPG_SOURCES ${LIBPG_SOURCES} postgres/src/port/strlcpy.c)
+  set(LIBPG_SOURCES ${LIBPG_SOURCES} postgres/src/port/strlcpy.c
+                    postgres/src/port/getpeereid.c)
 endif()
 
 add_library(duckdb_libpq STATIC ${LIBPG_SOURCES})

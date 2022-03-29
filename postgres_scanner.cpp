@@ -1,5 +1,6 @@
 #define DUCKDB_BUILD_LOADABLE_EXTENSION
 #include "duckdb.hpp"
+#include "duckdb/main/relation/table_function_relation.hpp"
 
 #include <libpq-fe.h>
 
@@ -837,30 +838,8 @@ static void AttachFunction(ClientContext &context,
   auto conn = PGConnect(data.dsn);
 
   // create a template create view info that is filled in the loop below
-  CreateViewInfo view_info;
-  view_info.schema = data.target_schema;
-  view_info.temporary = true;
-  view_info.on_conflict = data.overwrite ? OnCreateConflict::REPLACE_ON_CONFLICT
-                                         : OnCreateConflict::ERROR_ON_CONFLICT;
 
-  vector<unique_ptr<ParsedExpression>> parameters;
-  parameters.push_back(make_unique<ConstantExpression>(Value(data.dsn)));
-  parameters.push_back(
-      make_unique<ConstantExpression>(Value(data.source_schema)));
-  // push an empty parameter for the table name but keep a pointer so we can
-  // fill it below
-  parameters.push_back(make_unique<ConstantExpression>(Value()));
-  auto *table_name_ptr = (ConstantExpression *)parameters.back().get();
-  auto table_function = make_unique<TableFunctionRef>();
-  table_function->function =
-      make_unique<FunctionExpression>("postgres_scan", move(parameters));
-
-  auto select_node = make_unique<SelectNode>();
-  select_node->select_list.push_back(make_unique<StarExpression>());
-  select_node->from_table = move(table_function);
-
-  view_info.query = make_unique<SelectStatement>();
-  view_info.query->node = move(select_node);
+  auto dconn = Connection(context.db->GetDatabase(context));
 
   auto res = PGQuery(conn, StringUtil::Format(
                                R"(
@@ -873,17 +852,28 @@ AND table_type='BASE TABLE'
                                .c_str());
 
   for (idx_t row = 0; row < PQntuples(res->res); row++) {
-
     auto table_name = res->GetString(row, 0);
-    view_info.view_name = table_name;
-    table_name_ptr->value = Value(table_name);
-    // CREATE VIEW AS SELECT * FROM postgres_scan(...)
-    auto binder = Binder::CreateBinder(context);
-    auto bound_statement = binder->Bind(*view_info.query->Copy());
-    view_info.types = bound_statement.types;
-    auto view_info_copy = view_info.Copy();
-    context.db->GetCatalog().CreateView(context,
-                                        (CreateViewInfo *)view_info_copy.get());
+
+    CreateViewInfo info;
+    info.view_name = table_name;
+    info.schema = data.target_schema;
+    info.temporary = true;
+    info.on_conflict = data.overwrite ? OnCreateConflict::REPLACE_ON_CONFLICT
+                                      : OnCreateConflict::ERROR_ON_CONFLICT;
+
+    auto rel = dconn.TableFunction(
+        "postgres_scan",
+        {Value(data.dsn), Value(data.source_schema), Value(table_name)});
+    D_ASSERT(rel && rel->type == duckdb::RelationType::TABLE_FUNCTION_RELATION);
+    auto table_rel = (TableFunctionRelation *)rel.get();
+    for (auto &col : table_rel->columns) {
+      info.types.push_back(col.type);
+    }
+
+    info.query = make_unique<SelectStatement>();
+    info.query->node = move(rel->GetQueryNode());
+
+    context.db->GetCatalog().CreateView(context, &info);
   }
   res.reset();
   PQfinish(conn);

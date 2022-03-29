@@ -433,7 +433,7 @@ static void ReadDecimal(idx_t scale, int32_t ndigits, int32_t weight,
     auto fractional_power_correction = fractional_power - scale;
     D_ASSERT(fractional_power_correction < 20);
     fractional_part /=
-        NumericHelper::POWERS_OF_TEN[fractional_power_correction];
+        POWERS_OF_TEN[fractional_power_correction];
   }
 
   // finally

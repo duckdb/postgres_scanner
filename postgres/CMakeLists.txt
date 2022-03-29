@@ -5,7 +5,7 @@ if(POLICY CMP0063)
   cmake_policy(SET CMP0063 NEW)
 endif()
 
-add_definitions(-DFRONTEND=1)
+add_definitions(-DFRONTEND=1 -D_GNU_SOURCE=1)
 
 include_directories(include postgres/src/include postgres/src/backend)
 

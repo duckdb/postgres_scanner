@@ -259,7 +259,7 @@ static void PostgresInitInternal(ClientContext &context,
 
   // we just return the first column for ROW_ID
   for (idx_t i = 0; i < local_state->column_ids.size(); i++) {
-    if (local_state->column_ids[i] == COLUMN_IDENTIFIER_ROW_ID) {
+    if (local_state->column_ids[i] == (column_t)-1) {
       local_state->column_ids[i] = 0;
     }
   }
@@ -368,13 +368,34 @@ PostgresInit(ClientContext &context, const FunctionData *bind_data_p,
                (header1 & NUMERIC_SHORT_WEIGHT_MASK))                          \
             : (header2))
 
+// copied from cast_helpers.cpp because windows linking issues
+static const int64_t POWERS_OF_TEN[]{1,
+                                     10,
+                                     100,
+                                     1000,
+                                     10000,
+                                     100000,
+                                     1000000,
+                                     10000000,
+                                     100000000,
+                                     1000000000,
+                                     10000000000,
+                                     100000000000,
+                                     1000000000000,
+                                     10000000000000,
+                                     100000000000000,
+                                     1000000000000000,
+                                     10000000000000000,
+                                     100000000000000000,
+                                     1000000000000000000};
+
 template <class T>
 static void ReadDecimal(idx_t scale, int32_t ndigits, int32_t weight,
                         bool is_negative, const uint16_t *digit_ptr,
                         Vector &output, idx_t output_offset) {
   // this is wild
   auto out_ptr = FlatVector::GetData<T>(output);
-  auto scale_POWER = NumericHelper::POWERS_OF_TEN[scale];
+  auto scale_POWER = POWERS_OF_TEN[scale];
 
   if (ndigits == 0) {
     out_ptr[output_offset] = 0;

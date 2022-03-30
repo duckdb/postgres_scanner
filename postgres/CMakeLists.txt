@@ -9,20 +9,12 @@ add_definitions(-DFRONTEND=1 -D_GNU_SOURCE=1)
 
 include_directories(include postgres/src/include postgres/src/backend)
 
+if(WIN32)
+  include_directories(postgres/src/include/port/win32 postgres/src/port
+                      postgres/src/include/port/win32_msvc)
+endif()
+
 set(LIBPG_SOURCES
-    postgres/src/interfaces/libpq/fe-auth-scram.c
-    postgres/src/interfaces/libpq/fe-connect.c
-    postgres/src/interfaces/libpq/fe-exec.c
-    postgres/src/interfaces/libpq/fe-lobj.c
-    postgres/src/interfaces/libpq/fe-misc.c
-    postgres/src/interfaces/libpq/fe-print.c
-    postgres/src/interfaces/libpq/fe-protocol3.c
-    postgres/src/interfaces/libpq/fe-secure.c
-    postgres/src/interfaces/libpq/fe-trace.c
-    postgres/src/interfaces/libpq/legacy-pqsignal.c
-    postgres/src/interfaces/libpq/libpq-events.c
-    postgres/src/interfaces/libpq/pqexpbuffer.c
-    postgres/src/interfaces/libpq/fe-auth.c
     postgres/src/common/base64.c
     postgres/src/common/cryptohash.c
     postgres/src/common/encnames.c
@@ -38,6 +30,19 @@ set(LIBPG_SOURCES
     postgres/src/common/string.c
     postgres/src/common/unicode_norm.c
     postgres/src/common/wchar.c
+    postgres/src/interfaces/libpq/fe-auth-scram.c
+    postgres/src/interfaces/libpq/fe-auth.c
+    postgres/src/interfaces/libpq/fe-connect.c
+    postgres/src/interfaces/libpq/fe-exec.c
+    postgres/src/interfaces/libpq/fe-lobj.c
+    postgres/src/interfaces/libpq/fe-misc.c
+    postgres/src/interfaces/libpq/fe-print.c
+    postgres/src/interfaces/libpq/fe-protocol3.c
+    postgres/src/interfaces/libpq/fe-secure.c
+    postgres/src/interfaces/libpq/fe-trace.c
+    postgres/src/interfaces/libpq/legacy-pqsignal.c
+    postgres/src/interfaces/libpq/libpq-events.c
+    postgres/src/interfaces/libpq/pqexpbuffer.c
     postgres/src/port/chklocale.c
     postgres/src/port/explicit_bzero.c
     postgres/src/port/inet_net_ntop.c
@@ -48,9 +53,25 @@ set(LIBPG_SOURCES
     postgres/src/port/strerror.c
     postgres/src/port/thread.c)
 
-if("${CMAKE_SYSTEM_NAME}" MATCHES "Linux")
+if("${CMAKE_SYSTEM_NAME}" MATCHES "Linux" OR WIN32)
   set(LIBPG_SOURCES ${LIBPG_SOURCES} postgres/src/port/strlcpy.c
                     postgres/src/port/getpeereid.c)
+endif()
+
+if(WIN32)
+  set(LIBPG_SOURCES
+      ${LIBPG_SOURCES}
+      postgres/src/interfaces/libpq/pthread-win32.c
+      postgres/src/interfaces/libpq/win32.c
+      postgres/src/port/getaddrinfo.c
+      postgres/src/port/gettimeofday.c
+      postgres/src/port/inet_aton.c
+      postgres/src/port/open.c
+      postgres/src/port/pgsleep.c
+      postgres/src/port/win32error.c
+      postgres/src/port/win32setlocale.c
+      postgres/src/port/win32stat.c)
+
 endif()
 
 add_library(duckdb_libpq STATIC ${LIBPG_SOURCES})

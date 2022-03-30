@@ -1,6 +1,5 @@
 #define DUCKDB_BUILD_LOADABLE_EXTENSION
 #include "duckdb.hpp"
-#include "duckdb/main/relation/table_function_relation.hpp"
 
 #include <libpq-fe.h>
 
@@ -10,22 +9,7 @@
 #define ntohll(x) ((((uint64_t)ntohl(x & 0xFFFFFFFF)) << 32) + ntohl(x >> 32))
 #endif
 
-#include "duckdb/function/table_function.hpp"
-#include "duckdb/common/types/date.hpp"
-#include "duckdb/common/types/timestamp.hpp"
 #include "duckdb/parser/parsed_data/create_table_function_info.hpp"
-#include "duckdb/parallel/parallel_state.hpp"
-#include "duckdb/parser/expression/cast_expression.hpp"
-#include "duckdb/main/client_context.hpp"
-#include "duckdb/parser/parsed_data/create_view_info.hpp"
-#include "duckdb/planner/binder.hpp"
-#include "duckdb/parser/query_node/select_node.hpp"
-#include "duckdb/parser/expression/star_expression.hpp"
-#include "duckdb/parser/tableref/table_function_ref.hpp"
-#include "duckdb/parser/expression/function_expression.hpp"
-#include "duckdb/parser/expression/constant_expression.hpp"
-#include "duckdb/parser/statement/create_statement.hpp"
-#include "duckdb/common/types/cast_helpers.hpp"
 
 using namespace duckdb;
 
@@ -432,8 +416,7 @@ static void ReadDecimal(idx_t scale, int32_t ndigits, int32_t weight,
     D_ASSERT(fractional_power >= scale);
     auto fractional_power_correction = fractional_power - scale;
     D_ASSERT(fractional_power_correction < 20);
-    fractional_part /=
-        POWERS_OF_TEN[fractional_power_correction];
+    fractional_part /= POWERS_OF_TEN[fractional_power_correction];
   }
 
   // finally
@@ -818,7 +801,6 @@ struct AttachFunctionData : public TableFunctionData {
 
   bool finished = false;
   string source_schema = "public";
-  string target_schema = DEFAULT_SCHEMA;
   string suffix = "";
   bool overwrite = false;
   string dsn = "";
@@ -835,8 +817,6 @@ static unique_ptr<FunctionData> AttachBind(ClientContext &context,
   for (auto &kv : input.named_parameters) {
     if (kv.first == "source_schema") {
       result->source_schema = StringValue::Get(kv.second);
-    } else if (kv.first == "target_schema") {
-      result->target_schema = StringValue::Get(kv.second);
     } else if (kv.first == "overwrite") {
       result->overwrite = BooleanValue::Get(kv.second);
     }
@@ -857,11 +837,7 @@ static void AttachFunction(ClientContext &context,
   }
 
   auto conn = PGConnect(data.dsn);
-
-  // create a template create view info that is filled in the loop below
-
   auto dconn = Connection(context.db->GetDatabase(context));
-
   auto res = PGQuery(conn, StringUtil::Format(
                                R"(
 SELECT table_name
@@ -875,26 +851,11 @@ AND table_type='BASE TABLE'
   for (idx_t row = 0; row < PQntuples(res->res); row++) {
     auto table_name = res->GetString(row, 0);
 
-    CreateViewInfo info;
-    info.view_name = table_name;
-    info.schema = data.target_schema;
-    info.temporary = true;
-    info.on_conflict = data.overwrite ? OnCreateConflict::REPLACE_ON_CONFLICT
-                                      : OnCreateConflict::ERROR_ON_CONFLICT;
-
-    auto rel = dconn.TableFunction(
-        "postgres_scan",
-        {Value(data.dsn), Value(data.source_schema), Value(table_name)});
-    D_ASSERT(rel && rel->type == duckdb::RelationType::TABLE_FUNCTION_RELATION);
-    auto table_rel = (TableFunctionRelation *)rel.get();
-    for (auto &col : table_rel->columns) {
-      info.types.push_back(col.type);
-    }
-
-    info.query = make_unique<SelectStatement>();
-    info.query->node = move(rel->GetQueryNode());
-
-    context.db->GetCatalog().CreateView(context, &info);
+    dconn
+        .TableFunction(
+            "postgres_scan",
+            {Value(data.dsn), Value(data.source_schema), Value(table_name)})
+        ->CreateView(table_name, data.overwrite, false);
   }
   res.reset();
   PQfinish(conn);
@@ -930,7 +891,6 @@ DUCKDB_EXTENSION_API void postgres_scanner_init(duckdb::DatabaseInstance &db) {
                             AttachFunction, AttachBind);
   attach_func.named_parameters["overwrite"] = LogicalType::BOOLEAN;
   attach_func.named_parameters["source_schema"] = LogicalType::VARCHAR;
-  attach_func.named_parameters["target_schema"] = LogicalType::VARCHAR;
   attach_func.named_parameters["suffix"] = LogicalType::VARCHAR;
 
   CreateTableFunctionInfo attach_info(attach_func);

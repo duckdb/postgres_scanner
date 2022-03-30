@@ -2,6 +2,7 @@
 rm -rf postgres
 mkdir postgres
 curl -s -L https://github.com/postgres/postgres/archive/refs/tags/REL_14_2.tar.gz | tar xz --strip-components 1 -C postgres
+
 (cd postgres && ./configure \
   --without-llvm        \
   --without-icu         \
@@ -21,3 +22,6 @@ curl -s -L https://github.com/postgres/postgres/archive/refs/tags/REL_14_2.tar.g
   --without-zlib        \
   --without-lz4         \
   --without-openssl  > /dev/null)
+
+# TODO windows
+# (cd postgres/src/tools/msvc/ && perl mkvcbuild.pl)

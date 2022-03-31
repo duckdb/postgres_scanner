@@ -41,6 +41,7 @@ struct PostgresBindData : public FunctionData {
   string dsn;
 
   string snapshot;
+  bool in_recovery;
 
   PGconn *conn = nullptr;
   ~PostgresBindData() {
@@ -179,18 +180,27 @@ static unique_ptr<FunctionData> PostgresBind(ClientContext &context,
   PGExec(bind_data->conn,
          "BEGIN TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY");
 
-  auto res = PGQuery(bind_data->conn, "SELECT pg_export_snapshot()");
-  bind_data->snapshot = res->GetString(0, 0);
+  bind_data->in_recovery =
+      (bool)PGQuery(bind_data->conn, "SELECT pg_is_in_recovery()")
+          ->GetInt32(0, 0);
+  bind_data->snapshot = "";
+
+  if (!bind_data->in_recovery) {
+    bind_data->snapshot =
+        PGQuery(bind_data->conn, "SELECT pg_export_snapshot()")
+            ->GetString(0, 0);
+  }
 
   // find the id of the table in question to simplify below queries and avoid
   // complex joins (ha)
-  res = PGQuery(bind_data->conn, StringUtil::Format(R"(
+  auto res =
+      PGQuery(bind_data->conn, StringUtil::Format(R"(
 SELECT pg_class.oid, reltuples, relpages
 FROM pg_class JOIN pg_namespace ON relnamespace = pg_namespace.oid
 WHERE nspname='%s' AND relname='%s'
 )",
-                                                    bind_data->schema_name,
-                                                    bind_data->table_name));
+                                                  bind_data->schema_name,
+                                                  bind_data->table_name));
   auto oid = res->GetInt64(0, 0);
   bind_data->cardinality = res->GetInt64(0, 1);
   bind_data->pages_approx = res->GetInt64(0, 2);
@@ -265,10 +275,13 @@ COPY (SELECT %s FROM "%s"."%s" WHERE ctid BETWEEN '(%d,0)'::tid AND '(%d,0)'::ti
   local_state->done = false;
 }
 
-static PGconn *PostgresScanConnect(string dsn, string snapshot) {
+static PGconn *PostgresScanConnect(string dsn, bool in_recovery,
+                                   string snapshot) {
   auto conn = PGConnect(dsn);
   PGExec(conn, "BEGIN TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY");
-  PGExec(conn, StringUtil::Format("SET TRANSACTION SNAPSHOT '%s'", snapshot));
+  if (!in_recovery) {
+    PGExec(conn, StringUtil::Format("SET TRANSACTION SNAPSHOT '%s'", snapshot));
+  }
   return conn;
 }
 
@@ -279,7 +292,8 @@ PostgresInit(ClientContext &context, const FunctionData *bind_data_p,
   auto bind_data = (const PostgresBindData *)bind_data_p;
   auto local_state = make_unique<PostgresOperatorData>();
   local_state->column_ids = column_ids;
-  local_state->conn = PostgresScanConnect(bind_data->dsn, bind_data->snapshot);
+  local_state->conn = PostgresScanConnect(
+      bind_data->dsn, bind_data->in_recovery, bind_data->snapshot);
   PostgresInitInternal(context, bind_data, local_state.get(), 0,
                        POSTGRES_TID_MAX);
   return move(local_state);
@@ -772,7 +786,8 @@ PostgresParallelInit(ClientContext &context, const FunctionData *bind_data_p,
 
   auto local_state = make_unique<PostgresOperatorData>();
   local_state->column_ids = column_ids;
-  local_state->conn = PostgresScanConnect(bind_data->dsn, bind_data->snapshot);
+  local_state->conn = PostgresScanConnect(
+      bind_data->dsn, bind_data->in_recovery, bind_data->snapshot);
   if (!PostgresParallelStateNext(context, bind_data_p, local_state.get(),
                                  parallel_state_p)) {
     local_state->done = true;

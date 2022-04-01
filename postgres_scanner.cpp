@@ -20,6 +20,7 @@ struct PostgresColumnInfo {
   bool attnotnull;
   int atttypmod;
   string typname;
+  string typtype;
 };
 
 static constexpr uint32_t POSTGRES_TID_MAX = 4294967295;
@@ -73,6 +74,9 @@ struct PGQueryResult {
   int64_t GetInt64(idx_t row, idx_t col) {
     return atoll(PQgetvalue(res, row, col));
   }
+  bool GetBool(idx_t row, idx_t col) {
+    return strcmp(PQgetvalue(res, row, col), "t");
+  }
 };
 
 struct PostgresOperatorData : public FunctionOperatorData {
@@ -96,7 +100,50 @@ struct PostgresParallelState : public ParallelState {
   idx_t page_idx;
 };
 
-static LogicalType DuckDBType(const string &pgtypename, const int atttypmod) {
+static PGconn *PGConnect(string &dsn) {
+  PGconn *conn = PQconnectdb(dsn.c_str());
+
+  // both PQStatus and PQerrorMessage check for nullptr
+  if (PQstatus(conn) == CONNECTION_BAD) {
+    throw IOException("Unable to connect to Postgres at %s: %s", dsn,
+                      string(PQerrorMessage(conn)));
+  }
+  return conn;
+}
+
+static unique_ptr<PGQueryResult>
+PGQuery(PGconn *conn, string q,
+        ExecStatusType response_code = PGRES_TUPLES_OK) {
+  auto res = make_unique<PGQueryResult>(PQexec(conn, q.c_str()));
+  if (!res->res || PQresultStatus(res->res) != response_code) {
+    throw IOException("Unable to query Postgres: %s %s",
+                      string(PQerrorMessage(conn)),
+                      string(PQresultErrorMessage(res->res)));
+  }
+  return res;
+}
+
+static void PGExec(PGconn *conn, string q) {
+  PGQuery(conn, q, PGRES_COMMAND_OK);
+}
+
+static LogicalType DuckDBType(PostgresColumnInfo &info, PGconn *conn) {
+  auto &pgtypename = info.typname;
+  auto &atttypmod = info.atttypmod;
+
+  if (info.typtype == "e") { // ENUM
+    auto res =
+        PGQuery(conn, StringUtil::Format("SELECT unnest(enum_range(NULL::%s))",
+                                         pgtypename));
+    auto rows = PQntuples(res->res);
+    Vector duckdb_levels(LogicalType::VARCHAR, rows);
+    for (idx_t row = 0; row < rows; row++) {
+      duckdb_levels.SetValue(row, res->GetString(row, 0));
+    }
+    return LogicalType::ENUM("postgres_enum_" + pgtypename, duckdb_levels,
+                             rows);
+  }
+
   if (pgtypename == "bool") {
     return LogicalType::BOOLEAN;
   } else if (pgtypename == "int2") {
@@ -135,33 +182,6 @@ static LogicalType DuckDBType(const string &pgtypename, const int atttypmod) {
   }
 }
 
-static PGconn *PGConnect(string &dsn) {
-  PGconn *conn = PQconnectdb(dsn.c_str());
-
-  // both PQStatus and PQerrorMessage check for nullptr
-  if (PQstatus(conn) == CONNECTION_BAD) {
-    throw IOException("Unable to connect to Postgres at %s: %s", dsn,
-                      string(PQerrorMessage(conn)));
-  }
-  return conn;
-}
-
-static unique_ptr<PGQueryResult>
-PGQuery(PGconn *conn, string q,
-        ExecStatusType response_code = PGRES_TUPLES_OK) {
-  auto res = make_unique<PGQueryResult>(PQexec(conn, q.c_str()));
-  if (!res->res || PQresultStatus(res->res) != response_code) {
-    throw IOException("Unable to query Postgres: %s %s",
-                      string(PQerrorMessage(conn)),
-                      string(PQresultErrorMessage(res->res)));
-  }
-  return res;
-}
-
-static void PGExec(PGconn *conn, string q) {
-  PGQuery(conn, q, PGRES_COMMAND_OK);
-}
-
 static unique_ptr<FunctionData> PostgresBind(ClientContext &context,
                                              TableFunctionBindInput &input,
                                              vector<LogicalType> &return_types,
@@ -182,7 +202,7 @@ static unique_ptr<FunctionData> PostgresBind(ClientContext &context,
 
   bind_data->in_recovery =
       (bool)PGQuery(bind_data->conn, "SELECT pg_is_in_recovery()")
-          ->GetInt32(0, 0);
+          ->GetBool(0, 0);
   bind_data->snapshot = "";
 
   if (!bind_data->in_recovery) {
@@ -211,7 +231,7 @@ WHERE nspname='%s' AND relname='%s'
   // fun fact: this query also works in DuckDB ^^
   res = PGQuery(bind_data->conn, StringUtil::Format(
                                      R"(
-SELECT attname, attlen, attalign, attnotnull, atttypmod, typname
+SELECT attname, attlen, attalign, attnotnull, atttypmod, typname, typtype
 FROM pg_attribute
     JOIN pg_type ON atttypid=pg_type.oid
 WHERE attrelid=%d AND attnum > 0
@@ -227,9 +247,10 @@ ORDER BY attnum
     info.attnotnull = res->GetString(row, 3) == "t";
     info.atttypmod = res->GetInt32(row, 4);
     info.typname = res->GetString(row, 5);
+    info.typtype = res->GetString(row, 6);
 
     bind_data->names.push_back(info.attname);
-    bind_data->types.push_back(DuckDBType(info.typname, info.atttypmod));
+    bind_data->types.push_back(DuckDBType(info, bind_data->conn));
 
     bind_data->columns.push_back(info);
   }
@@ -600,6 +621,31 @@ static void ProcessValue(data_ptr_t value_ptr, idx_t value_len,
     // glue it back together
     FlatVector::GetData<timestamp_t>(out_vec)[output_offset].value =
         date * Interval::MICROS_PER_DAY + time;
+    break;
+  }
+  case LogicalTypeId::ENUM: {
+    auto enum_val = string((const char *)value_ptr, value_len);
+    auto offset = EnumType::GetPos(type, enum_val);
+    if (offset < 0) {
+      throw IOException("Could not map ENUM value %s", enum_val);
+    }
+    switch (type.InternalType()) {
+    case PhysicalType::UINT8:
+      FlatVector::GetData<uint8_t>(out_vec)[output_offset] = (uint8_t)offset;
+      break;
+    case PhysicalType::UINT16:
+      FlatVector::GetData<uint16_t>(out_vec)[output_offset] = (uint16_t)offset;
+      break;
+
+    case PhysicalType::UINT32:
+      FlatVector::GetData<uint32_t>(out_vec)[output_offset] = (uint32_t)offset;
+      break;
+
+    default:
+      throw InternalException("ENUM can only have unsigned integers (except "
+                              "UINT64) as physical types, got %s",
+                              TypeIdToString(type.InternalType()));
+    }
     break;
   }
 

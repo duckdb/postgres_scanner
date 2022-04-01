@@ -28,3 +28,13 @@ select * from pg_datetypes;
 ----
 2021-03-01	12:45:01	07:00:01+00	2021-03-01 12:45:01	2021-03-01 07:00:01+00
 NULL	NULL	NULL	NULL	NULL
+
+
+query III
+select * from cars;
+----
+ferari	testarosa	red
+aston martin	db2	blue
+bentley	mulsanne	gray
+ford	T	black
+

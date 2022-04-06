@@ -10,6 +10,9 @@
 #endif
 
 #include "duckdb/parser/parsed_data/create_table_function_info.hpp"
+#include "duckdb/planner/table_filter.hpp"
+#include "duckdb/planner/filter/conjunction_filter.hpp"
+#include "duckdb/planner/filter/constant_filter.hpp"
 
 using namespace duckdb;
 
@@ -84,6 +87,7 @@ struct PostgresOperatorData : public FunctionOperatorData {
   bool exec = false;
   string sql;
   vector<column_t> column_ids;
+  TableFilterSet *filters;
   string col_names;
   PGconn *conn = nullptr;
   ~PostgresOperatorData() {
@@ -262,6 +266,48 @@ ORDER BY attnum
   return move(bind_data);
 }
 
+static string TransformFilter(string &column_name, TableFilter &filter);
+
+static string CreateExpression(string &column_name,
+                               vector<unique_ptr<TableFilter>> &filters,
+                               string op) {
+  vector<string> filter_entries;
+  for (auto &filter : filters) {
+    filter_entries.push_back(TransformFilter(column_name, *filter));
+  }
+  return "(" + StringUtil::Join(filter_entries, " " + op + " ") + ")";
+}
+
+static string TransformFilter(string &column_name, TableFilter &filter) {
+  switch (filter.filter_type) {
+  case TableFilterType::IS_NULL:
+    return column_name + " IS NULL";
+  case TableFilterType::IS_NOT_NULL:
+    return column_name + " IS NOT NULL";
+  case TableFilterType::CONJUNCTION_AND: {
+    auto &conjunction_filter = (ConjunctionAndFilter &)filter;
+    return CreateExpression(column_name, conjunction_filter.child_filters,
+                            "AND");
+  }
+  case TableFilterType::CONJUNCTION_OR: {
+    auto &conjunction_filter = (ConjunctionAndFilter &)filter;
+    return CreateExpression(column_name, conjunction_filter.child_filters,
+                            "OR");
+  }
+  case TableFilterType::CONSTANT_COMPARISON: {
+    auto &constant_filter = (ConstantFilter &)filter;
+    // TODO properly escape ' in constant value
+    auto constant_string = "'" + constant_filter.constant.ToString() + "'";
+    return StringUtil::Format(
+        "%s %s %s", column_name,
+        ExpressionTypeToOperator(constant_filter.comparison_type),
+        constant_string);
+  }
+  default:
+    throw InternalException("Unsupported table filter type");
+  }
+}
+
 static void PostgresInitInternal(ClientContext &context,
                                  const PostgresBindData *bind_data_p,
                                  PostgresOperatorData *local_state,
@@ -285,12 +331,25 @@ static void PostgresInitInternal(ClientContext &context,
         return '"' + bind_data->names[column_id] + '"';
       });
 
+  string filter_string;
+  if (local_state->filters && !local_state->filters->filters.empty()) {
+    vector<string> filter_entries;
+    for (auto &entry : local_state->filters->filters) {
+      // TODO properly escape " in column names
+      auto column_name =
+          "\"" + bind_data->names[local_state->column_ids[entry.first]] + "\"";
+      auto &filter = *entry.second;
+      filter_entries.push_back(TransformFilter(column_name, filter));
+    }
+    filter_string = " AND " + StringUtil::Join(filter_entries, " AND ");
+  }
+
   local_state->sql = StringUtil::Format(
       R"(
-COPY (SELECT %s FROM "%s"."%s" WHERE ctid BETWEEN '(%d,0)'::tid AND '(%d,0)'::tid) TO STDOUT (FORMAT binary);
+COPY (SELECT %s FROM "%s"."%s" WHERE ctid BETWEEN '(%d,0)'::tid AND '(%d,0)'::tid %s) TO STDOUT (FORMAT binary);
 )",
       col_names, bind_data->schema_name, bind_data->table_name, task_min,
-      task_max);
+      task_max, filter_string);
 
   local_state->exec = false;
   local_state->done = false;
@@ -308,11 +367,15 @@ static PGconn *PostgresScanConnect(string dsn, bool in_recovery,
 
 static unique_ptr<FunctionOperatorData>
 PostgresInit(ClientContext &context, const FunctionData *bind_data_p,
-             const vector<column_t> &column_ids, TableFilterCollection *) {
+             const vector<column_t> &column_ids,
+             TableFilterCollection *filters) {
   D_ASSERT(bind_data_p);
   auto bind_data = (const PostgresBindData *)bind_data_p;
   auto local_state = make_unique<PostgresOperatorData>();
   local_state->column_ids = column_ids;
+  if (filters && filters->table_filters) {
+    local_state->filters = filters->table_filters;
+  }
   local_state->conn = PostgresScanConnect(
       bind_data->dsn, bind_data->in_recovery, bind_data->snapshot);
   PostgresInitInternal(context, bind_data, local_state.get(), 0,
@@ -864,6 +927,8 @@ struct AttachFunctionData : public TableFunctionData {
   string source_schema = "public";
   string suffix = "";
   bool overwrite = false;
+  bool filter_pushdown = false;
+
   string dsn = "";
 };
 
@@ -880,6 +945,8 @@ static unique_ptr<FunctionData> AttachBind(ClientContext &context,
       result->source_schema = StringValue::Get(kv.second);
     } else if (kv.first == "overwrite") {
       result->overwrite = BooleanValue::Get(kv.second);
+    } else if (kv.first == "filter_pushdown") {
+      result->filter_pushdown = BooleanValue::Get(kv.second);
     }
   }
 
@@ -914,7 +981,7 @@ AND table_type='BASE TABLE'
 
     dconn
         .TableFunction(
-            "postgres_scan",
+            data.filter_pushdown ? "postgres_scan_pushdown" : "postgres_scan",
             {Value(data.dsn), Value(data.source_schema), Value(table_name)})
         ->CreateView(table_name, data.overwrite, false);
   }
@@ -937,6 +1004,19 @@ public:
             nullptr) {}
 };
 
+class PostgresScanFunctionFilterPushdown : public TableFunction {
+public:
+  PostgresScanFunctionFilterPushdown()
+      : TableFunction(
+            "postgres_scan_pushdown",
+            {LogicalType::VARCHAR, LogicalType::VARCHAR, LogicalType::VARCHAR},
+            PostgresScan, PostgresBind, PostgresInit, nullptr, nullptr, nullptr,
+            PostgresCardinality, nullptr, PostgresScanToString,
+            PostgresMaxThreads, PostgresInitParallelState, nullptr,
+            PostgresParallelInit, PostgresParallelStateNext, true, true,
+            nullptr) {}
+};
+
 extern "C" {
 DUCKDB_EXTENSION_API void postgres_scanner_init(duckdb::DatabaseInstance &db) {
   Connection con(db);
@@ -948,9 +1028,16 @@ DUCKDB_EXTENSION_API void postgres_scanner_init(duckdb::DatabaseInstance &db) {
   CreateTableFunctionInfo postgres_info(postgres_fun);
   catalog.CreateTableFunction(context, &postgres_info);
 
+  PostgresScanFunctionFilterPushdown postgres_fun_filter_pushdown;
+  CreateTableFunctionInfo postgres_filter_pushdown_info(
+      postgres_fun_filter_pushdown);
+  catalog.CreateTableFunction(context, &postgres_filter_pushdown_info);
+
   TableFunction attach_func("postgres_attach", {LogicalType::VARCHAR},
                             AttachFunction, AttachBind);
   attach_func.named_parameters["overwrite"] = LogicalType::BOOLEAN;
+  attach_func.named_parameters["filter_pushdown"] = LogicalType::BOOLEAN;
+
   attach_func.named_parameters["source_schema"] = LogicalType::VARCHAR;
   attach_func.named_parameters["suffix"] = LogicalType::VARCHAR;
 

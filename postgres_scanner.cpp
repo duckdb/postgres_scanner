@@ -278,6 +278,25 @@ static string CreateExpression(string &column_name,
   return "(" + StringUtil::Join(filter_entries, " " + op + " ") + ")";
 }
 
+static string TransformComparision(ExpressionType type) {
+  switch (type) {
+  case ExpressionType::COMPARE_EQUAL:
+    return "=";
+  case ExpressionType::COMPARE_NOTEQUAL:
+    return "!=";
+  case ExpressionType::COMPARE_LESSTHAN:
+    return "<";
+  case ExpressionType::COMPARE_GREATERTHAN:
+    return ">";
+  case ExpressionType::COMPARE_LESSTHANOREQUALTO:
+    return "<=";
+  case ExpressionType::COMPARE_GREATERTHANOREQUALTO:
+    return ">=";
+  default:
+    throw NotImplementedException("Unsupported expression type");
+  }
+}
+
 static string TransformFilter(string &column_name, TableFilter &filter) {
   switch (filter.filter_type) {
   case TableFilterType::IS_NULL:
@@ -298,10 +317,10 @@ static string TransformFilter(string &column_name, TableFilter &filter) {
     auto &constant_filter = (ConstantFilter &)filter;
     // TODO properly escape ' in constant value
     auto constant_string = "'" + constant_filter.constant.ToString() + "'";
-    return StringUtil::Format(
-        "%s %s %s", column_name,
-        ExpressionTypeToOperator(constant_filter.comparison_type),
-        constant_string);
+    auto operator_string =
+        TransformComparision(constant_filter.comparison_type);
+    return StringUtil::Format("%s %s %s", column_name, operator_string,
+                              constant_string);
   }
   default:
     throw InternalException("Unsupported table filter type");

@@ -74,7 +74,25 @@ if(WIN32)
 
 endif()
 
-add_library(duckdb_libpq STATIC ${LIBPG_SOURCES})
+function(PREPEND var prefix)
+  set(listVar "")
+  foreach(f ${ARGN})
+    list(APPEND listVar "${prefix}/${f}")
+  endforeach(f)
+  set(${var}
+      "${listVar}"
+      PARENT_SCOPE)
+endfunction(PREPEND)
+
+prepend(LIBPG_SOURCES_FULLPATH ${CMAKE_CURRENT_SOURCE_DIR} ${LIBPG_SOURCES})
+
+message(${CMAKE_SOURCE_DIR})
+add_custom_command(
+  OUTPUT ${LIBPG_SOURCES_FULLPATH}
+  WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}/postgres
+  COMMAND ./configure)
+
+add_library(duckdb_libpq STATIC ${LIBPG_SOURCES_FULLPATH})
 
 set_property(TARGET duckdb_libpq PROPERTY C_STANDARD 99)
 

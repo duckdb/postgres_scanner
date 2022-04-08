@@ -24,6 +24,19 @@ endif()
 
 project(postgres_scanner C CXX)
 
+option(
+  OSX_BUILD_UNIVERSAL
+  "Build both architectures on OSX and create a single binary containing both."
+  FALSE)
+if(OSX_BUILD_UNIVERSAL)
+  if(NOT APPLE)
+    error("This only makes sense on OSX")
+  endif()
+  set(CMAKE_OSX_ARCHITECTURES
+      "x86_64;arm64"
+      CACHE STRING "Build architectures for Mac OS X" FORCE)
+endif()
+
 find_package(Threads REQUIRED)
 add_subdirectory(postgres)
 
@@ -32,8 +45,7 @@ if(WIN32 AND NOT MSVC)
   return()
 endif()
 
-include_directories(duckdb/src/include)
-include_directories(duckdb/third_party/fmt/include)
+include_directories(${DUCKDB_INCLUDE_FOLDER})
 
 include_directories(postgres/postgres/src/include)
 include_directories(postgres/postgres/src/interfaces/libpq)
@@ -46,15 +58,9 @@ endif()
 
 if("${CMAKE_BUILD_TYPE}" STREQUAL "Debug")
   add_compile_options(-Wall -pedantic -fsanitize=address -fno-sanitize=vptr)
-  link_directories(duckdb/build/debug/src)
-else()
-  if(WIN32)
-    link_directories(duckdb/build/release/src/Release)
-  else()
-    link_directories(duckdb/build/release/src)
-
-  endif()
 endif()
+
+link_directories(${DUCKDB_LIBRARY_FOLDER})
 
 add_library(postgres_scanner SHARED postgres_scanner.cpp)
 set_target_properties(postgres_scanner PROPERTIES PREFIX "")

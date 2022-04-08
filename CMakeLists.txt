@@ -48,7 +48,12 @@ if("${CMAKE_BUILD_TYPE}" STREQUAL "Debug")
   add_compile_options(-Wall -pedantic -fsanitize=address -fno-sanitize=vptr)
   link_directories(duckdb/build/debug/src)
 else()
-  link_directories(duckdb/build/release/src)
+  if(WIN32)
+    link_directories(duckdb/build/release/src/Release)
+  else()
+    link_directories(duckdb/build/release/src)
+
+  endif()
 endif()
 
 add_library(postgres_scanner SHARED postgres_scanner.cpp)

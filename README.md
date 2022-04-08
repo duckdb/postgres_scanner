@@ -46,4 +46,4 @@ SELECT * FROM POSTGRES_SCAN('', 'public', 'mytable');
 
 Copyright 2022 DuckDB Labs BV [hello@duckdblabs.com].
 
-This project is licensed under the GNU General Public License (LICENSE-GPL). Alternative licensing options are available through contracting with DuckDB Labs.
+This project is licensed under the GNU General Public License (LICENSE-GPL). Alternative licensing options are available from DuckDB Labs.

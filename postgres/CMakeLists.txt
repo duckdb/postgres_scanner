@@ -90,7 +90,7 @@ message(${CMAKE_SOURCE_DIR})
 add_custom_command(
   OUTPUT ${LIBPG_SOURCES_FULLPATH}
   WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}/postgres
-  COMMAND ./configure)
+  COMMAND sh configure)
 
 add_library(duckdb_libpq STATIC ${LIBPG_SOURCES_FULLPATH})
 

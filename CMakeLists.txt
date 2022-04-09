@@ -22,7 +22,9 @@ else()
   set(CMAKE_CXX_STANDARD 11)
 endif()
 
-project(postgres_scanner C CXX)
+set(TARGET_NAME postgres_scanner)
+
+project(${TARGET_NAME} C CXX)
 
 option(
   OSX_BUILD_UNIVERSAL
@@ -62,30 +64,38 @@ endif()
 
 link_directories(${DUCKDB_LIBRARY_FOLDER})
 
-add_library(postgres_scanner SHARED postgres_scanner.cpp)
-set_target_properties(postgres_scanner PROPERTIES PREFIX "")
-target_link_libraries(postgres_scanner duckdb duckdb_libpq Threads::Threads)
+add_library(${TARGET_NAME} SHARED postgres_scanner.cpp)
+set_target_properties(${TARGET_NAME} PROPERTIES PREFIX "")
+target_link_libraries(${TARGET_NAME} duckdb_libpq Threads::Threads)
 
 if("${CMAKE_BUILD_TYPE}" STREQUAL "Debug")
-  target_link_libraries(postgres_scanner -fsanitize=address)
+  target_link_libraries(${TARGET_NAME} -fsanitize=address)
 endif()
 
-set_target_properties(postgres_scanner PROPERTIES SUFFIX ".duckdb_extension")
+set_target_properties(${TARGET_NAME} PROPERTIES SUFFIX ".duckdb_extension")
 
-if(MSVC)
-  set_target_properties(
-    postgres_scanner PROPERTIES RUNTIME_OUTPUT_DIRECTORY_DEBUG
-                                ${CMAKE_BINARY_DIR})
-  set_target_properties(
-    postgres_scanner PROPERTIES RUNTIME_OUTPUT_DIRECTORY_RELEASE
-                                ${CMAKE_BINARY_DIR})
+if("${CMAKE_CXX_COMPILER_ID}" STREQUAL "Clang")
+  set_target_properties(${TARGET_NAME} PROPERTIES LINK_FLAGS
+                                                  "-undefined dynamic_lookup")
 endif()
 
 if(WIN32)
-  target_link_libraries(postgres_scanner wsock32 ws2_32 wldap32 secur32)
+  target_link_libraries(${TARGET_NAME} duckdb ${DUCKDB_EXTRA_LINK_FLAGS})
+endif()
 
-  set_target_properties(postgres_scanner PROPERTIES LINK_FLAGS_RELEASE
-                                                    "/DELAYLOAD:duckdb.dll")
+if(MSVC)
+  set_target_properties(${TARGET_NAME} PROPERTIES RUNTIME_OUTPUT_DIRECTORY_DEBUG
+                                                  ${CMAKE_BINARY_DIR})
+  set_target_properties(
+    ${TARGET_NAME} PROPERTIES RUNTIME_OUTPUT_DIRECTORY_RELEASE
+                              ${CMAKE_BINARY_DIR})
+endif()
+
+if(WIN32)
+  target_link_libraries(${TARGET_NAME} wsock32 ws2_32 wldap32 secur32)
+
+  set_target_properties(${TARGET_NAME} PROPERTIES LINK_FLAGS_RELEASE
+                                                  "/DELAYLOAD:duckdb.dll")
   set(CMAKE_EXE_LINKER_FLAGS_RELEASE
       "${CMAKE_EXE_LINKER_FLAGS_RELEASE}  /DELAYLOAD:duckdb.dll")
 endif()

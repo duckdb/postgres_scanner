@@ -93,11 +93,16 @@ endif()
 
 if(WIN32)
   target_link_libraries(${TARGET_NAME} wsock32 ws2_32 wldap32 secur32)
-
+  set_target_properties(${TARGET_NAME} PROPERTIES LINK_FLAGS_DEBUG
+                                                  "/DELAYLOAD:duckdb.dll")
+  set(CMAKE_EXE_LINKER_FLAGS_DEBUG
+      "${CMAKE_EXE_LINKER_FLAGS_DEBUG}  /DELAYLOAD:duckdb.dll")
   set_target_properties(${TARGET_NAME} PROPERTIES LINK_FLAGS_RELEASE
                                                   "/DELAYLOAD:duckdb.dll")
   set(CMAKE_EXE_LINKER_FLAGS_RELEASE
       "${CMAKE_EXE_LINKER_FLAGS_RELEASE}  /DELAYLOAD:duckdb.dll")
+  # This is only strictly required in non-Visual-Studio builds like Ninja:
+  target_link_libraries(${TARGET_NAME} delayimp)
 endif()
 
 #

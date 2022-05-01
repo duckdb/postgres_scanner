@@ -54,6 +54,13 @@ struct PostgresBindData : public FunctionData {
       conn = nullptr;
     }
   }
+
+  unique_ptr<FunctionData> Copy() const override {
+    throw NotImplementedException("");
+  }
+  bool Equals(const FunctionData &other) const override {
+    throw NotImplementedException("");
+  }
 };
 
 struct PGQueryResult {
@@ -798,7 +805,7 @@ struct PostgresBinaryBuffer {
 
 static void PostgresScan(ClientContext &context,
                          const FunctionData *bind_data_p,
-                         FunctionOperatorData *operator_state, DataChunk *,
+                         FunctionOperatorData *operator_state,
                          DataChunk &output) {
 
   D_ASSERT(operator_state);
@@ -977,7 +984,7 @@ static unique_ptr<FunctionData> AttachBind(ClientContext &context,
 static void AttachFunction(ClientContext &context,
                            const FunctionData *bind_data,
                            FunctionOperatorData *operator_state,
-                           DataChunk *input, DataChunk &output) {
+                           DataChunk &output) {
   auto &data = (AttachFunctionData &)*bind_data;
   if (data.finished) {
     return;

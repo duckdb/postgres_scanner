@@ -13,7 +13,7 @@ To run, run the bundled `duckdb` shell:
 
 Then, load the Postgres extension like so:
 ```SQL
-LOAD 'build/release/postgers_scanner.duckdb_extension';
+LOAD 'build/release/postgres_scanner.duckdb_extension';
 ```
 
 To make a SQLite file accessible to DuckDB, use the `POSTGRES_ATTACH` command:

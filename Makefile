@@ -37,10 +37,12 @@ test: release
 	./duckdb/build/release/test/unittest --test-dir . "[postgres_scanner]"
 
 format:
+	cp duckdb/.clang-format .
 	clang-format --sort-includes=0 -style=file -i postgres_scanner.cpp
 	clang-format --sort-includes=0 -style=file -i concurrency_test.cpp
 	cmake-format -i CMakeLists.txt
 	cmake-format -i postgres/CMakeLists.txt
+	rm .clang-format
 
 
 update:

@@ -43,7 +43,7 @@ jobs:
 
     - name: Update DuckDB submodule
       run: |
-        git config --global --add safe.directory .
+        git config --global --add safe.directory '*'
         git submodule init
         git submodule update --remote --merge
 

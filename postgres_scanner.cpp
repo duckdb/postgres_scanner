@@ -1,4 +1,6 @@
+#ifndef DUCKDB_BUILD_LOADABLE_EXTENSION
 #define DUCKDB_BUILD_LOADABLE_EXTENSION
+#endif
 #include "duckdb.hpp"
 
 #include <libpq-fe.h>
@@ -29,6 +31,13 @@ struct PostgresColumnInfo {
 static constexpr uint32_t POSTGRES_TID_MAX = 4294967295;
 
 struct PostgresBindData : public FunctionData {
+  ~PostgresBindData() {
+    if (conn) {
+      PQfinish(conn);
+      conn = nullptr;
+    }
+  }
+
   string schema_name;
   string table_name;
   idx_t cardinality = 0;
@@ -48,13 +57,8 @@ struct PostgresBindData : public FunctionData {
   bool in_recovery;
 
   PGconn *conn = nullptr;
-  ~PostgresBindData() {
-    if (conn) {
-      PQfinish(conn);
-      conn = nullptr;
-    }
-  }
 
+public:
   unique_ptr<FunctionData> Copy() const override {
     throw NotImplementedException("");
   }
@@ -73,6 +77,7 @@ struct PGQueryResult {
   }
   PGresult *res = nullptr;
 
+public:
   string GetString(idx_t row, idx_t col) {
     D_ASSERT(res);
     return string(PQgetvalue(res, row, col));
@@ -89,7 +94,14 @@ struct PGQueryResult {
   }
 };
 
-struct PostgresOperatorData : public FunctionOperatorData {
+struct PostgresLocalState : public LocalTableFunctionState {
+  ~PostgresLocalState() {
+    if (conn) {
+      PQfinish(conn);
+      conn = nullptr;
+    }
+  }
+
   bool done = false;
   bool exec = false;
   string sql;
@@ -97,18 +109,17 @@ struct PostgresOperatorData : public FunctionOperatorData {
   TableFilterSet *filters;
   string col_names;
   PGconn *conn = nullptr;
-  ~PostgresOperatorData() {
-    if (conn) {
-      PQfinish(conn);
-      conn = nullptr;
-    }
-  }
 };
 
-struct PostgresParallelState : public ParallelState {
-  PostgresParallelState() : page_idx(0) {}
+struct PostgresGlobalState : public GlobalTableFunctionState {
+  PostgresGlobalState(idx_t max_threads)
+      : page_idx(0), max_threads(max_threads) {}
+
   mutex lock;
   idx_t page_idx;
+  idx_t max_threads;
+
+  idx_t MaxThreads() const override { return max_threads; }
 };
 
 static PGconn *PGConnect(string &dsn) {
@@ -336,49 +347,48 @@ static string TransformFilter(string &column_name, TableFilter &filter) {
 
 static void PostgresInitInternal(ClientContext &context,
                                  const PostgresBindData *bind_data_p,
-                                 PostgresOperatorData *local_state,
-                                 idx_t task_min, idx_t task_max) {
+                                 PostgresLocalState &lstate, idx_t task_min,
+                                 idx_t task_max) {
   D_ASSERT(bind_data_p);
-  D_ASSERT(local_state);
   D_ASSERT(task_min <= task_max);
 
   auto bind_data = (const PostgresBindData *)bind_data_p;
 
   // we just return the first column for ROW_ID
-  for (idx_t i = 0; i < local_state->column_ids.size(); i++) {
-    if (local_state->column_ids[i] == (column_t)-1) {
-      local_state->column_ids[i] = 0;
+  for (idx_t i = 0; i < lstate.column_ids.size(); i++) {
+    if (lstate.column_ids[i] == (column_t)-1) {
+      lstate.column_ids[i] = 0;
     }
   }
 
-  auto col_names = StringUtil::Join(
-      local_state->column_ids.data(), local_state->column_ids.size(), ", ",
-      [&](const idx_t column_id) {
-        return '"' + bind_data->names[column_id] + '"';
-      });
+  auto col_names =
+      StringUtil::Join(lstate.column_ids.data(), lstate.column_ids.size(), ", ",
+                       [&](const idx_t column_id) {
+                         return '"' + bind_data->names[column_id] + '"';
+                       });
 
   string filter_string;
-  if (local_state->filters && !local_state->filters->filters.empty()) {
+  if (lstate.filters && !lstate.filters->filters.empty()) {
     vector<string> filter_entries;
-    for (auto &entry : local_state->filters->filters) {
+    for (auto &entry : lstate.filters->filters) {
       // TODO properly escape " in column names
       auto column_name =
-          "\"" + bind_data->names[local_state->column_ids[entry.first]] + "\"";
+          "\"" + bind_data->names[lstate.column_ids[entry.first]] + "\"";
       auto &filter = *entry.second;
       filter_entries.push_back(TransformFilter(column_name, filter));
     }
     filter_string = " AND " + StringUtil::Join(filter_entries, " AND ");
   }
 
-  local_state->sql = StringUtil::Format(
+  lstate.sql = StringUtil::Format(
       R"(
 COPY (SELECT %s FROM "%s"."%s" WHERE ctid BETWEEN '(%d,0)'::tid AND '(%d,0)'::tid %s) TO STDOUT (FORMAT binary);
 )",
       col_names, bind_data->schema_name, bind_data->table_name, task_min,
       task_max, filter_string);
 
-  local_state->exec = false;
-  local_state->done = false;
+  lstate.exec = false;
+  lstate.done = false;
 }
 
 static PGconn *PostgresScanConnect(string dsn, bool in_recovery,
@@ -389,24 +399,6 @@ static PGconn *PostgresScanConnect(string dsn, bool in_recovery,
     PGExec(conn, StringUtil::Format("SET TRANSACTION SNAPSHOT '%s'", snapshot));
   }
   return conn;
-}
-
-static unique_ptr<FunctionOperatorData>
-PostgresInit(ClientContext &context, const FunctionData *bind_data_p,
-             const vector<column_t> &column_ids,
-             TableFilterCollection *filters) {
-  D_ASSERT(bind_data_p);
-  auto bind_data = (const PostgresBindData *)bind_data_p;
-  auto local_state = make_unique<PostgresOperatorData>();
-  local_state->column_ids = column_ids;
-  if (filters && filters->table_filters) {
-    local_state->filters = filters->table_filters;
-  }
-  local_state->conn = PostgresScanConnect(
-      bind_data->dsn, bind_data->in_recovery, bind_data->snapshot);
-  PostgresInitInternal(context, bind_data, local_state.get(), 0,
-                       POSTGRES_TID_MAX);
-  return move(local_state);
 }
 
 #define POSTGRES_EPOCH_JDATE 2451545 /* == date2j(2000, 1, 1) */
@@ -803,19 +795,71 @@ struct PostgresBinaryBuffer {
   PGconn *conn = nullptr;
 };
 
-static void PostgresScan(ClientContext &context,
-                         const FunctionData *bind_data_p,
-                         FunctionOperatorData *operator_state,
-                         DataChunk &output) {
-
-  D_ASSERT(operator_state);
+static idx_t PostgresMaxThreads(ClientContext &context,
+                                const FunctionData *bind_data_p) {
   D_ASSERT(bind_data_p);
 
   auto bind_data = (const PostgresBindData *)bind_data_p;
-  auto local_state = (PostgresOperatorData *)operator_state;
+  return bind_data->pages_approx / bind_data->pages_per_task;
+}
+
+static unique_ptr<GlobalTableFunctionState>
+PostgresInitGlobalState(ClientContext &context, TableFunctionInitInput &input) {
+  return make_unique<PostgresGlobalState>(
+      PostgresMaxThreads(context, input.bind_data));
+}
+
+static bool PostgresParallelStateNext(ClientContext &context,
+                                      const FunctionData *bind_data_p,
+                                      PostgresLocalState &lstate,
+                                      PostgresGlobalState &gstate) {
+  D_ASSERT(bind_data_p);
+  auto bind_data = (const PostgresBindData *)bind_data_p;
+
+  lock_guard<mutex> parallel_lock(gstate.lock);
+  if (gstate.page_idx < bind_data->pages_approx) {
+    auto page_max = gstate.page_idx + bind_data->pages_per_task;
+    if (gstate.page_idx + bind_data->pages_per_task > bind_data->pages_approx) {
+      // the relpages entry is not the real max, so make the last task bigger
+      page_max = POSTGRES_TID_MAX;
+    }
+    PostgresInitInternal(context, bind_data, lstate, gstate.page_idx, page_max);
+    gstate.page_idx += bind_data->pages_per_task;
+    return true;
+  }
+  lstate.done = true;
+  return false;
+}
+
+static unique_ptr<LocalTableFunctionState>
+PostgresInitLocalState(ClientContext &context, TableFunctionInitInput &input,
+                       GlobalTableFunctionState *global_state) {
+  auto bind_data = (const PostgresBindData *)input.bind_data;
+  auto &gstate = (PostgresGlobalState &)*global_state;
+
+  auto local_state = make_unique<PostgresLocalState>();
+  local_state->column_ids = input.column_ids;
+  local_state->conn = PostgresScanConnect(
+      bind_data->dsn, bind_data->in_recovery, bind_data->snapshot);
+  local_state->filters = input.filters;
+  if (!PostgresParallelStateNext(context, input.bind_data, *local_state,
+                                 gstate)) {
+    local_state->done = true;
+  }
+  return move(local_state);
+}
+
+static void PostgresScan(ClientContext &context, TableFunctionInput &data,
+                         DataChunk &output) {
+  auto bind_data = (const PostgresBindData *)data.bind_data;
+  auto local_state = (PostgresLocalState *)data.local_state;
+  auto gstate = (PostgresGlobalState *)data.global_state;
 
   if (local_state->done) {
-    return;
+    if (!PostgresParallelStateNext(context, data.bind_data, *local_state,
+                                   *gstate)) {
+      return;
+    }
   }
 
   PostgresBinaryBuffer buf(local_state->conn);
@@ -865,69 +909,6 @@ static void PostgresScan(ClientContext &context,
     buf.Reset();
     output_offset++;
   }
-}
-
-static idx_t PostgresMaxThreads(ClientContext &context,
-                                const FunctionData *bind_data_p) {
-  D_ASSERT(bind_data_p);
-
-  auto bind_data = (const PostgresBindData *)bind_data_p;
-  return bind_data->pages_approx / bind_data->pages_per_task;
-}
-
-static unique_ptr<ParallelState>
-PostgresInitParallelState(ClientContext &context, const FunctionData *,
-                          const vector<column_t> &column_ids,
-                          TableFilterCollection *) {
-  return make_unique<PostgresParallelState>();
-}
-
-static bool PostgresParallelStateNext(ClientContext &context,
-                                      const FunctionData *bind_data_p,
-                                      FunctionOperatorData *local_state_p,
-                                      ParallelState *parallel_state_p) {
-  D_ASSERT(bind_data_p);
-  D_ASSERT(local_state_p);
-  D_ASSERT(parallel_state_p);
-
-  auto bind_data = (const PostgresBindData *)bind_data_p;
-  auto &parallel_state = (PostgresParallelState &)*parallel_state_p;
-  auto local_state = (PostgresOperatorData *)local_state_p;
-
-  lock_guard<mutex> parallel_lock(parallel_state.lock);
-
-  if (parallel_state.page_idx < bind_data->pages_approx) {
-    auto page_max = parallel_state.page_idx + bind_data->pages_per_task;
-    if (parallel_state.page_idx + bind_data->pages_per_task >
-        bind_data->pages_approx) {
-      // the relpages entry is not the real max, so make the last task bigger
-      page_max = POSTGRES_TID_MAX;
-    }
-    PostgresInitInternal(context, bind_data, local_state,
-                         parallel_state.page_idx, page_max);
-    parallel_state.page_idx += bind_data->pages_per_task;
-    return true;
-  }
-  return false;
-}
-
-static unique_ptr<FunctionOperatorData>
-PostgresParallelInit(ClientContext &context, const FunctionData *bind_data_p,
-                     ParallelState *parallel_state_p,
-                     const vector<column_t> &column_ids,
-                     TableFilterCollection *) {
-  D_ASSERT(bind_data_p);
-  auto bind_data = (const PostgresBindData *)bind_data_p;
-
-  auto local_state = make_unique<PostgresOperatorData>();
-  local_state->column_ids = column_ids;
-  local_state->conn = PostgresScanConnect(
-      bind_data->dsn, bind_data->in_recovery, bind_data->snapshot);
-  if (!PostgresParallelStateNext(context, bind_data_p, local_state.get(),
-                                 parallel_state_p)) {
-    local_state->done = true;
-  }
-  return move(local_state);
 }
 
 static string PostgresScanToString(const FunctionData *bind_data_p) {
@@ -981,11 +962,9 @@ static unique_ptr<FunctionData> AttachBind(ClientContext &context,
   return move(result);
 }
 
-static void AttachFunction(ClientContext &context,
-                           const FunctionData *bind_data,
-                           FunctionOperatorData *operator_state,
+static void AttachFunction(ClientContext &context, TableFunctionInput &data_p,
                            DataChunk &output) {
-  auto &data = (AttachFunctionData &)*bind_data;
+  auto &data = (AttachFunctionData &)*data_p.bind_data;
   if (data.finished) {
     return;
   }
@@ -1023,11 +1002,11 @@ public:
       : TableFunction(
             "postgres_scan",
             {LogicalType::VARCHAR, LogicalType::VARCHAR, LogicalType::VARCHAR},
-            PostgresScan, PostgresBind, PostgresInit, nullptr, nullptr, nullptr,
-            PostgresCardinality, nullptr, PostgresScanToString,
-            PostgresMaxThreads, PostgresInitParallelState, nullptr,
-            PostgresParallelInit, PostgresParallelStateNext, true, false,
-            nullptr) {}
+            PostgresScan, PostgresBind, PostgresInitGlobalState,
+            PostgresInitLocalState) {
+    to_string = PostgresScanToString;
+    projection_pushdown = true;
+  }
 };
 
 class PostgresScanFunctionFilterPushdown : public TableFunction {
@@ -1036,11 +1015,12 @@ public:
       : TableFunction(
             "postgres_scan_pushdown",
             {LogicalType::VARCHAR, LogicalType::VARCHAR, LogicalType::VARCHAR},
-            PostgresScan, PostgresBind, PostgresInit, nullptr, nullptr, nullptr,
-            PostgresCardinality, nullptr, PostgresScanToString,
-            PostgresMaxThreads, PostgresInitParallelState, nullptr,
-            PostgresParallelInit, PostgresParallelStateNext, true, true,
-            nullptr) {}
+            PostgresScan, PostgresBind, PostgresInitGlobalState,
+            PostgresInitLocalState) {
+    to_string = PostgresScanToString;
+    projection_pushdown = true;
+    filter_pushdown = true;
+  }
 };
 
 extern "C" {

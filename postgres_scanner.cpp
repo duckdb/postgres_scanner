@@ -918,6 +918,7 @@ static string PostgresScanToString(const FunctionData *bind_data_p) {
   return bind_data->table_name;
 }
 
+/*
 static unique_ptr<NodeStatistics>
 PostgresCardinality(ClientContext &context, const FunctionData *bind_data_p) {
   auto bind_data = (const PostgresBindData *)bind_data_p;
@@ -926,6 +927,7 @@ PostgresCardinality(ClientContext &context, const FunctionData *bind_data_p) {
   }
   return make_unique<NodeStatistics>(bind_data->cardinality);
 }
+*/
 
 struct AttachFunctionData : public TableFunctionData {
   AttachFunctionData() {}

@@ -4,7 +4,9 @@ project(${TARGET_NAME})
 
 add_definitions(-DFRONTEND=1 -D_GNU_SOURCE=1)
 
-set(POSTGRES_SCANNER_EXTRA_CFLAGS "-Wno-pedantic -Wno-sign-compare -Wno-unused-variable")
+if(NOT MSVC)
+  set(POSTGRES_SCANNER_EXTRA_CFLAGS "-Wno-pedantic -Wno-sign-compare -Wno-unused-variable")
+endif()
 
 set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} ${POSTGRES_SCANNER_EXTRA_CFLAGS}")
 set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} ${POSTGRES_SCANNER_EXTRA_CFLAGS}")

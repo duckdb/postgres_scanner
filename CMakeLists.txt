@@ -106,5 +106,5 @@ build_loadable_extension(${TARGET_NAME} postgres_scanner.cpp
                          ${LIBPG_SOURCES_FULLPATH})
 
 if(WIN32)
-  target_link_libraries(${TARGET_NAME} wsock32 ws2_32 wldap32 secur32)
+  target_link_libraries(${TARGET_NAME}_loadable_extension wsock32 ws2_32 wldap32 secur32)
 endif()

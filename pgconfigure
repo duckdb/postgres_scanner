@@ -6,7 +6,7 @@ curl -s -L https://github.com/postgres/postgres/archive/refs/tags/REL_14_2.tar.g
 if [ "$OS" = "Windows_NT" ]; then
   (cd postgres/src/tools/msvc/ && perl mkvcbuild.pl)
 else
-  (cd postgres && ./configure \
+  (cd postgres && CC=gcc CXX=g++ ./configure \
     --without-llvm        \
     --without-icu         \
     --without-tcl         \

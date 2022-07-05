@@ -506,35 +506,34 @@ static void ReadDecimal(idx_t scale, int32_t ndigits, int32_t weight, bool is_ne
 static void ProcessValue(data_ptr_t value_ptr, idx_t value_len, const PostgresBindData *bind_data, idx_t col_idx,
                          bool skip, Vector &out_vec, idx_t output_offset) {
 	auto &type = bind_data->types[col_idx];
-	auto &info = bind_data->columns[col_idx];
 
 	D_ASSERT(!skip);
 
 	switch (type.id()) {
 
 	case LogicalTypeId::INTEGER:
-		D_ASSERT(info.attlen == sizeof(int32_t));
+		D_ASSERT(bind_data->columns[col_idx].attlen == sizeof(int32_t));
 		D_ASSERT(value_len == sizeof(int32_t));
 
 		FlatVector::GetData<int32_t>(out_vec)[output_offset] = ntohl(Load<uint32_t>(value_ptr));
 		break;
 
 	case LogicalTypeId::SMALLINT:
-		D_ASSERT(info.attlen == sizeof(int16_t));
+		D_ASSERT(bind_data->columns[col_idx].attlen == sizeof(int16_t));
 		D_ASSERT(value_len == sizeof(int16_t));
 
 		FlatVector::GetData<int16_t>(out_vec)[output_offset] = ntohs(Load<int16_t>(value_ptr));
 		break;
 
 	case LogicalTypeId::BIGINT:
-		D_ASSERT(info.attlen == sizeof(int64_t));
+		D_ASSERT(bind_data->columns[col_idx].attlen == sizeof(int64_t));
 		D_ASSERT(value_len == sizeof(int64_t));
 
 		FlatVector::GetData<int64_t>(out_vec)[output_offset] = ntohll(Load<uint64_t>(value_ptr));
 		break;
 
 	case LogicalTypeId::FLOAT: {
-		D_ASSERT(info.attlen == sizeof(float));
+		D_ASSERT(bind_data->columns[col_idx].attlen == sizeof(float));
 		D_ASSERT(value_len == sizeof(float));
 
 		auto i = ntohl(Load<uint32_t>(value_ptr));
@@ -543,7 +542,7 @@ static void ProcessValue(data_ptr_t value_ptr, idx_t value_len, const PostgresBi
 	}
 
 	case LogicalTypeId::DOUBLE: {
-		D_ASSERT(info.attlen == sizeof(double));
+		D_ASSERT(bind_data->columns[col_idx].attlen == sizeof(double));
 		D_ASSERT(value_len == sizeof(double));
 
 		auto i = ntohll(Load<uint64_t>(value_ptr));
@@ -554,13 +553,13 @@ static void ProcessValue(data_ptr_t value_ptr, idx_t value_len, const PostgresBi
 	case LogicalTypeId::JSON:
 	case LogicalTypeId::BLOB:
 	case LogicalTypeId::VARCHAR:
-		D_ASSERT(info.attlen == -1);
+		D_ASSERT(bind_data->columns[col_idx].attlen == -1);
 		FlatVector::GetData<string_t>(out_vec)[output_offset] =
 		    StringVector::AddStringOrBlob(out_vec, (char *)value_ptr, value_len);
 		break;
 
 	case LogicalTypeId::BOOLEAN:
-		D_ASSERT(info.attlen == sizeof(bool));
+		D_ASSERT(bind_data->columns[col_idx].attlen == sizeof(bool));
 		D_ASSERT(value_len == sizeof(bool));
 		FlatVector::GetData<bool>(out_vec)[output_offset] = *value_ptr > 0;
 		break;
@@ -584,10 +583,9 @@ static void ProcessValue(data_ptr_t value_ptr, idx_t value_len, const PostgresBi
 			D_ASSERT(0);
 			// TODO complain
 		}
-		auto dscale = decimal_ptr[3];
 		auto is_negative = sign == NUMERIC_NEG;
 
-		D_ASSERT(dscale == DecimalType::GetScale(type));
+		D_ASSERT(decimal_ptr[3] == DecimalType::GetScale(type));
 		auto digit_ptr = (const uint16_t *)decimal_ptr + 4;
 
 		switch (type.InternalType()) {
@@ -611,7 +609,7 @@ static void ProcessValue(data_ptr_t value_ptr, idx_t value_len, const PostgresBi
 	}
 
 	case LogicalTypeId::DATE: {
-		D_ASSERT(info.attlen == sizeof(int32_t));
+		D_ASSERT(bind_data->columns[col_idx].attlen == sizeof(int32_t));
 		D_ASSERT(value_len == sizeof(int32_t));
 
 		auto jd = ntohl(Load<uint32_t>(value_ptr));
@@ -621,18 +619,18 @@ static void ProcessValue(data_ptr_t value_ptr, idx_t value_len, const PostgresBi
 	}
 
 	case LogicalTypeId::TIME: {
-		D_ASSERT(info.attlen == sizeof(int64_t));
+		D_ASSERT(bind_data->columns[col_idx].attlen == sizeof(int64_t));
 		D_ASSERT(value_len == sizeof(int64_t));
-		D_ASSERT(info.atttypmod == -1);
+		D_ASSERT(bind_data->columns[col_idx].atttypmod == -1);
 
 		FlatVector::GetData<dtime_t>(out_vec)[output_offset].micros = ntohll(Load<uint64_t>(value_ptr));
 		break;
 	}
 
 	case LogicalTypeId::TIME_TZ: {
-		D_ASSERT(info.attlen == sizeof(int64_t) + sizeof(int32_t));
+		D_ASSERT(bind_data->columns[col_idx].attlen == sizeof(int64_t) + sizeof(int32_t));
 		D_ASSERT(value_len == sizeof(int64_t) + sizeof(int32_t));
-		D_ASSERT(info.atttypmod == -1);
+		D_ASSERT(bind_data->columns[col_idx].atttypmod == -1);
 
 		auto usec = ntohll(Load<uint64_t>(value_ptr));
 		auto tzoffset = (int32_t)ntohl(Load<uint32_t>(value_ptr + sizeof(int64_t)));
@@ -642,9 +640,9 @@ static void ProcessValue(data_ptr_t value_ptr, idx_t value_len, const PostgresBi
 
 	case LogicalTypeId::TIMESTAMP_TZ:
 	case LogicalTypeId::TIMESTAMP: {
-		D_ASSERT(info.attlen == sizeof(int64_t));
+		D_ASSERT(bind_data->columns[col_idx].attlen == sizeof(int64_t));
 		D_ASSERT(value_len == sizeof(int64_t));
-		D_ASSERT(info.atttypmod == -1);
+		D_ASSERT(bind_data->columns[col_idx].atttypmod == -1);
 
 		auto usec = ntohll(Load<uint64_t>(value_ptr));
 		auto time = usec % Interval::MICROS_PER_DAY;

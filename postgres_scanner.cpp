@@ -781,7 +781,8 @@ static bool PostgresParallelStateNext(ClientContext &context, const FunctionData
 	return false;
 }
 
-static unique_ptr<LocalTableFunctionState> PostgresInitLocalState(ClientContext &context, TableFunctionInitInput &input,
+static unique_ptr<LocalTableFunctionState> PostgresInitLocalState(ExecutionContext &context,
+                                                                  TableFunctionInitInput &input,
                                                                   GlobalTableFunctionState *global_state) {
 	auto bind_data = (const PostgresBindData *)input.bind_data;
 	auto &gstate = (PostgresGlobalState &)*global_state;
@@ -790,7 +791,7 @@ static unique_ptr<LocalTableFunctionState> PostgresInitLocalState(ClientContext 
 	local_state->column_ids = input.column_ids;
 	local_state->conn = PostgresScanConnect(bind_data->dsn, bind_data->in_recovery, bind_data->snapshot);
 	local_state->filters = input.filters;
-	if (!PostgresParallelStateNext(context, input.bind_data, *local_state, gstate)) {
+	if (!PostgresParallelStateNext(context.client, input.bind_data, *local_state, gstate)) {
 		local_state->done = true;
 	}
 	return move(local_state);
@@ -940,6 +941,7 @@ public:
 	PostgresScanFunction()
 	    : TableFunction("postgres_scan", {LogicalType::VARCHAR, LogicalType::VARCHAR, LogicalType::VARCHAR},
 	                    PostgresScan, PostgresBind, PostgresInitGlobalState, PostgresInitLocalState) {
+		cardinality = PostgresCardinality;
 		to_string = PostgresScanToString;
 		projection_pushdown = true;
 	}

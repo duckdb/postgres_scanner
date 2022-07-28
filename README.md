@@ -1,22 +1,10 @@
-# DuckDB <> PostgreSQL integration
+# DuckDB postgresscanner extension
 
+The postgresscanner extension allows DuckDB to directly read data from a running Postgres instance. The data can be queried directly from the underlying Postgres tables, or read into DuckDB tables.
 
-To build, type 
-```
-make
-```
+## Usage
 
-To run, run the bundled `duckdb` shell:
-```
- ./duckdb/build/release/duckdb 
-```
-
-Then, load the Postgres extension like so:
-```SQL
-LOAD 'build/release/postgres_scanner.duckdb_extension';
-```
-
-To make a SQLite file accessible to DuckDB, use the `POSTGRES_ATTACH` command:
+To make a Postgres database accessible to DuckDB, use the `POSTGRES_ATTACH` command:
 ```SQL
 CALL POSTGRES_ATTACH('');
 ```
@@ -40,6 +28,25 @@ SELECT * FROM POSTGRES_SCAN('', 'public', 'mytable');
 
 `POSTGRES_SCAN` takes three string parameters, the `libpq` connection string (see above), a Postgres schema name and a table name. The schema name is often `public`.
 
+
+
+
+## Building & Loading the Extension
+
+To build, type 
+```
+make
+```
+
+To run, run the bundled `duckdb` shell:
+```
+ ./duckdb/build/release/duckdb 
+```
+
+Then, load the Postgres extension like so:
+```SQL
+LOAD 'build/release/postgres_scanner.duckdb_extension';
+```
 
 
 ## License

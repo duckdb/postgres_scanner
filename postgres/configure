@@ -3,6 +3,12 @@ rm -rf postgres
 mkdir postgres
 curl -s -L https://github.com/postgres/postgres/archive/refs/tags/REL_14_2.tar.gz | tar xz --strip-components 1 -C postgres
 
+if [ "$CC" = "aarch64-linux-gnu-gcc" ]; then
+    CROSS_COMPILE_FLAG="--host=aarch64-linux-gnu"
+else
+    CROSS_COMPILE_FLAG=""
+fi
+
 if [ "$OS" = "Windows_NT" ]; then
   (cd postgres/src/tools/msvc/ && perl mkvcbuild.pl)
 else
@@ -24,5 +30,6 @@ else
     --without-libxslt     \
     --without-zlib        \
     --without-lz4         \
+    $CROSS_COMPILE_FLAG   \
     --without-openssl  > /dev/null)
 fi

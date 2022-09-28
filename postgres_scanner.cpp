@@ -38,11 +38,7 @@ struct PostgresBindData : public FunctionData {
 
 	string schema_name;
 	string table_name;
-	idx_t cardinality = 0;
 	idx_t pages_approx = 0;
-
-	idx_t page_size = 0;
-	idx_t txid = 0;
 
 	vector<PostgresColumnInfo> columns;
 	vector<string> names;
@@ -90,6 +86,10 @@ public:
 	}
 	bool GetBool(idx_t row, idx_t col) {
 		return strcmp(PQgetvalue(res, row, col), "t");
+	}
+	idx_t Count() {
+		D_ASSERT(res);
+		return PQntuples(res);
 	}
 };
 
@@ -152,12 +152,11 @@ static LogicalType DuckDBType(PostgresColumnInfo &info, PGconn *conn) {
 
 	if (info.typtype == "e") { // ENUM
 		auto res = PGQuery(conn, StringUtil::Format("SELECT unnest(enum_range(NULL::%s))", pgtypename));
-		auto rows = PQntuples(res->res);
-		Vector duckdb_levels(LogicalType::VARCHAR, rows);
-		for (idx_t row = 0; row < rows; row++) {
+		Vector duckdb_levels(LogicalType::VARCHAR, res->Count());
+		for (idx_t row = 0; row < res->Count(); row++) {
 			duckdb_levels.SetValue(row, res->GetString(row, 0));
 		}
-		return LogicalType::ENUM("postgres_enum_" + pgtypename, duckdb_levels, rows);
+		return LogicalType::ENUM("postgres_enum_" + pgtypename, duckdb_levels, res->Count());
 	}
 
 	if (pgtypename == "bool") {
@@ -222,14 +221,17 @@ static unique_ptr<FunctionData> PostgresBind(ClientContext &context, TableFuncti
 	// find the id of the table in question to simplify below queries and avoid
 	// complex joins (ha)
 	auto res = PGQuery(bind_data->conn, StringUtil::Format(R"(
-SELECT pg_class.oid, reltuples, relpages
+SELECT pg_class.oid, GREATEST(relpages, 1)
 FROM pg_class JOIN pg_namespace ON relnamespace = pg_namespace.oid
 WHERE nspname='%s' AND relname='%s'
 )",
 	                                                       bind_data->schema_name, bind_data->table_name));
+	if (res->Count() != 1) {
+		throw InvalidInputException("Postgres table \"%s\".\"%s\" not found", bind_data->schema_name,
+		                            bind_data->table_name);
+	}
 	auto oid = res->GetInt64(0, 0);
-	bind_data->cardinality = res->GetInt64(0, 1);
-	bind_data->pages_approx = res->GetInt64(0, 2);
+	bind_data->pages_approx = res->GetInt64(0, 1);
 
 	res.reset();
 
@@ -245,7 +247,7 @@ ORDER BY attnum
 )",
 	                                   oid));
 
-	for (idx_t row = 0; row < PQntuples(res->res); row++) {
+	for (idx_t row = 0; row < res->Count(); row++) {
 		PostgresColumnInfo info;
 		info.attname = res->GetString(row, 0);
 		info.attlen = res->GetInt64(row, 1);
@@ -356,6 +358,7 @@ static void PostgresInitInternal(ClientContext &context, const PostgresBindData 
 	    R"(
 COPY (SELECT %s FROM "%s"."%s" WHERE ctid BETWEEN '(%d,0)'::tid AND '(%d,0)'::tid %s) TO STDOUT (FORMAT binary);
 )",
+
 	    col_names, bind_data->schema_name, bind_data->table_name, task_min, task_max, filter_string);
 
 	lstate.exec = false;
@@ -765,12 +768,14 @@ static bool PostgresParallelStateNext(ClientContext &context, const FunctionData
 	auto bind_data = (const PostgresBindData *)bind_data_p;
 
 	lock_guard<mutex> parallel_lock(gstate.lock);
+
 	if (gstate.page_idx < bind_data->pages_approx) {
 		auto page_max = gstate.page_idx + bind_data->pages_per_task;
-		if (gstate.page_idx + bind_data->pages_per_task > bind_data->pages_approx) {
+		if (page_max >= bind_data->pages_approx) {
 			// the relpages entry is not the real max, so make the last task bigger
 			page_max = POSTGRES_TID_MAX;
 		}
+
 		PostgresInitInternal(context, bind_data, lstate, gstate.page_idx, page_max);
 		gstate.page_idx += bind_data->pages_per_task;
 		return true;
@@ -800,26 +805,26 @@ static void PostgresScan(ClientContext &context, TableFunctionInput &data, DataC
 	auto local_state = (PostgresLocalState *)data.local_state;
 	auto gstate = (PostgresGlobalState *)data.global_state;
 
-	if (local_state->done) {
-		if (!PostgresParallelStateNext(context, data.bind_data, *local_state, *gstate)) {
-			return;
-		}
-	}
-
-	PostgresBinaryBuffer buf(local_state->conn);
-	if (!local_state->exec) {
-		PGQuery(local_state->conn, local_state->sql, PGRES_COPY_OUT);
-		local_state->exec = true;
-		buf.Next();
-		buf.CheckHeader();
-		// the first tuple immediately follows the header in the first message, so
-		// we have to keep the buffer alive for now.
-	}
-
 	idx_t output_offset = 0;
-	while (true) {
-		output.SetCardinality(output_offset);
+	PostgresBinaryBuffer buf(local_state->conn);
 
+	while (true) {
+		if (local_state->done) {
+			if (!PostgresParallelStateNext(context, data.bind_data, *local_state, *gstate)) {
+				return;
+			}
+		}
+
+		if (!local_state->exec) {
+			PGQuery(local_state->conn, local_state->sql, PGRES_COPY_OUT);
+			local_state->exec = true;
+			buf.Next();
+			buf.CheckHeader();
+			// the first tuple immediately follows the header in the first message, so
+			// we have to keep the buffer alive for now.
+		}
+
+		output.SetCardinality(output_offset);
 		if (output_offset == STANDARD_VECTOR_SIZE) {
 			break;
 		}
@@ -829,9 +834,9 @@ static void PostgresScan(ClientContext &context, TableFunctionInput &data, DataC
 		}
 
 		auto tuple_count = (int16_t)ntohs(buf.Read<uint16_t>());
-		if (tuple_count == -1) { // done
+		if (tuple_count == -1) { // done here, lets try to get more
 			local_state->done = true;
-			break;
+			continue;
 		}
 
 		D_ASSERT(tuple_count == local_state->column_ids.size());
@@ -858,14 +863,6 @@ static string PostgresScanToString(const FunctionData *bind_data_p) {
 
 	auto bind_data = (const PostgresBindData *)bind_data_p;
 	return bind_data->table_name;
-}
-
-static unique_ptr<NodeStatistics> PostgresCardinality(ClientContext &context, const FunctionData *bind_data_p) {
-	auto bind_data = (const PostgresBindData *)bind_data_p;
-	if (bind_data->cardinality == -1) {
-		return make_unique<NodeStatistics>();
-	}
-	return make_unique<NodeStatistics>(bind_data->cardinality);
 }
 
 struct AttachFunctionData : public TableFunctionData {
@@ -939,7 +936,6 @@ public:
 	PostgresScanFunction()
 	    : TableFunction("postgres_scan", {LogicalType::VARCHAR, LogicalType::VARCHAR, LogicalType::VARCHAR},
 	                    PostgresScan, PostgresBind, PostgresInitGlobalState, PostgresInitLocalState) {
-		cardinality = PostgresCardinality;
 		to_string = PostgresScanToString;
 		projection_pushdown = true;
 	}

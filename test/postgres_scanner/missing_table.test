@@ -1,0 +1,5 @@
+statement ok
+LOAD 'build/release/postgres_scanner.duckdb_extension';
+
+statement error
+select * from postgres_scan('dbname=postgresscanner', 'public', 'does_not_exist')

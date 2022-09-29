@@ -809,10 +809,8 @@ static void PostgresScan(ClientContext &context, TableFunctionInput &data, DataC
 	PostgresBinaryBuffer buf(local_state->conn);
 
 	while (true) {
-		if (local_state->done) {
-			if (!PostgresParallelStateNext(context, data.bind_data, *local_state, *gstate)) {
-				return;
-			}
+		if (local_state->done && !PostgresParallelStateNext(context, data.bind_data, *local_state, *gstate)) {
+			return;
 		}
 
 		if (!local_state->exec) {
@@ -826,7 +824,7 @@ static void PostgresScan(ClientContext &context, TableFunctionInput &data, DataC
 
 		output.SetCardinality(output_offset);
 		if (output_offset == STANDARD_VECTOR_SIZE) {
-			break;
+			return;
 		}
 
 		if (!buf.Ready()) {

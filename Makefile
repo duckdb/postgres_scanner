@@ -7,47 +7,34 @@ ifeq (${OSX_BUILD_UNIVERSAL}, 1)
 	OSX_BUILD_UNIVERSAL_FLAG=-DOSX_BUILD_UNIVERSAL=1
 endif
 
-DUCKDB_ROOT_DIRECTORY=duckdb
-ifneq ("${DUCKDB_ROOT}a", "a")
-	DUCKDB_ROOT_DIRECTORY:=${DUCKDB_ROOT}
-endif
-
 clean:
 	rm -rf build
-	rm -rf duckdb/build
-	rm -rf postgres/postgres
+	rm -rf postgres
 
-duckdb_debug:
-	cd ${DUCKDB_ROOT_DIRECTORY} && \
-	BUILD_TPCDS=1 BUILD_TPCH=1 make debug
+pull:
+	git submodule init
+	git submodule update --recursive --remote
 
-duckdb_release:
-	cd ${DUCKDB_ROOT_DIRECTORY} && \
-	BUILD_TPCDS=1 BUILD_TPCH=1 make release
 
-debug: duckdb_debug
+debug: pull
 	mkdir -p build/debug && \
 	cd build/debug && \
-	cmake -DCMAKE_BUILD_TYPE=Debug -DDUCKDB_INCLUDE_FOLDER=${DUCKDB_ROOT_DIRECTORY}/src/include -DDUCKDB_LIBRARY_FOLDER=${DUCKDB_ROOT_DIRECTORY}/build/debug/src ${OSX_BUILD_UNIVERSAL_FLAG} ../.. && \
-	cmake --build .
+	cmake -DCMAKE_BUILD_TYPE=Debug ${OSX_BUILD_UNIVERSAL_FLAG} ../../duckdb/CMakeLists.txt -DEXTERNAL_EXTENSION_DIRECTORY=.. -B. && \
+	cmake --build . --parallel
 
-release: duckdb_release
+
+release: pull
 	mkdir -p build/release && \
 	cd build/release && \
-	cmake  -DCMAKE_BUILD_TYPE=RelWithDebInfo -DDUCKDB_INCLUDE_FOLDER=${DUCKDB_ROOT_DIRECTORY}/src/include -DDUCKDB_LIBRARY_FOLDER=${DUCKDB_ROOT_DIRECTORY}/build/release/src ${OSX_BUILD_UNIVERSAL_FLAG} ../.. && \
-	cmake --build .
+	cmake -DCMAKE_BUILD_TYPE=RelWithDebInfo ${OSX_BUILD_UNIVERSAL_FLAG} ../../duckdb/CMakeLists.txt -DEXTERNAL_EXTENSION_DIRECTORY=.. -B. && \
+	cmake --build . --parallel
+
 
 test: release
-	${DUCKDB_ROOT_DIRECTORY}/build/release/test/unittest --test-dir . "[postgres_scanner]"
+	./build/release/test/unittest --test-dir . "[postgres_scanner]"
 
 format:
-	cp ${DUCKDB_ROOT_DIRECTORY}/.clang-format .
 	clang-format --sort-includes=0 -style=file -i postgres_scanner.cpp
 	clang-format --sort-includes=0 -style=file -i concurrency_test.cpp
 	cmake-format -i CMakeLists.txt
 	cmake-format -i postgres/CMakeLists.txt
-	rm .clang-format
-
-
-update:
-	git submodule update --remote --merge

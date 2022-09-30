@@ -26,7 +26,6 @@ insert into nulltest values (NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NUL
 " | psql -d postgresscanner
 
 echo "
-
 create type color_t as enum('blue', 'red', 'gray', 'black');
 
 drop table if exists cars;
@@ -44,6 +43,8 @@ insert into cars(brand, model, color)
             ('ford', 'T', 'black');
 
 " |  psql -d postgresscanner
+
+
 
 psql -d postgresscanner -c "CHECKPOINT"
 psql -d postgresscanner -c "VACUUM"

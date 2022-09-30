@@ -7,6 +7,9 @@ ifeq (${OSX_BUILD_UNIVERSAL}, 1)
 	OSX_BUILD_UNIVERSAL_FLAG=-DOSX_BUILD_UNIVERSAL=1
 endif
 
+# BUILD_OUT_OF_TREE_EXTENSION
+POSTGRES_SCANNER_PATH=${PWD}
+
 clean:
 	rm -rf build
 	rm -rf postgres
@@ -19,14 +22,14 @@ pull:
 debug: pull
 	mkdir -p build/debug && \
 	cd build/debug && \
-	cmake -DCMAKE_BUILD_TYPE=Debug ${OSX_BUILD_UNIVERSAL_FLAG} ../../duckdb/CMakeLists.txt -DEXTERNAL_EXTENSION_DIRECTORY=.. -B. && \
+	cmake -DCMAKE_BUILD_TYPE=Debug ${OSX_BUILD_UNIVERSAL_FLAG} ../../duckdb/CMakeLists.txt -DEXTERNAL_EXTENSION_DIRECTORIES=${POSTGRES_SCANNER_PATH} -B. -S ../../duckdb && \
 	cmake --build . --parallel
 
 
 release: pull
 	mkdir -p build/release && \
 	cd build/release && \
-	cmake -DCMAKE_BUILD_TYPE=RelWithDebInfo ${OSX_BUILD_UNIVERSAL_FLAG} ../../duckdb/CMakeLists.txt -DEXTERNAL_EXTENSION_DIRECTORY=.. -B. && \
+	cmake -DCMAKE_BUILD_TYPE=RelWithDebInfo ${OSX_BUILD_UNIVERSAL_FLAG} ../../duckdb/CMakeLists.txt -DEXTERNAL_EXTENSION_DIRECTORIES=${POSTGRES_SCANNER_PATH} -B. -S ../../duckdb && \
 	cmake --build . --parallel
 
 

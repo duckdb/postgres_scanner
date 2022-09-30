@@ -1,5 +1,5 @@
 statement ok
-LOAD 'build/release/postgres_scanner.duckdb_extension';
+LOAD 'build/release/extension/postgres_scanner/postgres_scanner.duckdb_extension';
 
 statement ok
 CALL postgres_attach('dbname=postgresscanner');

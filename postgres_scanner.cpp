@@ -172,6 +172,9 @@ static LogicalType DuckDBType(PostgresColumnInfo &info, PGconn *conn) {
 	} else if (pgtypename == "float8") {
 		return LogicalType::DOUBLE;
 	} else if (pgtypename == "numeric") {
+        if (atttypmod == -1) { // zero?
+            throw IOException("Unbound NUMERIC types are not supported");
+        }
 		auto width = ((atttypmod - sizeof(int32_t)) >> 16) & 0xffff;
 		auto scale = (((atttypmod - sizeof(int32_t)) & 0x7ff) ^ 1024) - 1024;
 		return LogicalType::DECIMAL(width, scale);

@@ -103,8 +103,8 @@ add_custom_command(
         WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
         COMMAND sh pgconfigure)
 
-build_loadable_extension(${TARGET_NAME} postgres_scanner.cpp
-        ${LIBPG_SOURCES_FULLPATH})
+set(PARAMETERS "-no-warnings")
+build_loadable_extension(${TARGET_NAME} ${PARAMETERS} postgres_scanner.cpp ${LIBPG_SOURCES_FULLPATH})
 
 if(WIN32)
   target_link_libraries(${TARGET_NAME}_loadable_extension wsock32 ws2_32 wldap32 secur32)

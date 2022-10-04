@@ -40,12 +40,12 @@ make
 
 To run, run the bundled `duckdb` shell:
 ```
- ./duckdb/build/release/duckdb 
+ ./duckdb/build/release/duckdb -unsigned  # allow unsigned extensions
 ```
 
 Then, load the Postgres extension like so:
 ```SQL
-LOAD 'build/release/postgres_scanner.duckdb_extension';
+LOAD 'build/release/extension/postgres_scanner/postgres_scanner.duckdb_extension';
 ```
 
 

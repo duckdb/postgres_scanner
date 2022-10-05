@@ -939,7 +939,7 @@ AND table_type='BASE TABLE'
 class PostgresScanFunction : public TableFunction {
 public:
 	PostgresScanFunction()
-	    : TableFunction("postgres_scan", {LogicalType::VARCHAR, LogicalType::VARCHAR, LogicalType::VARCHAR, LogicalType::VARCHAR},
+	    : TableFunction("postgres_scan", {LogicalType::VARCHAR, LogicalType::VARCHAR, LogicalType::VARCHAR},
 	                    PostgresScan, PostgresBind, PostgresInitGlobalState, PostgresInitLocalState) {
 		to_string = PostgresScanToString;
 		projection_pushdown = true;
@@ -949,7 +949,7 @@ public:
 class PostgresScanFunctionFilterPushdown : public TableFunction {
 public:
 	PostgresScanFunctionFilterPushdown()
-	    : TableFunction("postgres_scan_pushdown", {LogicalType::VARCHAR, LogicalType::VARCHAR, LogicalType::VARCHAR, LogicalType::VARCHAR},
+	    : TableFunction("postgres_scan_pushdown", {LogicalType::VARCHAR, LogicalType::VARCHAR, LogicalType::VARCHAR},
 	                    PostgresScan, PostgresBind, PostgresInitGlobalState, PostgresInitLocalState) {
 		to_string = PostgresScanToString;
 		projection_pushdown = true;

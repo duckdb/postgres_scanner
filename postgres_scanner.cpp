@@ -927,7 +927,7 @@ AND table_type='BASE TABLE'
 
 		dconn
 		    .TableFunction(data.filter_pushdown ? "postgres_scan_pushdown" : "postgres_scan",
-		                   {Value(data.dsn), Value(data.source_schema), Value(table_name), Value(data.sink_schema)})
+		                   {Value(data.dsn), Value(data.source_schema), Value(table_name)})
 		    ->CreateView(data.sink_schema,table_name, data.overwrite, false);
 	}
 	res.reset();

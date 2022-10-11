@@ -335,15 +335,31 @@ static void PostgresInitInternal(ClientContext &context, const PostgresBindData 
 
 	auto bind_data = (const PostgresBindData *)bind_data_p;
 
-	// we just return the first column for ROW_ID
+	// Queries like SELECT count(*) do not require actually returning the columns from the
+	// Postgres table, but only counting the row. In this case, we will be asked to return
+	// the 'rowid' special column here. It must be the only selected column. The corresponding
+	// deparsed query will be 'SELECT NULL'..Note that the user is not allowed to explicitly
+	// request the 'rowid' special column from a Postgres table in a SQL query.
+	bool have_rowid = false;
 	for (idx_t i = 0; i < lstate.column_ids.size(); i++) {
 		if (lstate.column_ids[i] == (column_t)-1) {
-			lstate.column_ids[i] = 0;
+			have_rowid = true;
+			break;
 		}
 	}
 
-	auto col_names = StringUtil::Join(lstate.column_ids.data(), lstate.column_ids.size(), ", ",
-	                                  [&](const idx_t column_id) { return '"' + bind_data->names[column_id] + '"'; });
+	if (have_rowid && lstate.column_ids.size() > 1) {
+		throw InternalException("Cannot return ROW_ID from Postgres table");
+	}
+
+	std::string col_names;
+	if (have_rowid) {
+		// We are only counting rows, not interested in the actual values of the columns.
+		col_names = "NULL";
+	} else {
+		col_names = StringUtil::Join(lstate.column_ids.data(), lstate.column_ids.size(), ", ",
+		                             [&](const idx_t column_id) { return '"' + bind_data->names[column_id] + '"'; });
+	}
 
 	string filter_string;
 	if (lstate.filters && !lstate.filters->filters.empty()) {

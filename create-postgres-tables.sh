@@ -42,6 +42,8 @@ insert into cars(brand, model, color)
             ('bentley', 'mulsanne', 'gray'),
             ('ford', 'T', 'black');
 
+create table intervals as select '42 day'::INTERVAL interval_days UNION ALL SELECT '42 month'::INTERVAL UNION ALL SELECT '42 year'::INTERVAL UNION ALL SELECT  '42 minute'::INTERVAL UNION ALL SELECT  '42 second'::INTERVAL UNION ALL SELECT '0.42 second'::INTERVAL UNION ALL SELECT '-42 day'::INTERVAL interval_days  UNION ALL SELECT NULL::INTERVAL;
+
 " |  psql -d postgresscanner
 
 

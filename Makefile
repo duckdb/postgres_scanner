@@ -36,7 +36,8 @@ release: pull
 test: release
 	./build/release/test/unittest --test-dir . "[postgres_scanner]"
 
-format:
+format: pull
+	cp duckdb/.clang-format .
 	clang-format --sort-includes=0 -style=file -i postgres_scanner.cpp
 	clang-format --sort-includes=0 -style=file -i concurrency_test.cpp
 	cmake-format -i CMakeLists.txt

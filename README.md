@@ -10,6 +10,7 @@ CALL POSTGRES_ATTACH('');
 ```
 `POSTGRES_ATTACH` takes a single required string parameter, which is the [`libpq` connection string](https://www.postgresql.org/docs/current/libpq-connect.html#LIBPQ-CONNSTRING). For example you can pass `'dbname=postgresscanner'` to select a different database name. In the simplest case, the parameter is just `''`. There are three additional named parameters:
  * `source_schema` the name of a non-standard schema name in Postgres to get tables from. Default is `public`.
+ * `sink_schema` the schema name in DuckDB to create views. Default is `main`.
  * `overwrite` whether we should overwrite existing views in the target schema, default is `false`.
 * `filter_pushdown` whether filter predicates that DuckDB derives from the query should be forwarded to Postgres, defaults to `false`.
 
@@ -28,7 +29,16 @@ SELECT * FROM POSTGRES_SCAN('', 'public', 'mytable');
 
 `POSTGRES_SCAN` takes three string parameters, the `libpq` connection string (see above), a Postgres schema name and a table name. The schema name is often `public`.
 
+### `sink_schema` usage
 
+attach Postgres schema to another DuckDB schema.
+
+```sql
+-- create a new schema in DuckDB first
+create schema abc;
+CALL postgres_attach('dbname=postgres user=postgres host=127.0.0.1',source_schema='public' , sink_schema='abc');
+select table_schema,table_name,table_type  FROM information_schema.tables;
+```
 
 
 ## Building & Loading the Extension
@@ -40,7 +50,7 @@ make
 
 To run, run the bundled `duckdb` shell:
 ```
- ./duckdb/build/release/duckdb -unsigned  # allow unsigned extensions
+ ./build/release/duckdb -unsigned  # allow unsigned extensions
 ```
 
 Then, load the Postgres extension like so:

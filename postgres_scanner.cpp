@@ -172,9 +172,9 @@ static LogicalType DuckDBType(PostgresColumnInfo &info, PGconn *conn) {
 	} else if (pgtypename == "float8") {
 		return LogicalType::DOUBLE;
 	} else if (pgtypename == "numeric") {
-        if (atttypmod == -1) { // zero?
-            throw IOException("Unbound NUMERIC types are not supported");
-        }
+		if (atttypmod == -1) { // zero?
+			throw IOException("Unbound NUMERIC types are not supported");
+		}
 		auto width = ((atttypmod - sizeof(int32_t)) >> 16) & 0xffff;
 		auto scale = (((atttypmod - sizeof(int32_t)) & 0x7ff) ^ 1024) - 1024;
 		return LogicalType::DECIMAL(width, scale);
@@ -194,6 +194,8 @@ static LogicalType DuckDBType(PostgresColumnInfo &info, PGconn *conn) {
 		return LogicalType::TIMESTAMP;
 	} else if (pgtypename == "timestamptz") {
 		return LogicalType::TIMESTAMP_TZ;
+	} else if (pgtypename == "interval") {
+		return LogicalType::INTERVAL;
 	} else {
 		throw IOException("Unsupported Postgres type %s", pgtypename);
 	}
@@ -683,7 +685,20 @@ static void ProcessValue(data_ptr_t value_ptr, idx_t value_len, const PostgresBi
 		}
 		break;
 	}
+	case LogicalTypeId::INTERVAL: {
+		if (bind_data->columns[col_idx].atttypmod != -1) {
+			throw IOException("Interval with unsupported typmod %d", bind_data->columns[col_idx].atttypmod);
+		}
 
+		interval_t res;
+
+		res.micros = ntohll(Load<uint64_t>(value_ptr));
+		res.days = ntohl(Load<uint32_t>(value_ptr + sizeof(uint64_t)));
+		res.months = ntohl(Load<uint32_t>(value_ptr + sizeof(uint64_t) + +sizeof(uint32_t)));
+
+		FlatVector::GetData<interval_t>(out_vec)[output_offset] = res;
+		break;
+	}
 	default:
 		throw InternalException("Unsupported Type %s", type.ToString());
 	}

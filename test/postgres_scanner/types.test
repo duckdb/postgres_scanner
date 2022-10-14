@@ -18,10 +18,10 @@ NULL	NULL	NULL	NULL	NULL	NULL	NULL
 query IIIIIII
 select * from pg_bytetypes;
 ----
-a	         	(empty)	(empty)	(empty)	(empty)	42
-a	aaaaaaaaa	a	aaaaaaaaa	dpfkg	dpfkg	{"a":42}
-Z	ZZZZZZZZZ	Z	ZZZZZZZZZ	dpfkg	dpfkg	{"a":42}
-NULL	NULL	NULL	NULL	NULL	NULL	NULL
+a	         	(empty)	(empty)	(empty)	(empty)	42	42	6093c059-cb4d-4fae-85e6-299b37788b06
+a	aaaaaaaaa	a	aaaaaaaaa	dpfkg	dpfkg	{"a":42}	{"a":42}	6093c059-cb4d-4fae-85e6-299b37788b06
+Z	ZZZZZZZZZ	Z	ZZZZZZZZZ	dpfkg	dpfkg	{"a":42}	{"a":42}	6093c059-cb4d-4fae-85e6-299b37788b06
+NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL
 
 query IIIII
 select * from pg_datetypes;

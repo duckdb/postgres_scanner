@@ -18,7 +18,9 @@ CREATE TABLE pg_bytetypes (
 	varchar_9_col varchar(9),
 	text_col text,
 	blob_col bytea,
-	json_col json);
+	json_col json,
+	jsonb_col jsonb,
+	uuid_col uuid);
 
 CREATE TABLE pg_datetypes (
 	date_col date,
@@ -34,11 +36,11 @@ INSERT INTO pg_numtypes (bool_col, smallint_col, integer_col, bigint_col, float_
 	(true, 42, 42, 42, 42.01, 42.01, 42.01), 
 	(NULL, NULL, NULL, NULL, NULL, NULL, NULL);
 
-INSERT INTO pg_bytetypes (char_1_col, char_9_col, varchar_1_col, varchar_9_col, text_col, blob_col, json_col) VALUES 
-	('a', '', '', '', '', '', '42'), 
-	('a', 'aaaaaaaaa', 'a', 'aaaaaaaaa', 'dpfkg', 'dpfkg', '{"a":42}'), 
-	('Z', 'ZZZZZZZZZ', 'Z', 'ZZZZZZZZZ', 'dpfkg', 'dpfkg', '{"a":42}'), 
-	(NULL, NULL, NULL, NULL, NULL, NULL, NULL);
+INSERT INTO pg_bytetypes (char_1_col, char_9_col, varchar_1_col, varchar_9_col, text_col, blob_col, json_col, jsonb_col, uuid_col) VALUES 
+	('a', '', '', '', '', '', '42','42', '6093c059-cb4d-4fae-85e6-299b37788b06'), 
+	('a', 'aaaaaaaaa', 'a', 'aaaaaaaaa', 'dpfkg', 'dpfkg', '{"a":42}', '{"a":42}', '6093c059-cb4d-4fae-85e6-299b37788b06'), 
+	('Z', 'ZZZZZZZZZ', 'Z', 'ZZZZZZZZZ', 'dpfkg', 'dpfkg', '{"a":42}', '{"a":42}', '6093c059-cb4d-4fae-85e6-299b37788b06'), 
+	(NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL);
 
 
 SET TIMEZONE='Asia/Kathmandu'; -- UTC - 05:45 hell yeah!

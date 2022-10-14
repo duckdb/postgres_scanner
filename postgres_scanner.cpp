@@ -184,7 +184,7 @@ static LogicalType DuckDBType(PostgresColumnInfo &info, PGconn *conn) {
 		return LogicalType::DATE;
 	} else if (pgtypename == "bytea") {
 		return LogicalType::BLOB;
-	} else if (pgtypename == "json") {
+	} else if (pgtypename == "json"||pgtypename == "jsonb") {
 		return LogicalType::JSON;
 	} else if (pgtypename == "time") {
 		return LogicalType::TIME;
@@ -196,6 +196,8 @@ static LogicalType DuckDBType(PostgresColumnInfo &info, PGconn *conn) {
 		return LogicalType::TIMESTAMP_TZ;
 	} else if (pgtypename == "interval") {
 		return LogicalType::INTERVAL;
+	} else if (pgtypename == "uuid") {
+		return LogicalType::UUID;        
 	} else {
 		throw IOException("Unsupported Postgres type %s", pgtypename);
 	}
@@ -558,6 +560,7 @@ static void ProcessValue(data_ptr_t value_ptr, idx_t value_len, const PostgresBi
 		break;
 	}
 
+    case LogicalTypeId::UUID:
 	case LogicalTypeId::JSON:
 	case LogicalTypeId::BLOB:
 	case LogicalTypeId::VARCHAR:

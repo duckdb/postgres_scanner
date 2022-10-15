@@ -174,10 +174,10 @@ static LogicalType DuckDBType(PostgresColumnInfo &info, PGconn *conn) {
 		return LogicalType::DOUBLE;
 	} else if (pgtypename == "numeric") {
 		if (atttypmod == -1) { // zero?
-            if (numeric_width < numeric_scale)
-			    throw IOException("for unbound NUMERIC types, make sure pgscan_numeric_width>=pgscan_numeric_scale");
+			if (numeric_width < numeric_scale)
+				throw IOException("for unbound NUMERIC types, make sure pgscan_numeric_width>=pgscan_numeric_scale");
 
-            return LogicalType::DECIMAL(numeric_width, numeric_scale);
+			return LogicalType::DECIMAL(numeric_width, numeric_scale);
 		}
 		auto width = ((atttypmod - sizeof(int32_t)) >> 16) & 0xffff;
 		auto scale = (((atttypmod - sizeof(int32_t)) & 0x7ff) ^ 1024) - 1024;
@@ -188,7 +188,7 @@ static LogicalType DuckDBType(PostgresColumnInfo &info, PGconn *conn) {
 		return LogicalType::DATE;
 	} else if (pgtypename == "bytea") {
 		return LogicalType::BLOB;
-	} else if (pgtypename == "json"||pgtypename == "jsonb") {
+	} else if (pgtypename == "json" || pgtypename == "jsonb") {
 		return LogicalType::JSON;
 	} else if (pgtypename == "time") {
 		return LogicalType::TIME;
@@ -201,7 +201,7 @@ static LogicalType DuckDBType(PostgresColumnInfo &info, PGconn *conn) {
 	} else if (pgtypename == "interval") {
 		return LogicalType::INTERVAL;
 	} else if (pgtypename == "uuid") {
-		return LogicalType::UUID;        
+		return LogicalType::UUID;
 	} else {
 		throw IOException("Unsupported Postgres type %s", pgtypename);
 	}
@@ -210,20 +210,19 @@ static LogicalType DuckDBType(PostgresColumnInfo &info, PGconn *conn) {
 static unique_ptr<FunctionData> PostgresBind(ClientContext &context, TableFunctionBindInput &input,
                                              vector<LogicalType> &return_types, vector<string> &names) {
 
-                                                
 	// numeric_width, numeric_scale
-    auto &config = DBConfig::GetConfig(context);
-    Value numeric_width_val;
-    if (context.TryGetCurrentSetting("pgscan_numeric_width", numeric_width_val)) {
+	auto &config = DBConfig::GetConfig(context);
+	Value numeric_width_val;
+	if (context.TryGetCurrentSetting("pgscan_numeric_width", numeric_width_val)) {
 		numeric_width = numeric_width_val.GetValue<int32_t>();
 	}
 
-    Value numeric_scale_val;
-    if (context.TryGetCurrentSetting("pgscan_numeric_scale", numeric_scale_val)) {
+	Value numeric_scale_val;
+	if (context.TryGetCurrentSetting("pgscan_numeric_scale", numeric_scale_val)) {
 		numeric_scale = numeric_scale_val.GetValue<int32_t>();
 	}
 
-    auto bind_data = make_unique<PostgresBindData>();
+	auto bind_data = make_unique<PostgresBindData>();
 
 	bind_data->dsn = input.inputs[0].GetValue<string>();
 	bind_data->schema_name = input.inputs[1].GetValue<string>();
@@ -577,7 +576,7 @@ static void ProcessValue(data_ptr_t value_ptr, idx_t value_len, const PostgresBi
 		break;
 	}
 
-    case LogicalTypeId::UUID:
+	case LogicalTypeId::UUID:
 	case LogicalTypeId::JSON:
 	case LogicalTypeId::BLOB:
 	case LogicalTypeId::VARCHAR:
@@ -925,7 +924,7 @@ static unique_ptr<FunctionData> AttachBind(ClientContext &context, TableFunction
 		if (kv.first == "source_schema") {
 			result->source_schema = StringValue::Get(kv.second);
 		} else if (kv.first == "sink_schema") {
-			result->sink_schema = StringValue::Get(kv.second);			
+			result->sink_schema = StringValue::Get(kv.second);
 		} else if (kv.first == "overwrite") {
 			result->overwrite = BooleanValue::Get(kv.second);
 		} else if (kv.first == "filter_pushdown") {
@@ -962,7 +961,7 @@ AND table_type='BASE TABLE'
 		dconn
 		    .TableFunction(data.filter_pushdown ? "postgres_scan_pushdown" : "postgres_scan",
 		                   {Value(data.dsn), Value(data.source_schema), Value(table_name)})
-		    ->CreateView(data.sink_schema,table_name, data.overwrite, false);
+		    ->CreateView(data.sink_schema, table_name, data.overwrite, false);
 	}
 	res.reset();
 	PQfinish(conn);
@@ -998,12 +997,15 @@ DUCKDB_EXTENSION_API void postgres_scanner_init(duckdb::DatabaseInstance &db) {
 	auto &context = *con.context;
 	auto &catalog = Catalog::GetCatalog(context);
 
-    auto &config = DBConfig::GetConfig(db);
-    // Global postgres_scanner config
-	config.AddExtensionOption("pgscan_numeric_width", "Postgres Scanner numeric width (between 1 and 38, default 18)", LogicalType::INTEGER);
-	config.AddExtensionOption("pgscan_numeric_scale", "Postgres Scanner numeric scale (<=postgres_numeric_width, default 3)", LogicalType::INTEGER);
-    config.options.set_variables["pgscan_numeric_width"] = Value::INTEGER(18);
-    config.options.set_variables["pgscan_numeric_scale"] = Value::INTEGER(3);
+	auto &config = DBConfig::GetConfig(db);
+	// Global postgres_scanner config
+	config.AddExtensionOption("pgscan_numeric_width", "Postgres Scanner numeric width (between 1 and 38, default 18)",
+	                          LogicalType::INTEGER);
+	config.AddExtensionOption("pgscan_numeric_scale",
+	                          "Postgres Scanner numeric scale (<=postgres_numeric_width, default 3)",
+	                          LogicalType::INTEGER);
+	config.options.set_variables["pgscan_numeric_width"] = Value::INTEGER(18);
+	config.options.set_variables["pgscan_numeric_scale"] = Value::INTEGER(3);
 	PostgresScanFunction postgres_fun;
 	CreateTableFunctionInfo postgres_info(postgres_fun);
 	catalog.CreateTableFunction(context, &postgres_info);

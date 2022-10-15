@@ -35,9 +35,9 @@ attach Postgres schema to another DuckDB schema.
 
 ```sql
 -- create a new schema in DuckDB first
-create schema abc;
+CREATE SCHEMA abc;
 CALL postgres_attach('dbname=postgres user=postgres host=127.0.0.1',source_schema='public' , sink_schema='abc');
-select table_schema,table_name,table_type  FROM information_schema.tables;
+SELECT table_schema,table_name,table_type  FROM information_schema.tables;
 ```
 
 

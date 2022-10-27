@@ -903,6 +903,7 @@ struct AttachFunctionData : public TableFunctionData {
 
 	bool finished = false;
 	string source_schema = "public";
+	string sink_schema = "main";
 	string suffix = "";
 	bool overwrite = false;
 	bool filter_pushdown = false;
@@ -919,6 +920,8 @@ static unique_ptr<FunctionData> AttachBind(ClientContext &context, TableFunction
 	for (auto &kv : input.named_parameters) {
 		if (kv.first == "source_schema") {
 			result->source_schema = StringValue::Get(kv.second);
+		} else if (kv.first == "sink_schema") {
+			result->sink_schema = StringValue::Get(kv.second);
 		} else if (kv.first == "overwrite") {
 			result->overwrite = BooleanValue::Get(kv.second);
 		} else if (kv.first == "filter_pushdown") {
@@ -955,7 +958,7 @@ AND table_type='BASE TABLE'
 		dconn
 		    .TableFunction(data.filter_pushdown ? "postgres_scan_pushdown" : "postgres_scan",
 		                   {Value(data.dsn), Value(data.source_schema), Value(table_name)})
-		    ->CreateView(table_name, data.overwrite, false);
+		    ->CreateView(data.sink_schema, table_name, data.overwrite, false);
 	}
 	res.reset();
 	PQfinish(conn);
@@ -1004,6 +1007,7 @@ DUCKDB_EXTENSION_API void postgres_scanner_init(duckdb::DatabaseInstance &db) {
 	attach_func.named_parameters["filter_pushdown"] = LogicalType::BOOLEAN;
 
 	attach_func.named_parameters["source_schema"] = LogicalType::VARCHAR;
+	attach_func.named_parameters["sink_schema"] = LogicalType::VARCHAR;
 	attach_func.named_parameters["suffix"] = LogicalType::VARCHAR;
 
 	CreateTableFunctionInfo attach_info(attach_func);

@@ -4,8 +4,6 @@
 #include <libpq-fe.h>
 
 #include <arpa/inet.h>
-#include <iostream>
-#include <regex>
 
 // htonll is not available on Linux it seems
 #ifndef ntohll
@@ -19,10 +17,7 @@
 
 using namespace duckdb;
 int32_t numeric_width, numeric_scale;
-// jsonb starts with "\x01", remove it.
-std::string trim(std::string str) {
-	return regex_replace(str, std::regex("(\\x01)"), "");
-}
+
 // borrow from https://www.postgresql.org/message-id/attachment/13504/arrayAccess.txt
 // a helper function to get the number of elements in an array
 int getNoEle(char *m) {
@@ -685,9 +680,11 @@ static void ProcessValue(data_ptr_t value_ptr, idx_t value_len, const PostgresBi
 	case LogicalTypeId::JSON: {
 		D_ASSERT(bind_data->columns[col_idx].attlen == -1);
 
-		auto str = string_t((char *)value_ptr, value_len);
-		FlatVector::GetData<string_t>(out_vec)[output_offset] =
-		    StringVector::AddStringOrBlob(out_vec, string_t(trim(str.GetString())));
+		auto str = string_t((char *)value_ptr, value_len).GetString();
+		// jsonb starts with "\x01", remove it.
+		auto pos = str.find("\x01");
+		auto sub = str.substr(pos + 1);
+		FlatVector::GetData<string_t>(out_vec)[output_offset] = StringVector::AddStringOrBlob(out_vec, string_t(sub));
 		break;
 	}
 	case LogicalTypeId::BLOB:

@@ -44,3 +44,32 @@ INSERT INTO pg_bytetypes (char_1_col, char_9_col, varchar_1_col, varchar_9_col, 
 SET TIMEZONE='Asia/Kathmandu'; -- UTC - 05:45 hell yeah!
 
 INSERT INTO pg_datetypes (date_col, time_col, timetz_col, timestamp_col, timestamptz_col) VALUES ('2021-03-01', '12:45:01', '12:45:01', '2021-03-01T12:45:01', '2021-03-01T12:45:01'), (NULL, NULL, NULL, NULL, NULL);
+
+CREATE TABLE pg_jsonb (
+	jsonb_col jsonb
+);
+INSERT INTO pg_jsonb (jsonb_col) VALUES 
+	('{"a":42}'), 
+	(NULL);
+
+CREATE TABLE pg_uuid (
+	uuid_col uuid
+);
+INSERT INTO pg_uuid (uuid_col) VALUES 
+	('6093c059-cb4d-4fae-85e6-299b37788b06'), 
+	('00000000-0000-0000-0000-000000000000'), 
+	(NULL);
+
+CREATE TABLE pg_array (
+	intarray _int4 NULL,
+	floatarray _float4 NULL,
+	chararray _bpchar NULL,
+	textarray _text NULL,
+	doublearray _float8 NULL,
+	timearray _timestamp NULL 
+);
+
+INSERT INTO pg_array  VALUES
+	 ('{4,5,3,2,6}','{2.3,3.5}','{C,F,D}','{One,Two,Three}','{5691.3456,6798.986,3435.786}','{"''2001-03-08 00:00:00''","''2003-06-15 00:00:00''"}'),
+	 ('{4,2,6}','{2.3,3.5,6.7}','{C,F,D,G}','{Two,Three}','{456.456,607.9686,3145.786}',null),
+	 (NULL,'{1.4,2.3,3.5}','{C,F,D}','{One,Two,Three,Four}','{256.3456,167.986,35.786}',null);

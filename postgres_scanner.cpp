@@ -337,15 +337,31 @@ static void PostgresInitInternal(ClientContext &context, const PostgresBindData 
 
 	auto bind_data = (const PostgresBindData *)bind_data_p;
 
-	// we just return the first column for ROW_ID
+	// Queries like SELECT count(*) do not require actually returning the columns from the
+	// Postgres table, but only counting the row. In this case, we will be asked to return
+	// the 'rowid' special column here. It must be the only selected column. The corresponding
+	// deparsed query will be 'SELECT NULL'..Note that the user is not allowed to explicitly
+	// request the 'rowid' special column from a Postgres table in a SQL query.
+	bool have_rowid = false;
 	for (idx_t i = 0; i < lstate.column_ids.size(); i++) {
 		if (lstate.column_ids[i] == (column_t)-1) {
-			lstate.column_ids[i] = 0;
+			have_rowid = true;
+			break;
 		}
 	}
 
-	auto col_names = StringUtil::Join(lstate.column_ids.data(), lstate.column_ids.size(), ", ",
-	                                  [&](const idx_t column_id) { return '"' + bind_data->names[column_id] + '"'; });
+	if (have_rowid && lstate.column_ids.size() > 1) {
+		throw InternalException("Cannot return ROW_ID from Postgres table");
+	}
+
+	std::string col_names;
+	if (have_rowid) {
+		// We are only counting rows, not interested in the actual values of the columns.
+		col_names = "NULL";
+	} else {
+		col_names = StringUtil::Join(lstate.column_ids.data(), lstate.column_ids.size(), ", ",
+		                             [&](const idx_t column_id) { return '"' + bind_data->names[column_id] + '"'; });
+	}
 
 	string filter_string;
 	if (lstate.filters && !lstate.filters->filters.empty()) {
@@ -886,6 +902,7 @@ struct AttachFunctionData : public TableFunctionData {
 
 	bool finished = false;
 	string source_schema = "public";
+	string sink_schema = "main";
 	string suffix = "";
 	bool overwrite = false;
 	bool filter_pushdown = false;
@@ -902,6 +919,8 @@ static unique_ptr<FunctionData> AttachBind(ClientContext &context, TableFunction
 	for (auto &kv : input.named_parameters) {
 		if (kv.first == "source_schema") {
 			result->source_schema = StringValue::Get(kv.second);
+		} else if (kv.first == "sink_schema") {
+			result->sink_schema = StringValue::Get(kv.second);
 		} else if (kv.first == "overwrite") {
 			result->overwrite = BooleanValue::Get(kv.second);
 		} else if (kv.first == "filter_pushdown") {
@@ -938,7 +957,7 @@ AND table_type='BASE TABLE'
 		dconn
 		    .TableFunction(data.filter_pushdown ? "postgres_scan_pushdown" : "postgres_scan",
 		                   {Value(data.dsn), Value(data.source_schema), Value(table_name)})
-		    ->CreateView(table_name, data.overwrite, false);
+		    ->CreateView(data.sink_schema, table_name, data.overwrite, false);
 	}
 	res.reset();
 	PQfinish(conn);
@@ -987,6 +1006,7 @@ DUCKDB_EXTENSION_API void postgres_scanner_init(duckdb::DatabaseInstance &db) {
 	attach_func.named_parameters["filter_pushdown"] = LogicalType::BOOLEAN;
 
 	attach_func.named_parameters["source_schema"] = LogicalType::VARCHAR;
+	attach_func.named_parameters["sink_schema"] = LogicalType::VARCHAR;
 	attach_func.named_parameters["suffix"] = LogicalType::VARCHAR;
 
 	CreateTableFunctionInfo attach_info(attach_func);

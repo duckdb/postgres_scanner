@@ -196,6 +196,8 @@ static LogicalType DuckDBType(PostgresColumnInfo &info, PGconn *conn, ClientCont
 		return LogicalType::TIMESTAMP_TZ;
 	} else if (pgtypename == "interval") {
 		return LogicalType::INTERVAL;
+	} else if (pgtypename == "uuid") {
+		return LogicalType::UUID;
 	} else {
 		throw IOException("Unsupported Postgres type %s", pgtypename);
 	}
@@ -714,6 +716,22 @@ static void ProcessValue(data_ptr_t value_ptr, idx_t value_len, const PostgresBi
 		FlatVector::GetData<interval_t>(out_vec)[output_offset] = res;
 		break;
 	}
+
+	case LogicalTypeId::UUID: {
+		D_ASSERT(bind_data->columns[col_idx].attlen == 2 * sizeof(int64_t));
+		D_ASSERT(value_len == 2 * sizeof(int64_t));
+		D_ASSERT(bind_data->columns[col_idx].atttypmod == -1);
+
+		hugeint_t res;
+
+		auto upper = ntohll(Load<uint64_t>(value_ptr));
+		res.upper = upper ^ (int64_t(1) << 63);
+		res.lower = ntohll(Load<uint64_t>(value_ptr + sizeof(uint64_t)));
+
+		FlatVector::GetData<hugeint_t>(out_vec)[output_offset] = res;
+		break;
+	}
+
 	default:
 		throw InternalException("Unsupported Type %s", type.ToString());
 	}

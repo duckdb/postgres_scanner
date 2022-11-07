@@ -3,6 +3,8 @@ set(TARGET_NAME postgres_scanner)
 project(${TARGET_NAME})
 
 add_definitions(-DFRONTEND=1 -D_GNU_SOURCE=1)
+ add_definitions(-DUSE_OPENSSL=1)
+find_package(OpenSSL REQUIRED)
 
 if(NOT MSVC)
   set(POSTGRES_SCANNER_EXTRA_CFLAGS
@@ -25,7 +27,7 @@ set(CMAKE_C_FLAGS_RELWITHDEBINFO
     "${CMAKE_C_FLAGS_RELWITHDEBINFO} ${POSTGRES_SCANNER_EXTRA_CFLAGS}")
 
 include_directories(include postgres/src/include postgres/src/backend
-                    postgres/src/interfaces/libpq)
+                    postgres/src/interfaces/libpq ${OPENSSL_INCLUDE_DIR})
 
 if(WIN32)
   include_directories(postgres/src/include/port/win32 postgres/src/port
@@ -55,12 +57,13 @@ set(LIBPG_SOURCES
     postgres/src/interfaces/libpq/fe-lobj.c
     postgres/src/interfaces/libpq/fe-misc.c
     postgres/src/interfaces/libpq/fe-print.c
-    postgres/src/interfaces/libpq/fe-protocol3.c
+     postgres/src/interfaces/libpq/fe-protocol3.c
     postgres/src/interfaces/libpq/fe-secure.c
     postgres/src/interfaces/libpq/fe-trace.c
     postgres/src/interfaces/libpq/legacy-pqsignal.c
     postgres/src/interfaces/libpq/libpq-events.c
     postgres/src/interfaces/libpq/pqexpbuffer.c
+    postgres/src/interfaces/libpq/fe-secure-openssl.c
     postgres/src/port/chklocale.c
     postgres/src/port/explicit_bzero.c
     postgres/src/port/inet_net_ntop.c
@@ -114,6 +117,8 @@ add_custom_command(
 set(PARAMETERS "-no-warnings")
 build_loadable_extension(${TARGET_NAME} ${PARAMETERS} postgres_scanner.cpp
                          ${LIBPG_SOURCES_FULLPATH})
+
+target_link_libraries(${TARGET_NAME}_loadable_extension ${OPENSSL_LIBRARIES})
 
 if(WIN32)
   target_link_libraries(${TARGET_NAME}_loadable_extension wsock32 ws2_32

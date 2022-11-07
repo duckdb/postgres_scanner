@@ -146,7 +146,7 @@ static void PGExec(PGconn *conn, string q) {
 	PGQuery(conn, q, PGRES_COMMAND_OK);
 }
 
-static LogicalType DuckDBType(PostgresColumnInfo &info, PGconn *conn) {
+static LogicalType DuckDBType(PostgresColumnInfo &info, PGconn *conn, ClientContext &context) {
 	auto &pgtypename = info.typname;
 	auto &atttypmod = info.atttypmod;
 
@@ -185,7 +185,7 @@ static LogicalType DuckDBType(PostgresColumnInfo &info, PGconn *conn) {
 	} else if (pgtypename == "bytea") {
 		return LogicalType::BLOB;
 	} else if (pgtypename == "json") {
-		return LogicalType::JSON;
+		return Catalog::GetCatalog(context).GetType(context, DEFAULT_SCHEMA, "JSON");
 	} else if (pgtypename == "time") {
 		return LogicalType::TIME;
 	} else if (pgtypename == "timetz") {
@@ -263,7 +263,7 @@ ORDER BY attnum
 		info.typtype = res->GetString(row, 6);
 
 		bind_data->names.push_back(info.attname);
-		bind_data->types.push_back(DuckDBType(info, bind_data->conn));
+		bind_data->types.push_back(DuckDBType(info, bind_data->conn, context));
 
 		bind_data->columns.push_back(info);
 	}
@@ -574,7 +574,6 @@ static void ProcessValue(data_ptr_t value_ptr, idx_t value_len, const PostgresBi
 		break;
 	}
 
-	case LogicalTypeId::JSON:
 	case LogicalTypeId::BLOB:
 	case LogicalTypeId::VARCHAR:
 		D_ASSERT(bind_data->columns[col_idx].attlen == -1);

@@ -178,14 +178,13 @@ static LogicalType DuckDBType(PostgresColumnInfo &info, PGconn *conn, ClientCont
 		auto width = ((atttypmod - sizeof(int32_t)) >> 16) & 0xffff;
 		auto scale = (((atttypmod - sizeof(int32_t)) & 0x7ff) ^ 1024) - 1024;
 		return LogicalType::DECIMAL(width, scale);
-	} else if (pgtypename == "bpchar" || pgtypename == "varchar" || pgtypename == "text") {
+	} else if (pgtypename == "bpchar" || pgtypename == "varchar" || pgtypename == "text" || pgtypename == "jsonb" ||
+	           pgtypename == "json") {
 		return LogicalType::VARCHAR;
 	} else if (pgtypename == "date") {
 		return LogicalType::DATE;
 	} else if (pgtypename == "bytea") {
 		return LogicalType::BLOB;
-	} else if (pgtypename == "json") {
-		return Catalog::GetCatalog(context).GetType(context, DEFAULT_SCHEMA, "JSON");
 	} else if (pgtypename == "time") {
 		return LogicalType::TIME;
 	} else if (pgtypename == "timetz") {
@@ -577,12 +576,20 @@ static void ProcessValue(data_ptr_t value_ptr, idx_t value_len, const PostgresBi
 	}
 
 	case LogicalTypeId::BLOB:
-	case LogicalTypeId::VARCHAR:
+	case LogicalTypeId::VARCHAR: {
+		if (bind_data->columns[col_idx].typname == "jsonb") {
+			auto version = Load<uint8_t>(value_ptr);
+			value_ptr++;
+			value_len--;
+			if (version != 1) {
+				throw NotImplementedException("JSONB version number mismatch, expected 1, got %d", version);
+			}
+		}
 		D_ASSERT(bind_data->columns[col_idx].attlen == -1);
 		FlatVector::GetData<string_t>(out_vec)[output_offset] =
 		    StringVector::AddStringOrBlob(out_vec, (char *)value_ptr, value_len);
 		break;
-
+	}
 	case LogicalTypeId::BOOLEAN:
 		D_ASSERT(bind_data->columns[col_idx].attlen == sizeof(bool));
 		D_ASSERT(value_len == sizeof(bool));

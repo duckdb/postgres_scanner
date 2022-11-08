@@ -37,3 +37,11 @@ ferari	testarosa	red
 aston martin	db2	blue
 bentley	mulsanne	gray
 ford	T	black
+
+query IIIIII
+select * from pg_array;
+----
+[4, 5, 3, 2, 6]	[2.3, 3.5]	[C, F, D]	[One, Two, Three]	[5691.3456, 6798.986, 3435.786]	[2001-03-08 00:00:00, 2003-06-15 00:00:00]
+[4, 2, 6]	[2.3, 3.5, 6.7]	[C, F, D, G]	[Two, Three]	[456.456, 607.9686, 3145.786]	NULL
+NULL	[1.4, 2.3, 3.5]	[C, F, D]	[One, Two, Three, Four]	[256.3456, 167.986, 35.786]	NULL
+

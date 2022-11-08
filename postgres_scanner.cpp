@@ -16,6 +16,63 @@
 
 using namespace duckdb;
 
+int32_t numeric_width, numeric_scale;
+// borrow from https://www.postgresql.org/message-id/attachment/13504/arrayAccess.txt
+// a helper function to get the number of elements in an array
+int getNoEle(char *m) {
+	return ntohl(*(int *)(m + 3 * sizeof(int)));
+}
+
+// functions for byte swaping
+#define ByteSwap(x)    byteswap((unsigned char *)&x, sizeof(x))
+#define byteSwap(x, n) byteswap((unsigned char *)&x, n)
+
+void byteswap(unsigned char *b, int n) {
+	auto i = 0;
+	auto j = n - 1;
+	while (i < j) {
+		std::swap(b[i], b[j]);
+		i++, j--;
+	}
+}
+
+static void fillArray(char **&ar, char *mem) {
+	int nEle = getNoEle(mem);
+	ar = new char *[nEle];
+	char *start = mem + 5 * sizeof(int);
+	int intSize = sizeof(int);
+	for (int i = 0; i < nEle; i++) {
+		int size = ntohl(*(int *)(start));
+		ar[i] = new char[size];
+		strncpy(ar[i], (char *)(start + intSize), size + 1);
+		start += size + intSize;
+	}
+}
+template <class T>
+void fillArray(T *&ar, char *mem) {
+	int nEle = getNoEle(mem);
+	ar = new T[nEle];
+	char *start = mem + 5 * sizeof(int);
+	int intSize = sizeof(int);
+	for (int i = 0; i < nEle; i++) {
+		int size = ntohl(*(int *)(start));
+		ar[i] = (*(T *)(start + intSize));
+		byteSwap(ar[i], size);
+		start += size + intSize;
+	}
+}
+void fillArray(char *&ar, char *mem) {
+	int nEle = getNoEle(mem);
+	ar = new char[nEle];
+	char *start = mem + 5 * sizeof(int);
+	int intSize = sizeof(int);
+	for (int i = 0; i < nEle; i++) {
+		int size = ntohl(*(int *)(start));
+		ar[i] = *(char *)(start + intSize);
+		start += size + intSize;
+	}
+}
+
 struct PostgresColumnInfo {
 	string attname;
 	idx_t attlen;
@@ -173,7 +230,10 @@ static LogicalType DuckDBType(PostgresColumnInfo &info, PGconn *conn, ClientCont
 		return LogicalType::DOUBLE;
 	} else if (pgtypename == "numeric") {
 		if (atttypmod == -1) { // zero?
-			throw IOException("Unbound NUMERIC types are not supported");
+			if (numeric_width < numeric_scale)
+				throw IOException("for unbound NUMERIC types, make sure pgscan_numeric_width>=pgscan_numeric_scale");
+
+			return LogicalType::DECIMAL(numeric_width, numeric_scale);
 		}
 		auto width = ((atttypmod - sizeof(int32_t)) >> 16) & 0xffff;
 		auto scale = (((atttypmod - sizeof(int32_t)) & 0x7ff) ^ 1024) - 1024;
@@ -197,6 +257,20 @@ static LogicalType DuckDBType(PostgresColumnInfo &info, PGconn *conn, ClientCont
 		return LogicalType::INTERVAL;
 	} else if (pgtypename == "uuid") {
 		return LogicalType::UUID;
+	} else if (pgtypename == "_text" || pgtypename == "_varchar") {
+		return LogicalType::LIST(LogicalType::VARCHAR);
+	} else if (pgtypename == "_bpchar") {
+		return LogicalType::LIST(LogicalType::VARCHAR);
+	} else if (pgtypename == "_int4") {
+		return LogicalType::LIST(LogicalType::INTEGER);
+	} else if (pgtypename == "_float4") {
+		return LogicalType::LIST(LogicalType::FLOAT);
+	} else if (pgtypename == "_float8") {
+		return LogicalType::LIST(LogicalType::DOUBLE);
+	} else if (pgtypename == "_timestamp") {
+		return LogicalType::LIST(LogicalType::TIMESTAMP);
+	} else if (pgtypename == "_timestamptz") {
+		return LogicalType::LIST(LogicalType::TIMESTAMP_TZ);
 	} else {
 		throw IOException("Unsupported Postgres type %s", pgtypename);
 	}
@@ -204,6 +278,18 @@ static LogicalType DuckDBType(PostgresColumnInfo &info, PGconn *conn, ClientCont
 
 static unique_ptr<FunctionData> PostgresBind(ClientContext &context, TableFunctionBindInput &input,
                                              vector<LogicalType> &return_types, vector<string> &names) {
+
+	// numeric_width, numeric_scale
+	auto &config = DBConfig::GetConfig(context);
+	Value numeric_width_val;
+	if (context.TryGetCurrentSetting("pgscan_numeric_width", numeric_width_val)) {
+		numeric_width = numeric_width_val.GetValue<int32_t>();
+	}
+
+	Value numeric_scale_val;
+	if (context.TryGetCurrentSetting("pgscan_numeric_scale", numeric_scale_val)) {
+		numeric_scale = numeric_scale_val.GetValue<int32_t>();
+	}
 
 	auto bind_data = make_unique<PostgresBindData>();
 
@@ -738,7 +824,135 @@ static void ProcessValue(data_ptr_t value_ptr, idx_t value_len, const PostgresBi
 		FlatVector::GetData<hugeint_t>(out_vec)[output_offset] = res;
 		break;
 	}
+	case LogicalTypeId::LIST: {
+		auto id = ListType::GetChildType(type).id();
+		switch (id) {
+		case LogicalTypeId::TIMESTAMP_TZ:
+		case LogicalTypeId::TIMESTAMP:
+			if (value_len > 0) {
+				long long *ll;
+				char *s = new char[value_len + 1];
+				memcpy(s, (char *)value_ptr, value_len);
+				s[value_len] = '\0';
+				auto offset = ListVector::GetListSize(out_vec);
 
+				fillArray(ll, s);
+				auto count = getNoEle(s);
+
+				idx_t current_offset = ListVector::GetListSize(out_vec);
+				for (idx_t i = 0; i < count; i++) {
+					auto usec = ll[i]; // ntohll(Load<uint64_t>(value_ptr));
+					auto time = usec % Interval::MICROS_PER_DAY;
+					// adjust date
+					auto date = (usec / Interval::MICROS_PER_DAY) + POSTGRES_EPOCH_JDATE - 2440588;
+					// glue it back together
+					auto ts = date * Interval::MICROS_PER_DAY + time;
+					auto val = timestamp_t(ts);
+					ListVector::PushBack(out_vec, Value::TIMESTAMP(val));
+				}
+				auto result_data = FlatVector::GetData<list_entry_t>(out_vec)[output_offset];
+				result_data.offset = current_offset;
+				result_data.length = count;
+				out_vec.Verify(count);
+				FlatVector::GetData<list_entry_t>(out_vec)[output_offset] = result_data;
+			}
+			break;
+		case LogicalTypeId::DOUBLE:
+			if (value_len > 0) {
+				double *dbl;
+				char *s = new char[value_len + 1];
+				memcpy(s, (char *)value_ptr, value_len);
+				s[value_len] = '\0';
+				auto offset = ListVector::GetListSize(out_vec);
+
+				fillArray(dbl, s);
+				auto count = getNoEle(s);
+
+				idx_t current_offset = ListVector::GetListSize(out_vec);
+				for (idx_t i = 0; i < count; i++) {
+					auto val = Value(dbl[i]);
+					ListVector::PushBack(out_vec, val);
+				}
+				auto result_data = FlatVector::GetData<list_entry_t>(out_vec)[output_offset];
+				result_data.offset = current_offset;
+				result_data.length = count;
+				out_vec.Verify(count);
+				FlatVector::GetData<list_entry_t>(out_vec)[output_offset] = result_data;
+			}
+			break;
+		case LogicalTypeId::FLOAT:
+			if (value_len > 0) {
+				float *fl;
+				char *s = new char[value_len + 1];
+				memcpy(s, (char *)value_ptr, value_len);
+				s[value_len] = '\0';
+				auto offset = ListVector::GetListSize(out_vec);
+
+				fillArray(fl, s);
+				auto count = getNoEle(s);
+
+				idx_t current_offset = ListVector::GetListSize(out_vec);
+				for (idx_t i = 0; i < count; i++) {
+					auto val = Value(fl[i]);
+					ListVector::PushBack(out_vec, val);
+				}
+				auto result_data = FlatVector::GetData<list_entry_t>(out_vec)[output_offset];
+				result_data.offset = current_offset;
+				result_data.length = count;
+				out_vec.Verify(count);
+				FlatVector::GetData<list_entry_t>(out_vec)[output_offset] = result_data;
+			}
+			break;
+		case LogicalTypeId::INTEGER:
+			if (value_len > 0) {
+				int *ii;
+				char *s = new char[value_len + 1];
+
+				memcpy(s, (char *)value_ptr, value_len);
+				s[value_len] = '\0';
+				auto offset = ListVector::GetListSize(out_vec);
+
+				fillArray(ii, s);
+				auto count = getNoEle(s);
+
+				idx_t current_offset = ListVector::GetListSize(out_vec);
+				for (idx_t i = 0; i < count; i++) {
+					auto val = Value(ii[i]);
+					ListVector::PushBack(out_vec, val);
+				}
+				auto result_data = FlatVector::GetData<list_entry_t>(out_vec)[output_offset];
+				result_data.offset = current_offset;
+				result_data.length = count;
+				out_vec.Verify(count);
+				FlatVector::GetData<list_entry_t>(out_vec)[output_offset] = result_data;
+			}
+			break;
+		case LogicalTypeId::VARCHAR:
+			if (value_len > 0) {
+				char **str;
+				char *s = new char[value_len + 1];
+				memcpy(s, (char *)value_ptr, value_len);
+				s[value_len] = '\0';
+				auto offset = ListVector::GetListSize(out_vec);
+
+				fillArray(str, s);
+				auto count = getNoEle(s);
+				idx_t current_offset = ListVector::GetListSize(out_vec);
+
+				for (idx_t i = 0; i < count; i++) {
+					auto val = Value(str[i]);
+					ListVector::PushBack(out_vec, val);
+				}
+				auto result_data = FlatVector::GetData<list_entry_t>(out_vec)[output_offset];
+				result_data.offset = current_offset;
+				result_data.length = count;
+				out_vec.Verify(count);
+				FlatVector::GetData<list_entry_t>(out_vec)[output_offset] = result_data;
+			}
+			break;
+		}
+		break;
+	}
 	default:
 		throw InternalException("Unsupported Type %s", type.ToString());
 	}
@@ -1018,6 +1232,15 @@ DUCKDB_EXTENSION_API void postgres_scanner_init(duckdb::DatabaseInstance &db) {
 	auto &context = *con.context;
 	auto &catalog = Catalog::GetCatalog(context);
 
+	auto &config = DBConfig::GetConfig(db);
+	// Global postgres_scanner config
+	config.AddExtensionOption("pgscan_numeric_width", "Postgres Scanner numeric width (between 1 and 38, default 18)",
+	                          LogicalType::INTEGER);
+	config.AddExtensionOption("pgscan_numeric_scale",
+	                          "Postgres Scanner numeric scale (<=postgres_numeric_width, default 3)",
+	                          LogicalType::INTEGER);
+	config.options.set_variables["pgscan_numeric_width"] = Value::INTEGER(18);
+	config.options.set_variables["pgscan_numeric_scale"] = Value::INTEGER(3);
 	PostgresScanFunction postgres_fun;
 	CreateTableFunctionInfo postgres_info(postgres_fun);
 	catalog.CreateTableFunction(context, &postgres_info);

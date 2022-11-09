@@ -7,13 +7,13 @@ pragma enable_verification
 statement ok
 CALL postgres_attach('dbname=postgresscanner');
 
-query IIIIIII
+query IIIIIIII
 select * from pg_numtypes;
 ----
-False	0	0	0	0.000000	0.000000	0.0
-False	-42	-42	-42	-42.009998	-42.010000	-42.0
-True	42	42	42	42.009998	42.010000	42.0
-NULL	NULL	NULL	NULL	NULL	NULL	NULL
+False	0	0	0	0.000000	0.000000	0.0	0.0
+False	-42	-42	-42	-42.009998	-42.010000	-42.0	-42.0
+True	42	42	42	42.009998	42.010000	42.0	42.0
+NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL
 
 query IIIIIIIIII
 select * from pg_bytetypes;

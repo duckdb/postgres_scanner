@@ -8,11 +8,11 @@ statement ok
 CALL postgres_attach('dbname=postgresscanner');
 
 
-query IIIIII
+query IIIIIIII
 select * from pg_numarraytypes;
 ----
-[true, false, NULL]	[-42, 42, NULL]	[-4200, 4200, NULL]	[-420000, 420000, NULL]	[-4.2, 4.2]	[-4.2, 4.2]
-NULL	NULL	NULL	NULL	NULL	NULL
+[true, false, NULL]	[-42, 42, NULL]	[-4200, 4200, NULL]	[-420000, 420000, NULL]	[-4.2, 4.2]	[-4.2, 4.2]	[-4.2, 4.2]	[-4.2, 4.2]
+NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL
 
 query IIIIIIIII
 select * from pg_bytearraytypes;

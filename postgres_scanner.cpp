@@ -538,32 +538,32 @@ static PostgresDecimalConfig ReadDecimalConfig(const_data_ptr_t &value_ptr) {
 };
 
 template <class T>
-static T ReadDecimal(idx_t scale, int32_t ndigits, int32_t weight, bool is_negative, const_data_ptr_t value_ptr) {
+static T ReadDecimal(PostgresDecimalConfig &config, const_data_ptr_t value_ptr) {
 	// this is wild
-	auto scale_POWER = POWERS_OF_TEN[scale];
+	auto scale_POWER = POWERS_OF_TEN[config.scale];
 
-	if (ndigits == 0) {
+	if (config.ndigits == 0) {
 		return 0;
 	}
 	T integral_part = 0, fractional_part = 0;
 
-	if (weight >= 0) {
-		D_ASSERT(weight <= ndigits);
+	if (config.weight >= 0) {
+		D_ASSERT(config.weight <= config.ndigits);
 		integral_part = LoadEndIncrement<uint16_t>(value_ptr);
-		for (auto i = 1; i <= weight; i++) {
+		for (auto i = 1; i <= config.weight; i++) {
 			integral_part *= NBASE;
-			if (i < ndigits) {
+			if (i < config.ndigits) {
 				integral_part += LoadEndIncrement<uint16_t>(value_ptr);
 			}
 		}
 		integral_part *= scale_POWER;
 	}
 
-	if (ndigits > weight + 1) {
+	if (config.ndigits > config.weight + 1) {
 		fractional_part = LoadEndIncrement<uint16_t>(value_ptr);
-		for (auto i = weight + 2; i < ndigits; i++) {
+		for (auto i = config.weight + 2; i < config.ndigits; i++) {
 			fractional_part *= NBASE;
-			if (i < ndigits) {
+			if (i < config.ndigits) {
 				fractional_part += LoadEndIncrement<uint16_t>(value_ptr);
 			}
 		}
@@ -572,16 +572,16 @@ static T ReadDecimal(idx_t scale, int32_t ndigits, int32_t weight, bool is_negat
 		// of ten this depends on how many times we multiplied with NBASE
 		// if that is different from scale, we need to divide the extra part away
 		// again
-		auto fractional_power = ((ndigits - weight - 1) * DEC_DIGITS);
-		D_ASSERT(fractional_power >= scale);
-		auto fractional_power_correction = fractional_power - scale;
+		auto fractional_power = ((config.ndigits - config.weight - 1) * DEC_DIGITS);
+		D_ASSERT(fractional_power >= config.scale);
+		auto fractional_power_correction = fractional_power - config.scale;
 		D_ASSERT(fractional_power_correction < 20);
 		fractional_part /= POWERS_OF_TEN[fractional_power_correction];
 	}
 
 	// finally
 	auto base_res = (integral_part + fractional_part);
-	return (is_negative ? -base_res : base_res);
+	return (config.is_negative ? -base_res : base_res);
 }
 
 static void ProcessValue(const LogicalType &type, const PostgresTypeInfo *type_info, int atttypmod, int64_t typelem,
@@ -615,7 +615,10 @@ static void ProcessValue(const LogicalType &type, const PostgresTypeInfo *type_i
 	case LogicalTypeId::DOUBLE: {
 		if (type_info->typname ==
 		    "numeric") { // this was an unbounded decimal, read params from value and cast to double
-			throw NotImplementedException("eek");
+			auto config = ReadDecimalConfig(value_ptr);
+			auto val = ReadDecimal<int64_t>(config, value_ptr);
+			FlatVector::GetData<double>(out_vec)[output_offset] = (double)val / POWERS_OF_TEN[config.scale];
+			break;
 		}
 		D_ASSERT(value_len == sizeof(double));
 		auto i = LoadEndIncrement<uint64_t>(value_ptr);
@@ -650,19 +653,13 @@ static void ProcessValue(const LogicalType &type, const PostgresTypeInfo *type_i
 
 		switch (type.InternalType()) {
 		case PhysicalType::INT16:
-			FlatVector::GetData<int16_t>(out_vec)[output_offset] =
-			    ReadDecimal<int16_t>(DecimalType::GetScale(type), decimal_config.ndigits, decimal_config.weight,
-			                         decimal_config.is_negative, value_ptr);
+			FlatVector::GetData<int16_t>(out_vec)[output_offset] = ReadDecimal<int16_t>(decimal_config, value_ptr);
 			break;
 		case PhysicalType::INT32:
-			FlatVector::GetData<int32_t>(out_vec)[output_offset] =
-			    ReadDecimal<int32_t>(DecimalType::GetScale(type), decimal_config.ndigits, decimal_config.weight,
-			                         decimal_config.is_negative, value_ptr);
+			FlatVector::GetData<int32_t>(out_vec)[output_offset] = ReadDecimal<int32_t>(decimal_config, value_ptr);
 			break;
 		case PhysicalType::INT64:
-			FlatVector::GetData<int64_t>(out_vec)[output_offset] =
-			    ReadDecimal<int64_t>(DecimalType::GetScale(type), decimal_config.ndigits, decimal_config.weight,
-			                         decimal_config.is_negative, value_ptr);
+			FlatVector::GetData<int64_t>(out_vec)[output_offset] = ReadDecimal<int64_t>(decimal_config, value_ptr);
 			break;
 
 		default:

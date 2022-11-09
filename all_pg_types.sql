@@ -9,8 +9,8 @@ CREATE TABLE pg_numtypes (
 	bigint_col bigint,
 	float_col float4,
 	double_col float8,
-	decimal_col decimal(4, 1));--,
-	--udecimal_col decimal);
+	decimal_col decimal(4, 1),
+	udecimal_col decimal);
 
 CREATE TABLE pg_bytetypes (
     char_default char,
@@ -32,18 +32,15 @@ CREATE TABLE pg_datetypes (
 	timestamptz_col timestamptz
 );
 
--- CREATE TABLE personarray (
---                                   mood_col _mood);
-
 CREATE TABLE pg_numarraytypes (
                              bool_col _bool,
                              smallint_col _int2,
                              integer_col _int4,
                              bigint_col _int8,
                              float_col _float4,
-                             double_col _float8); --,
-                         --    numeric_col _numeric(4, 1),
-                         --    unumeric_col _numeric);
+                             double_col _float8,
+                             numeric_col _numeric(4, 1),
+                             unumeric_col _numeric);
 
 CREATE TABLE pg_bytearraytypes (
                               char_col _char,
@@ -62,18 +59,13 @@ CREATE TABLE pg_datearraytypes (
                               timetz_col _timetz,
                               timestamp_col _timestamp,
                               timestamptz_col _timestamptz);
---
--- INSERT INTO pg_numtypes (bool_col, smallint_col, integer_col, bigint_col, float_col, double_col, decimal_col, udecimal_col) VALUES
--- 	(false, 0, 0, 0, 0, 0, 0, 0),
--- 	(false, -42, -42, -42, -42.01, -42.01, -42.01, -42.01),
--- 	(true, 42, 42, 42, 42.01, 42.01, 42.01, 42.01),
--- 	(NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL);
 
-INSERT INTO pg_numtypes (bool_col, smallint_col, integer_col, bigint_col, float_col, double_col, decimal_col) VALUES
-                                                                                                                                (false, 0, 0, 0, 0, 0, 0),
-                                                                                                                                (false, -42, -42, -42, -42.01, -42.01, -42.01),
-                                                                                                                                (true, 42, 42, 42, 42.01, 42.01, 42.01),
-                                                                                                                                (NULL, NULL, NULL, NULL, NULL, NULL, NULL);
+INSERT INTO pg_numtypes (bool_col, smallint_col, integer_col, bigint_col, float_col, double_col, decimal_col, udecimal_col) VALUES
+	(false, 0, 0, 0, 0, 0, 0, 0),
+	(false, -42, -42, -42, -42.01, -42.01, -42.01, -42.01),
+	(true, 42, 42, 42, 42.01, 42.01, 42.01, 42.01),
+	(NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL);
+
 
 INSERT INTO pg_bytetypes (char_default, char_1_col, char_9_col, varchar_1_col, varchar_9_col, text_col, blob_col, json_col, jsonb_col, uuid_col) VALUES
 	('a', 'a', '', '', '', '', '',  '42', '42', '00000000-0000-0000-0000-000000000000'),
@@ -86,8 +78,8 @@ SET TIMEZONE='Asia/Kathmandu'; -- UTC - 05:45 hell yeah!
 
 INSERT INTO pg_datetypes (date_col, time_col, timetz_col, timestamp_col, timestamptz_col) VALUES ('2021-03-01', '12:45:01', '12:45:01', '2021-03-01T12:45:01', '2021-03-01T12:45:01'), (NULL, NULL, NULL, NULL, NULL);
 
-insert into pg_numarraytypes (bool_col, smallint_col, integer_col, bigint_col, float_col, double_col)
-VALUES ('{true, false, NULL}', '{-42, 42, NULL}', '{-4200, 4200, NULL}', '{-420000, 420000, NULL}', '{-4.2, 4.2}', '{-4.2, 4.2}'), (NULL, NULL, NULL, NULL, NULL, NULL);
+insert into pg_numarraytypes (bool_col, smallint_col, integer_col, bigint_col, float_col, double_col, numeric_col, unumeric_col)
+VALUES ('{true, false, NULL}', '{-42, 42, NULL}', '{-4200, 4200, NULL}', '{-420000, 420000, NULL}', '{-4.2, 4.2}', '{-4.2, 4.2}', '{-4.2, 4.2}', '{-4.2, 4.2}'), (NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL);
 
 insert into pg_bytearraytypes (char_col, bpchar_col , varchar_col, uvarchar_col, text_col, blob_col , json_col , jsonb_col, uuid_col)
 VALUES ('{a, Z, NULL}', '{a, Z, NULL}', '{aaaa, ZZZZ, NULL}', '{aaaa, ZZZZ, NULL}', '{aaaa, ZZZZ, NULL}', '{\x00, \xff, NULL}', array['{"a":42}', NULL]::json[], array['{"a":42}', NULL]::json[], '{a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11, NULL}'), (NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL);

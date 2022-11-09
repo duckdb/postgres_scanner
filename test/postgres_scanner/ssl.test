@@ -1,0 +1,13 @@
+statement ok
+LOAD 'build/release/extension/postgres_scanner/postgres_scanner.duckdb_extension';
+
+statement ok
+CALL postgres_attach('dbname=postgresscanner sslmode=require');
+
+query III
+select * from cars;
+----
+ferari	testarosa	red
+aston martin	db2	blue
+bentley	mulsanne	gray
+ford	T	black

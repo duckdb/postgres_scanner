@@ -6,7 +6,7 @@ CALL dbgen(sf=0.01, schema='tpch');
 CALL dsdgen(sf=0.01, schema='tpcds');
 EXPORT DATABASE '/tmp/postgresscannertmp';
 " | \
-./duckdb/build/release/duckdb 
+./build/release/duckdb 
 
 dropdb --if-exists postgresscanner
 createdb postgresscanner

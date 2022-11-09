@@ -16,14 +16,18 @@
 
 using namespace duckdb;
 
+struct PostgresTypeInfo {
+	string typname;
+	int64_t typlen;
+	string typtype;
+};
+
 struct PostgresColumnInfo {
 	string attname;
-	idx_t attlen;
-	char attalign;
-	bool attnotnull;
 	int atttypmod;
-	string typname;
-	string typtype;
+	PostgresTypeInfo type_info;
+	int64_t typelem; // OID pointer for arrays
+	PostgresTypeInfo elem_info;
 };
 
 static constexpr uint32_t POSTGRES_TID_MAX = 4294967295;
@@ -146,12 +150,18 @@ static void PGExec(PGconn *conn, string q) {
 	PGQuery(conn, q, PGRES_COMMAND_OK);
 }
 
-static LogicalType DuckDBType(PostgresColumnInfo &info, PGconn *conn) {
-	auto &pgtypename = info.typname;
-	auto &atttypmod = info.atttypmod;
+static LogicalType DuckDBType2(PostgresTypeInfo *type_info, int atttypmod, PostgresTypeInfo *ele_info, PGconn *conn,
+                               ClientContext &context) {
+	auto &pgtypename = type_info->typname;
 
-	if (info.typtype == "e") { // ENUM
-		auto res = PGQuery(conn, StringUtil::Format("SELECT unnest(enum_range(NULL::%s))", pgtypename));
+	// TODO better check, does the typtyp say something here?
+	// postgres array types start with an _
+	if (StringUtil::StartsWith(pgtypename, "_")) {
+		return LogicalType::LIST(DuckDBType2(ele_info, atttypmod, nullptr, conn, context));
+	}
+
+	if (type_info->typtype == "e") { // ENUM
+		auto res = PGQuery(conn, StringUtil::Format("SELECT unnest(enum_range(NULL::%s))", type_info->typname));
 		Vector duckdb_levels(LogicalType::VARCHAR, res->Count());
 		for (idx_t row = 0; row < res->Count(); row++) {
 			duckdb_levels.SetValue(row, res->GetString(row, 0));
@@ -172,20 +182,19 @@ static LogicalType DuckDBType(PostgresColumnInfo &info, PGconn *conn) {
 	} else if (pgtypename == "float8") {
 		return LogicalType::DOUBLE;
 	} else if (pgtypename == "numeric") {
-		if (atttypmod == -1) { // zero?
-			throw IOException("Unbound NUMERIC types are not supported");
+		if (atttypmod == -1) { // unbounded decimal/numeric, will just return as double
+			return LogicalType::DOUBLE;
 		}
 		auto width = ((atttypmod - sizeof(int32_t)) >> 16) & 0xffff;
 		auto scale = (((atttypmod - sizeof(int32_t)) & 0x7ff) ^ 1024) - 1024;
 		return LogicalType::DECIMAL(width, scale);
-	} else if (pgtypename == "bpchar" || pgtypename == "varchar" || pgtypename == "text") {
+	} else if (pgtypename == "char" || pgtypename == "bpchar" || pgtypename == "varchar" || pgtypename == "text" ||
+	           pgtypename == "jsonb" || pgtypename == "json") {
 		return LogicalType::VARCHAR;
 	} else if (pgtypename == "date") {
 		return LogicalType::DATE;
 	} else if (pgtypename == "bytea") {
 		return LogicalType::BLOB;
-	} else if (pgtypename == "json") {
-		return LogicalType::JSON;
 	} else if (pgtypename == "time") {
 		return LogicalType::TIME;
 	} else if (pgtypename == "timetz") {
@@ -196,9 +205,15 @@ static LogicalType DuckDBType(PostgresColumnInfo &info, PGconn *conn) {
 		return LogicalType::TIMESTAMP_TZ;
 	} else if (pgtypename == "interval") {
 		return LogicalType::INTERVAL;
+	} else if (pgtypename == "uuid") {
+		return LogicalType::UUID;
 	} else {
 		throw IOException("Unsupported Postgres type %s", pgtypename);
 	}
+}
+
+static LogicalType DuckDBType(PostgresColumnInfo &info, PGconn *conn, ClientContext &context) {
+	return DuckDBType2(&info.type_info, info.atttypmod, &info.elem_info, conn, context);
 }
 
 static unique_ptr<FunctionData> PostgresBind(ClientContext &context, TableFunctionBindInput &input,
@@ -244,26 +259,34 @@ WHERE nspname='%s' AND relname='%s'
 	// fun fact: this query also works in DuckDB ^^
 	res = PGQuery(bind_data->conn, StringUtil::Format(
 	                                   R"(
-SELECT attname, attlen, attalign, attnotnull, atttypmod, typname, typtype
+SELECT
+    attname, atttypmod,
+    pg_type.typname, pg_type.typlen, pg_type.typtype, pg_type.typelem,
+    pg_type_elem.typname elem_typname, pg_type_elem.typlen elem_typlen, pg_type_elem.typtype elem_typtype
 FROM pg_attribute
     JOIN pg_type ON atttypid=pg_type.oid
+    LEFT JOIN pg_type pg_type_elem ON pg_type.typelem=pg_type_elem.oid
 WHERE attrelid=%d AND attnum > 0
-ORDER BY attnum
+ORDER BY attnum;
 )",
 	                                   oid));
 
 	for (idx_t row = 0; row < res->Count(); row++) {
 		PostgresColumnInfo info;
 		info.attname = res->GetString(row, 0);
-		info.attlen = res->GetInt64(row, 1);
-		info.attalign = res->GetString(row, 2)[0];
-		info.attnotnull = res->GetString(row, 3) == "t";
-		info.atttypmod = res->GetInt32(row, 4);
-		info.typname = res->GetString(row, 5);
-		info.typtype = res->GetString(row, 6);
+		info.atttypmod = res->GetInt32(row, 1);
+
+		info.type_info.typname = res->GetString(row, 2);
+		info.type_info.typlen = res->GetInt64(row, 3);
+		info.type_info.typtype = res->GetString(row, 4);
+		info.typelem = res->GetInt64(row, 5);
+
+		info.elem_info.typname = res->GetString(row, 6);
+		info.elem_info.typlen = res->GetInt64(row, 7);
+		info.elem_info.typtype = res->GetString(row, 8);
 
 		bind_data->names.push_back(info.attname);
-		bind_data->types.push_back(DuckDBType(info, bind_data->conn));
+		bind_data->types.push_back(DuckDBType(info, bind_data->conn, context));
 
 		bind_data->columns.push_back(info);
 	}
@@ -476,36 +499,72 @@ static const int64_t POWERS_OF_TEN[] {1,
                                       1000000000000000000};
 
 template <class T>
-static void ReadDecimal(idx_t scale, int32_t ndigits, int32_t weight, bool is_negative, const uint16_t *digit_ptr,
-                        Vector &output, idx_t output_offset) {
-	// this is wild
-	auto out_ptr = FlatVector::GetData<T>(output);
-	auto scale_POWER = POWERS_OF_TEN[scale];
+T LoadEndIncrement(const_data_ptr_t &pspsptr) {
+	T val = Load<T>(pspsptr);
+	if (sizeof(T) == sizeof(uint16_t)) {
+		val = ntohs(val);
+	} else if (sizeof(T) == sizeof(uint32_t)) {
+		val = ntohl(val);
+	} else if (sizeof(T) == sizeof(uint64_t)) {
+		val = ntohll(val);
+	} else {
+		D_ASSERT(0);
+	}
+	pspsptr += sizeof(T);
+	return val;
+}
 
-	if (ndigits == 0) {
-		out_ptr[output_offset] = 0;
-		return;
+struct PostgresDecimalConfig {
+	uint16_t scale;
+	uint16_t ndigits;
+	int16_t weight;
+	bool is_negative;
+};
+
+static PostgresDecimalConfig ReadDecimalConfig(const_data_ptr_t &value_ptr) {
+	PostgresDecimalConfig config;
+	config.ndigits = LoadEndIncrement<uint16_t>(value_ptr);
+	config.weight = LoadEndIncrement<int16_t>(value_ptr);
+	auto sign = LoadEndIncrement<uint16_t>(value_ptr);
+
+	if (!(sign == NUMERIC_POS || sign == NUMERIC_NAN || sign == NUMERIC_PINF || sign == NUMERIC_NINF ||
+	      sign == NUMERIC_NEG)) {
+		throw NotImplementedException("Postgres numeric NA/Inf");
+	}
+	config.is_negative = sign == NUMERIC_NEG;
+	config.scale = LoadEndIncrement<uint16_t>(value_ptr);
+
+	return config;
+};
+
+template <class T>
+static T ReadDecimal(PostgresDecimalConfig &config, const_data_ptr_t value_ptr) {
+	// this is wild
+	auto scale_POWER = POWERS_OF_TEN[config.scale];
+
+	if (config.ndigits == 0) {
+		return 0;
 	}
 	T integral_part = 0, fractional_part = 0;
 
-	if (weight >= 0) {
-		D_ASSERT(weight <= ndigits);
-		integral_part = digit_ptr[0];
-		for (auto i = 1; i <= weight; i++) {
+	if (config.weight >= 0) {
+		D_ASSERT(config.weight <= config.ndigits);
+		integral_part = LoadEndIncrement<uint16_t>(value_ptr);
+		for (auto i = 1; i <= config.weight; i++) {
 			integral_part *= NBASE;
-			if (i < ndigits) {
-				integral_part += digit_ptr[i];
+			if (i < config.ndigits) {
+				integral_part += LoadEndIncrement<uint16_t>(value_ptr);
 			}
 		}
 		integral_part *= scale_POWER;
 	}
 
-	if (ndigits > weight + 1) {
-		fractional_part = digit_ptr[weight + 1];
-		for (auto i = weight + 2; i < ndigits; i++) {
+	if (config.ndigits > config.weight + 1) {
+		fractional_part = LoadEndIncrement<uint16_t>(value_ptr);
+		for (auto i = config.weight + 2; i < config.ndigits; i++) {
 			fractional_part *= NBASE;
-			if (i < ndigits) {
-				fractional_part += digit_ptr[i];
+			if (i < config.ndigits) {
+				fractional_part += LoadEndIncrement<uint16_t>(value_ptr);
 			}
 		}
 
@@ -513,117 +572,94 @@ static void ReadDecimal(idx_t scale, int32_t ndigits, int32_t weight, bool is_ne
 		// of ten this depends on how many times we multiplied with NBASE
 		// if that is different from scale, we need to divide the extra part away
 		// again
-		auto fractional_power = ((ndigits - weight - 1) * DEC_DIGITS);
-		D_ASSERT(fractional_power >= scale);
-		auto fractional_power_correction = fractional_power - scale;
+		auto fractional_power = ((config.ndigits - config.weight - 1) * DEC_DIGITS);
+		D_ASSERT(fractional_power >= config.scale);
+		auto fractional_power_correction = fractional_power - config.scale;
 		D_ASSERT(fractional_power_correction < 20);
 		fractional_part /= POWERS_OF_TEN[fractional_power_correction];
 	}
 
 	// finally
-
 	auto base_res = (integral_part + fractional_part);
-
-	out_ptr[output_offset] = (is_negative ? -base_res : base_res);
+	return (config.is_negative ? -base_res : base_res);
 }
 
-static void ProcessValue(data_ptr_t value_ptr, idx_t value_len, const PostgresBindData *bind_data, idx_t col_idx,
-                         bool skip, Vector &out_vec, idx_t output_offset) {
-	auto &type = bind_data->types[col_idx];
-
-	D_ASSERT(!skip);
+static void ProcessValue(const LogicalType &type, const PostgresTypeInfo *type_info, int atttypmod, int64_t typelem,
+                         const PostgresTypeInfo *elem_info, const_data_ptr_t value_ptr, idx_t value_len,
+                         Vector &out_vec, idx_t output_offset) {
 
 	switch (type.id()) {
 
-	case LogicalTypeId::INTEGER:
-		D_ASSERT(bind_data->columns[col_idx].attlen == sizeof(int32_t));
-		D_ASSERT(value_len == sizeof(int32_t));
-
-		FlatVector::GetData<int32_t>(out_vec)[output_offset] = ntohl(Load<uint32_t>(value_ptr));
+	case LogicalTypeId::SMALLINT:
+		D_ASSERT(value_len == sizeof(int16_t));
+		FlatVector::GetData<int16_t>(out_vec)[output_offset] = LoadEndIncrement<int16_t>(value_ptr);
 		break;
 
-	case LogicalTypeId::SMALLINT:
-		D_ASSERT(bind_data->columns[col_idx].attlen == sizeof(int16_t));
-		D_ASSERT(value_len == sizeof(int16_t));
-
-		FlatVector::GetData<int16_t>(out_vec)[output_offset] = ntohs(Load<int16_t>(value_ptr));
+	case LogicalTypeId::INTEGER:
+		D_ASSERT(value_len == sizeof(int32_t));
+		FlatVector::GetData<int32_t>(out_vec)[output_offset] = LoadEndIncrement<int32_t>(value_ptr);
 		break;
 
 	case LogicalTypeId::BIGINT:
-		D_ASSERT(bind_data->columns[col_idx].attlen == sizeof(int64_t));
 		D_ASSERT(value_len == sizeof(int64_t));
-
-		FlatVector::GetData<int64_t>(out_vec)[output_offset] = ntohll(Load<uint64_t>(value_ptr));
+		FlatVector::GetData<int64_t>(out_vec)[output_offset] = LoadEndIncrement<int64_t>(value_ptr);
 		break;
 
 	case LogicalTypeId::FLOAT: {
-		D_ASSERT(bind_data->columns[col_idx].attlen == sizeof(float));
 		D_ASSERT(value_len == sizeof(float));
-
-		auto i = ntohl(Load<uint32_t>(value_ptr));
+		auto i = LoadEndIncrement<uint32_t>(value_ptr);
 		FlatVector::GetData<float>(out_vec)[output_offset] = *((float *)&i);
 		break;
 	}
 
 	case LogicalTypeId::DOUBLE: {
-		D_ASSERT(bind_data->columns[col_idx].attlen == sizeof(double));
+		if (type_info->typname ==
+		    "numeric") { // this was an unbounded decimal, read params from value and cast to double
+			auto config = ReadDecimalConfig(value_ptr);
+			auto val = ReadDecimal<int64_t>(config, value_ptr);
+			FlatVector::GetData<double>(out_vec)[output_offset] = (double)val / POWERS_OF_TEN[config.scale];
+			break;
+		}
 		D_ASSERT(value_len == sizeof(double));
-
-		auto i = ntohll(Load<uint64_t>(value_ptr));
+		auto i = LoadEndIncrement<uint64_t>(value_ptr);
 		FlatVector::GetData<double>(out_vec)[output_offset] = *((double *)&i);
 		break;
 	}
 
-	case LogicalTypeId::JSON:
 	case LogicalTypeId::BLOB:
-	case LogicalTypeId::VARCHAR:
-		D_ASSERT(bind_data->columns[col_idx].attlen == -1);
+	case LogicalTypeId::VARCHAR: {
+		if (type_info->typname == "jsonb") {
+			auto version = Load<uint8_t>(value_ptr);
+			value_ptr++;
+			value_len--;
+			if (version != 1) {
+				throw NotImplementedException("JSONB version number mismatch, expected 1, got %d", version);
+			}
+		}
 		FlatVector::GetData<string_t>(out_vec)[output_offset] =
 		    StringVector::AddStringOrBlob(out_vec, (char *)value_ptr, value_len);
 		break;
-
+	}
 	case LogicalTypeId::BOOLEAN:
-		D_ASSERT(bind_data->columns[col_idx].attlen == sizeof(bool));
 		D_ASSERT(value_len == sizeof(bool));
 		FlatVector::GetData<bool>(out_vec)[output_offset] = *value_ptr > 0;
 		break;
 	case LogicalTypeId::DECIMAL: {
-		auto decimal_ptr = (uint16_t *)value_ptr;
-		// we need at least 8 bytes here
-		D_ASSERT(value_len >= sizeof(uint16_t) * 4); // TODO this should probably be an exception
-
-		// convert everything to little endian
-		for (int i = 0; i < value_len / sizeof(uint16_t); i++) {
-			decimal_ptr[i] = ntohs(decimal_ptr[i]);
+		if (value_len < sizeof(uint16_t) * 4) {
+			throw InvalidInputException("Need at least 8 bytes to read a Postgres decimal. Got %d", value_len);
 		}
-
-		auto ndigits = decimal_ptr[0];
-		D_ASSERT(value_len == sizeof(uint16_t) * (4 + ndigits)); // TODO this should probably be an exception
-		auto weight = (int16_t)decimal_ptr[1];
-		auto sign = decimal_ptr[2];
-
-		if (!(sign == NUMERIC_POS || sign == NUMERIC_NAN || sign == NUMERIC_PINF || sign == NUMERIC_NINF ||
-		      sign == NUMERIC_NEG)) {
-			D_ASSERT(0);
-			// TODO complain
-		}
-		auto is_negative = sign == NUMERIC_NEG;
-
-		D_ASSERT(decimal_ptr[3] == DecimalType::GetScale(type));
-		auto digit_ptr = (const uint16_t *)decimal_ptr + 4;
+		auto decimal_config = ReadDecimalConfig(value_ptr);
+		D_ASSERT(decimal_config.scale == DecimalType::GetScale(type));
 
 		switch (type.InternalType()) {
 		case PhysicalType::INT16:
-			ReadDecimal<int16_t>(DecimalType::GetScale(type), ndigits, weight, is_negative, digit_ptr, out_vec,
-			                     output_offset);
+			FlatVector::GetData<int16_t>(out_vec)[output_offset] = ReadDecimal<int16_t>(decimal_config, value_ptr);
 			break;
 		case PhysicalType::INT32:
-			ReadDecimal<int32_t>(DecimalType::GetScale(type), ndigits, weight, is_negative, digit_ptr, out_vec,
-			                     output_offset);
+			FlatVector::GetData<int32_t>(out_vec)[output_offset] = ReadDecimal<int32_t>(decimal_config, value_ptr);
 			break;
 		case PhysicalType::INT64:
-			ReadDecimal<int64_t>(DecimalType::GetScale(type), ndigits, weight, is_negative, digit_ptr, out_vec,
-			                     output_offset);
+			FlatVector::GetData<int64_t>(out_vec)[output_offset] = ReadDecimal<int64_t>(decimal_config, value_ptr);
 			break;
 
 		default:
@@ -633,40 +669,36 @@ static void ProcessValue(data_ptr_t value_ptr, idx_t value_len, const PostgresBi
 	}
 
 	case LogicalTypeId::DATE: {
-		D_ASSERT(bind_data->columns[col_idx].attlen == sizeof(int32_t));
 		D_ASSERT(value_len == sizeof(int32_t));
 
-		auto jd = ntohl(Load<uint32_t>(value_ptr));
+		auto jd = LoadEndIncrement<uint32_t>(value_ptr);
 		auto out_ptr = FlatVector::GetData<date_t>(out_vec);
 		out_ptr[output_offset].days = jd + POSTGRES_EPOCH_JDATE - 2440588; // magic!
 		break;
 	}
 
 	case LogicalTypeId::TIME: {
-		D_ASSERT(bind_data->columns[col_idx].attlen == sizeof(int64_t));
 		D_ASSERT(value_len == sizeof(int64_t));
-		D_ASSERT(bind_data->columns[col_idx].atttypmod == -1);
+		D_ASSERT(atttypmod == -1);
 
-		FlatVector::GetData<dtime_t>(out_vec)[output_offset].micros = ntohll(Load<uint64_t>(value_ptr));
+		FlatVector::GetData<dtime_t>(out_vec)[output_offset].micros = LoadEndIncrement<uint64_t>(value_ptr);
 		break;
 	}
 
 	case LogicalTypeId::TIME_TZ: {
-		D_ASSERT(bind_data->columns[col_idx].attlen == sizeof(int64_t) + sizeof(int32_t));
 		D_ASSERT(value_len == sizeof(int64_t) + sizeof(int32_t));
-		D_ASSERT(bind_data->columns[col_idx].atttypmod == -1);
+		D_ASSERT(atttypmod == -1);
 
-		auto usec = ntohll(Load<uint64_t>(value_ptr));
-		auto tzoffset = (int32_t)ntohl(Load<uint32_t>(value_ptr + sizeof(int64_t)));
+		auto usec = LoadEndIncrement<uint64_t>(value_ptr);
+		auto tzoffset = LoadEndIncrement<int32_t>(value_ptr);
 		FlatVector::GetData<dtime_t>(out_vec)[output_offset].micros = usec + tzoffset * Interval::MICROS_PER_SEC;
 		break;
 	}
 
 	case LogicalTypeId::TIMESTAMP_TZ:
 	case LogicalTypeId::TIMESTAMP: {
-		D_ASSERT(bind_data->columns[col_idx].attlen == sizeof(int64_t));
 		D_ASSERT(value_len == sizeof(int64_t));
-		D_ASSERT(bind_data->columns[col_idx].atttypmod == -1);
+		D_ASSERT(atttypmod == -1);
 
 		auto usec = ntohll(Load<uint64_t>(value_ptr));
 		auto time = usec % Interval::MICROS_PER_DAY;
@@ -702,19 +734,82 @@ static void ProcessValue(data_ptr_t value_ptr, idx_t value_len, const PostgresBi
 		break;
 	}
 	case LogicalTypeId::INTERVAL: {
-		if (bind_data->columns[col_idx].atttypmod != -1) {
-			throw IOException("Interval with unsupported typmod %d", bind_data->columns[col_idx].atttypmod);
+		if (atttypmod != -1) {
+			throw IOException("Interval with unsupported typmod %d", atttypmod);
 		}
 
 		interval_t res;
 
-		res.micros = ntohll(Load<uint64_t>(value_ptr));
-		res.days = ntohl(Load<uint32_t>(value_ptr + sizeof(uint64_t)));
-		res.months = ntohl(Load<uint32_t>(value_ptr + sizeof(uint64_t) + +sizeof(uint32_t)));
+		res.micros = LoadEndIncrement<uint64_t>(value_ptr);
+		res.days = LoadEndIncrement<uint32_t>(value_ptr);
+		res.months = LoadEndIncrement<uint32_t>(value_ptr);
 
 		FlatVector::GetData<interval_t>(out_vec)[output_offset] = res;
 		break;
 	}
+
+	case LogicalTypeId::UUID: {
+		D_ASSERT(value_len == 2 * sizeof(int64_t));
+		D_ASSERT(atttypmod == -1);
+
+		hugeint_t res;
+
+		auto upper = LoadEndIncrement<uint64_t>(value_ptr);
+		res.upper = upper ^ (int64_t(1) << 63);
+		res.lower = LoadEndIncrement<uint64_t>(value_ptr);
+
+		FlatVector::GetData<hugeint_t>(out_vec)[output_offset] = res;
+		break;
+	}
+
+	case LogicalTypeId::LIST: {
+		D_ASSERT(elem_info);
+		auto &list_entry = FlatVector::GetData<list_entry_t>(out_vec)[output_offset];
+		if (value_len < 1) {
+			list_entry.offset = ListVector::GetListSize(out_vec);
+			list_entry.length = 0;
+			break;
+		}
+		D_ASSERT(value_len >= 5 * sizeof(uint32_t));
+		auto flag_one = LoadEndIncrement<uint32_t>(value_ptr);
+		D_ASSERT(flag_one == 1);
+		auto flag_two = LoadEndIncrement<uint32_t>(value_ptr);
+		// D_ASSERT(flag_two == 1); // TODO what is this?!
+		auto value_oid = LoadEndIncrement<uint32_t>(value_ptr);
+		D_ASSERT(value_oid == typelem);
+		auto array_length = LoadEndIncrement<uint32_t>(value_ptr);
+		auto array_dim = LoadEndIncrement<uint32_t>(value_ptr);
+		if (array_dim != 1) {
+			throw NotImplementedException("Only one-dimensional Postgres arrays are supported");
+		}
+
+		auto child_offset = ListVector::GetListSize(out_vec);
+		auto &child_vec = ListVector::GetEntry(out_vec);
+		ListVector::Reserve(out_vec, child_offset + array_length);
+		for (idx_t child_idx = 0; child_idx < array_length; child_idx++) {
+			// handle NULLs again (TODO: unify this with scan)
+			auto ele_len = LoadEndIncrement<int32_t>(value_ptr);
+			if (ele_len == -1) { // NULL
+				FlatVector::Validity(child_vec).Set(child_offset + child_idx, false);
+				continue;
+			}
+
+			if (elem_info->typlen > 0 && ele_len != elem_info->typlen) {
+				throw InvalidInputException(
+				    "Expected to read a Postgres list value of length %d, but only have size %d", elem_info->typlen,
+				    ele_len);
+			}
+			ProcessValue(ListType::GetChildType(type), elem_info, atttypmod, 0, nullptr, value_ptr, ele_len, child_vec,
+			             child_offset + child_idx);
+			value_ptr += ele_len;
+		}
+		ListVector::SetListSize(out_vec, child_offset + array_length);
+
+		list_entry.offset = child_offset;
+		list_entry.length = array_length;
+		break;
+	}
+
 	default:
 		throw InternalException("Unsupported Type %s", type.ToString());
 	}
@@ -879,10 +974,19 @@ static void PostgresScan(ClientContext &context, TableFunctionInput &data, DataC
 			auto raw_len = (int32_t)ntohl(buf.Read<uint32_t>());
 			if (raw_len == -1) { // NULL
 				FlatVector::Validity(out_vec).Set(output_offset, false);
-			} else {
-				ProcessValue((data_ptr_t)buf.buffer_ptr, raw_len, bind_data, col_idx, false, out_vec, output_offset);
-				buf.buffer_ptr += raw_len;
+				continue;
 			}
+			auto typlen = bind_data->columns[col_idx].type_info.typlen;
+			if (typlen > 0 && typlen != raw_len && bind_data->columns[col_idx].type_info.typtype != "e") {
+				throw InvalidInputException("Type for column %s should have length %llu, but %llu bytes in value",
+				                            bind_data->columns[col_idx].attname, typlen, raw_len);
+			}
+
+			ProcessValue(bind_data->types[col_idx], &bind_data->columns[col_idx].type_info,
+			             bind_data->columns[col_idx].atttypmod, bind_data->columns[col_idx].typelem,
+			             &bind_data->columns[col_idx].elem_info, (data_ptr_t)buf.buffer_ptr, raw_len, out_vec,
+			             output_offset);
+			buf.buffer_ptr += raw_len;
 		}
 
 		buf.Reset();

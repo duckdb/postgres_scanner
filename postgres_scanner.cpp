@@ -398,12 +398,24 @@ static void PostgresInitInternal(ClientContext &context, const PostgresBindData 
 		filter_string = " AND " + StringUtil::Join(filter_entries, " AND ");
 	}
 
-	lstate.sql = StringUtil::Format(
+	if ( task_min == 0 && task_max == POSTGRES_TID_MAX ) {
+	  // Repair ctid error case recovery mode when copy from greenplum
+          lstate.sql = StringUtil::Format(
+            R"(
+COPY (SELECT %s FROM "%s"."%s" WHERE 1=1 %s) TO STDOUT (FORMAT binary);
+)",
+
+            col_names, bind_data->schema_name, bind_data->table_name, filter_string);
+
+	} else {
+          // use of CTID on the task_min / task_max range.		
+	  lstate.sql = StringUtil::Format(
 	    R"(
 COPY (SELECT %s FROM "%s"."%s" WHERE ctid BETWEEN '(%d,0)'::tid AND '(%d,0)'::tid %s) TO STDOUT (FORMAT binary);
 )",
 
-	    col_names, bind_data->schema_name, bind_data->table_name, task_min, task_max, filter_string);
+	    col_names, bind_data->schema_name, bind_data->table_name, task_min, task_max, filter_string);		
+	}
 
 	lstate.exec = false;
 	lstate.done = false;

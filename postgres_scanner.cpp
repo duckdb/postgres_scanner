@@ -399,22 +399,28 @@ static void PostgresInitInternal(ClientContext &context, const PostgresBindData 
 	}
         if ( task_min == 0 && task_max == POSTGRES_TID_MAX ) {
           // no use of CTID when task_min / task_max cover the largest range. 
-	  // This includes PostgreSQL compatible database which do not provide CTID (like YugabyteDB)
+	      // This includes PostgreSQL compatible database which do not provide CTID (like YugabyteDB)
+	      if (filter_string.length() > 0) {
+	       filter_string="WHERE "+ filter_string;
+	      }
           lstate.sql = StringUtil::Format(
             R"(
-COPY (SELECT %s FROM "%s"."%s" WHERE %s) TO STDOUT (FORMAT binary);
+COPY (SELECT %s FROM "%s"."%s" %s) TO STDOUT (FORMAT binary);
 )",
 
             col_names, bind_data->schema_name, bind_data->table_name,filter_string);
 
 	} else {
-          // use of CTID on the task_min / task_max range.		
-	  lstate.sql = StringUtil::Format(
-	    R"(
-COPY (SELECT %s FROM "%s"."%s" WHERE ctid BETWEEN '(%d,0)'::tid AND '(%d,0)'::tid AND %s) TO STDOUT (FORMAT binary);
+          // use of CTID on the task_min / task_max range.
+		  if (filter_string.length() > 0) {
+	       filter_string="AND "+ filter_string;
+	      }	
+	      lstate.sql = StringUtil::Format(
+	      R"(
+COPY (SELECT %s FROM "%s"."%s" WHERE ctid BETWEEN '(%d,0)'::tid AND '(%d,0)'::tid %s) TO STDOUT (FORMAT binary);
 )",
 
-	    col_names, bind_data->schema_name, bind_data->table_name, task_min, task_max, filter_string);		
+	      col_names, bind_data->schema_name, bind_data->table_name, task_min, task_max, filter_string);		
 	}
 
 	lstate.exec = false;

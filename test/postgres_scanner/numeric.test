@@ -1,0 +1,33 @@
+statement ok
+LOAD 'build/release/extension/postgres_scanner/postgres_scanner.duckdb_extension';
+
+statement ok
+pragma enable_verification;
+
+statement ok
+CALL postgres_attach('dbname=postgresscanner');
+
+query I
+select * from numerics;
+----
+32.8875000
+-32.8875000
+10000.0000000
+1000.0000000
+100.0000000
+10.0000000
+1.0000000
+0.1000000
+0.0100000
+0.0010000
+0.0001000
+0.0000100
+0.0000010
+0.0000001
+10001.0000000
+1.0001000
+0.0001001
+10001.0001000
+1.0001001
+10001.0001001
+0.0000000

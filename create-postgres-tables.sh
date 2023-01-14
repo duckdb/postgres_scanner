@@ -1,12 +1,12 @@
 #!/bin/bash
 echo "
-CREATE SCHEMA tpch; 
+CREATE SCHEMA tpch;
 CREATE SCHEMA tpcds;
 CALL dbgen(sf=0.01, schema='tpch');
 CALL dsdgen(sf=0.01, schema='tpcds');
 EXPORT DATABASE '/tmp/postgresscannertmp';
 " | \
-./build/release/duckdb 
+./build/release/duckdb
 
 dropdb --if-exists postgresscanner
 createdb postgresscanner
@@ -44,6 +44,7 @@ insert into cars(brand, model, color)
 
 create table intervals as select '42 day'::INTERVAL interval_days UNION ALL SELECT '42 month'::INTERVAL UNION ALL SELECT '42 year'::INTERVAL UNION ALL SELECT  '42 minute'::INTERVAL UNION ALL SELECT  '42 second'::INTERVAL UNION ALL SELECT '0.42 second'::INTERVAL UNION ALL SELECT '-42 day'::INTERVAL interval_days  UNION ALL SELECT NULL::INTERVAL;
 
+create table numerics as select n from (values (32.8875000), (-32.8875000), (10000), (1000), (100), (10), (1), (0.1), (0.01), (0.001), (0.0001), (0.00001), (0.000001), (0.0000001), (10001), (1.0001), (0.0001001), (10001.0001), (1.0001001), (10001.0001001), (0)) t(n);
 " |  psql -d postgresscanner
 
 

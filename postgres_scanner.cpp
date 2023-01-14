@@ -496,7 +496,8 @@ static const int64_t POWERS_OF_TEN[] {1,
                                       1000000000000000,
                                       10000000000000000,
                                       100000000000000000,
-                                      1000000000000000000};
+                                      1000000000000000000,
+                                      10000000000000000000};
 
 template <class T>
 T LoadEndIncrement(const_data_ptr_t &pspsptr) {
@@ -561,7 +562,7 @@ static T ReadDecimal(PostgresDecimalConfig &config, const_data_ptr_t value_ptr) 
 
 	if (config.ndigits > config.weight + 1) {
 		fractional_part = LoadEndIncrement<uint16_t>(value_ptr);
-		for (auto i = config.weight + 2; i < config.ndigits; i++) {
+		for (auto i = std::max(1, config.weight + 2); i < config.ndigits; i++) {
 			fractional_part *= NBASE;
 			if (i < config.ndigits) {
 				fractional_part += LoadEndIncrement<uint16_t>(value_ptr);
@@ -572,11 +573,16 @@ static T ReadDecimal(PostgresDecimalConfig &config, const_data_ptr_t value_ptr) 
 		// of ten this depends on how many times we multiplied with NBASE
 		// if that is different from scale, we need to divide the extra part away
 		// again
-		auto fractional_power = ((config.ndigits - config.weight - 1) * DEC_DIGITS);
-		D_ASSERT(fractional_power >= config.scale);
-		auto fractional_power_correction = fractional_power - config.scale;
-		D_ASSERT(fractional_power_correction < 20);
-		fractional_part /= POWERS_OF_TEN[fractional_power_correction];
+		auto fractional_power = (config.ndigits - config.weight - 1) * DEC_DIGITS;
+		if (fractional_power >= config.scale) {
+			auto fractional_power_correction = fractional_power - config.scale;
+			D_ASSERT(fractional_power_correction < 20);
+			fractional_part /= POWERS_OF_TEN[fractional_power_correction];
+		} else {
+			auto fractional_power_correction = config.scale - fractional_power;
+			D_ASSERT(fractional_power_correction < 20);
+			fractional_part *= POWERS_OF_TEN[fractional_power_correction];
+		}
 	}
 
 	// finally

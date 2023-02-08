@@ -1,7 +1,3 @@
-DROP TABLE IF EXISTS pg_numtypes;
-DROP TABLE IF EXISTS pg_bytetypes;
-DROP TABLE IF EXISTS pg_datetypes;
-
 CREATE TABLE pg_numtypes (
 	bool_col bool,
 	smallint_col smallint,

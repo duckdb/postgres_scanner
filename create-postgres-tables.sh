@@ -28,7 +28,6 @@ insert into nulltest values (NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NUL
 echo "
 create type color_t as enum('blue', 'red', 'gray', 'black');
 
-drop table if exists cars;
 create table cars
  (
    brand   text,
@@ -48,6 +47,64 @@ create table intervals as select '42 day'::INTERVAL interval_days UNION ALL SELE
 
 
 
+echo "
+CREATE TABLE
+  duckdb_arr_test
+  (
+    id      INTEGER     NOT NULL,
+    my_ints INTEGER[]   NOT NULL
+  );
+
+INSERT INTO
+  duckdb_arr_test
+  (
+    id,
+    my_ints
+  )
+VALUES
+  (
+    123,
+    ARRAY[11, 22, 33]
+  )
+;" | psql -d postgresscanner
+
+
+echo "
+CREATE TABLE oids (i oid);
+INSERT INTO oids VALUES (42), (43);" | psql -d postgresscanner
+
+echo "
+CREATE TABLE daterange (room int, during tsrange);
+INSERT INTO daterange VALUES
+    (1108, '[2010-01-01 14:30, 2010-01-01 15:30)');
+" | psql -d postgresscanner
+
+
+echo "
+CREATE DOMAIN my_type_v30 AS VARCHAR(30) NOT NULL;
+
+CREATE DOMAIN my_id AS INT4;
+
+CREATE TABLE my_table (
+    table_id my_id PRIMARY KEY,
+    table_var varchar(10),
+    table_v30 my_type_v30
+);
+insert into my_table values (42, 'something', 'something else');
+
+" | psql -d postgresscanner
+
+echo "
+CREATE SCHEMA some_schema;
+
+create type some_schema.some_enum as enum('one', 'two');
+
+CREATE TABLE some_schema.some_table (
+    some_field some_schema.some_enum
+);
+insert into some_schema.some_table values ('two');
+
+" | psql -d postgresscanner
+
 psql -d postgresscanner -c "CHECKPOINT"
 psql -d postgresscanner -c "VACUUM"
-

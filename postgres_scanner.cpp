@@ -20,6 +20,7 @@ struct PostgresTypeInfo {
 	string typname;
 	int64_t typlen;
 	string typtype;
+	string nspname;
 };
 
 struct PostgresColumnInfo {
@@ -47,6 +48,7 @@ struct PostgresBindData : public FunctionData {
 	vector<PostgresColumnInfo> columns;
 	vector<string> names;
 	vector<LogicalType> types;
+	vector<bool> needs_cast;
 
 	idx_t pages_per_task = 1000;
 	string dsn;
@@ -161,7 +163,8 @@ static LogicalType DuckDBType2(PostgresTypeInfo *type_info, int atttypmod, Postg
 	}
 
 	if (type_info->typtype == "e") { // ENUM
-		auto res = PGQuery(conn, StringUtil::Format("SELECT unnest(enum_range(NULL::%s))", type_info->typname));
+		auto res = PGQuery(
+		    conn, StringUtil::Format("SELECT unnest(enum_range(NULL::%s.%s))", type_info->nspname, type_info->typname));
 		Vector duckdb_levels(LogicalType::VARCHAR, res->Count());
 		for (idx_t row = 0; row < res->Count(); row++) {
 			duckdb_levels.SetValue(row, res->GetString(row, 0));
@@ -177,6 +180,8 @@ static LogicalType DuckDBType2(PostgresTypeInfo *type_info, int atttypmod, Postg
 		return LogicalType::INTEGER;
 	} else if (pgtypename == "int8") {
 		return LogicalType::BIGINT;
+	} else if (pgtypename == "oid") { // "The oid type is currently implemented as an unsigned four-byte integer."
+		return LogicalType::UINTEGER;
 	} else if (pgtypename == "float4") {
 		return LogicalType::FLOAT;
 	} else if (pgtypename == "float8") {
@@ -208,7 +213,7 @@ static LogicalType DuckDBType2(PostgresTypeInfo *type_info, int atttypmod, Postg
 	} else if (pgtypename == "uuid") {
 		return LogicalType::UUID;
 	} else {
-		throw IOException("Unsupported Postgres type %s", pgtypename);
+		return LogicalType::INVALID;
 	}
 }
 
@@ -260,12 +265,13 @@ WHERE nspname='%s' AND relname='%s'
 	res = PGQuery(bind_data->conn, StringUtil::Format(
 	                                   R"(
 SELECT
-    attname, atttypmod,
+    attname, atttypmod, pg_namespace.nspname,
     pg_type.typname, pg_type.typlen, pg_type.typtype, pg_type.typelem,
     pg_type_elem.typname elem_typname, pg_type_elem.typlen elem_typlen, pg_type_elem.typtype elem_typtype
 FROM pg_attribute
     JOIN pg_type ON atttypid=pg_type.oid
     LEFT JOIN pg_type pg_type_elem ON pg_type.typelem=pg_type_elem.oid
+    LEFT JOIN pg_namespace ON pg_type.typnamespace = pg_namespace.oid
 WHERE attrelid=%d AND attnum > 0
 ORDER BY attnum;
 )",
@@ -276,17 +282,26 @@ ORDER BY attnum;
 		info.attname = res->GetString(row, 0);
 		info.atttypmod = res->GetInt32(row, 1);
 
-		info.type_info.typname = res->GetString(row, 2);
-		info.type_info.typlen = res->GetInt64(row, 3);
-		info.type_info.typtype = res->GetString(row, 4);
-		info.typelem = res->GetInt64(row, 5);
+		info.type_info.nspname = res->GetString(row, 2);
+		info.type_info.typname = res->GetString(row, 3);
+		info.type_info.typlen = res->GetInt64(row, 4);
+		info.type_info.typtype = res->GetString(row, 5);
+		info.typelem = res->GetInt64(row, 6);
 
-		info.elem_info.typname = res->GetString(row, 6);
-		info.elem_info.typlen = res->GetInt64(row, 7);
-		info.elem_info.typtype = res->GetString(row, 8);
+		info.elem_info.typname = res->GetString(row, 7);
+		info.elem_info.typlen = res->GetInt64(row, 8);
+		info.elem_info.typtype = res->GetString(row, 9);
 
 		bind_data->names.push_back(info.attname);
-		bind_data->types.push_back(DuckDBType(info, bind_data->conn, context));
+		auto duckdb_type = DuckDBType(info, bind_data->conn, context);
+		// we cast unsupported types to varchar on read
+		auto needs_cast = duckdb_type == LogicalType::INVALID;
+		bind_data->needs_cast.push_back(needs_cast);
+		if (!needs_cast) {
+			bind_data->types.push_back(move(duckdb_type));
+		} else {
+			bind_data->types.push_back(LogicalType::VARCHAR);
+		}
 
 		bind_data->columns.push_back(info);
 	}
@@ -382,8 +397,11 @@ static void PostgresInitInternal(ClientContext &context, const PostgresBindData 
 		// We are only counting rows, not interested in the actual values of the columns.
 		col_names = "NULL";
 	} else {
-		col_names = StringUtil::Join(lstate.column_ids.data(), lstate.column_ids.size(), ", ",
-		                             [&](const idx_t column_id) { return '"' + bind_data->names[column_id] + '"'; });
+		col_names =
+		    StringUtil::Join(lstate.column_ids.data(), lstate.column_ids.size(), ", ", [&](const idx_t column_id) {
+			    return StringUtil::Format("\"%s\"%s", bind_data->names[column_id],
+			                              bind_data->needs_cast[column_id] ? "::VARCHAR" : "");
+		    });
 	}
 
 	string filter_string;
@@ -598,6 +616,11 @@ static void ProcessValue(const LogicalType &type, const PostgresTypeInfo *type_i
 	case LogicalTypeId::INTEGER:
 		D_ASSERT(value_len == sizeof(int32_t));
 		FlatVector::GetData<int32_t>(out_vec)[output_offset] = LoadEndIncrement<int32_t>(value_ptr);
+		break;
+
+	case LogicalTypeId::UINTEGER:
+		D_ASSERT(value_len == sizeof(uint32_t));
+		FlatVector::GetData<uint32_t>(out_vec)[output_offset] = LoadEndIncrement<uint32_t>(value_ptr);
 		break;
 
 	case LogicalTypeId::BIGINT:
@@ -976,12 +999,6 @@ static void PostgresScan(ClientContext &context, TableFunctionInput &data, DataC
 				FlatVector::Validity(out_vec).Set(output_offset, false);
 				continue;
 			}
-			auto typlen = bind_data->columns[col_idx].type_info.typlen;
-			if (typlen > 0 && typlen != raw_len && bind_data->columns[col_idx].type_info.typtype != "e") {
-				throw InvalidInputException("Type for column %s should have length %llu, but %llu bytes in value",
-				                            bind_data->columns[col_idx].attname, typlen, raw_len);
-			}
-
 			ProcessValue(bind_data->types[col_idx], &bind_data->columns[col_idx].type_info,
 			             bind_data->columns[col_idx].atttypmod, bind_data->columns[col_idx].typelem,
 			             &bind_data->columns[col_idx].elem_info, (data_ptr_t)buf.buffer_ptr, raw_len, out_vec,
@@ -1096,7 +1113,7 @@ DUCKDB_EXTENSION_API void postgres_scanner_init(duckdb::DatabaseInstance &db) {
 	Connection con(db);
 	con.BeginTransaction();
 	auto &context = *con.context;
-	auto &catalog = Catalog::GetCatalog(context);
+	auto &catalog = Catalog::GetSystemCatalog(context);
 
 	PostgresScanFunction postgres_fun;
 	CreateTableFunctionInfo postgres_info(postgres_fun);

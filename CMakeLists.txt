@@ -8,7 +8,6 @@ set(OPENSSL_USE_STATIC_LIBS TRUE)
 
 find_package(OpenSSL REQUIRED)
 
-
 if(NOT MSVC)
   set(POSTGRES_SCANNER_EXTRA_CFLAGS
       "-Wno-pedantic -Wno-sign-compare -Wno-unused-variable")

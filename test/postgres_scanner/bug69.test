@@ -1,0 +1,10 @@
+statement ok
+LOAD 'build/release/extension/postgres_scanner/postgres_scanner.duckdb_extension';
+
+statement ok
+CALL postgres_attach('dbname=postgresscanner');
+
+query I
+SELECT * FROM fail;
+----
+32.8875000

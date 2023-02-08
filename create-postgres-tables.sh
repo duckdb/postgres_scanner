@@ -66,7 +66,20 @@ VALUES
     123,
     ARRAY[11, 22, 33]
   )
-;" | psql -d postgresscanner
+;
+INSERT INTO
+  duckdb_arr_test
+  (
+    id,
+    my_nums
+  )
+VALUES
+  (
+    234,
+    ARRAY[]::INTEGER[]
+  )
+;
+" | psql -d postgresscanner
 
 
 echo "
@@ -105,6 +118,17 @@ CREATE TABLE some_schema.some_table (
 insert into some_schema.some_table values ('two');
 
 " | psql -d postgresscanner
+
+echo "create table fail(n numeric(12,7));
+      insert into fail values (32.8875000);" | psql -d postgresscanner
+
+
+echo "
+CREATE TABLE dum();
+CREATE TABLE dee();
+INSERT INTO dee DEFAULT VALUES;
+" | psql -d postgresscanner
+
 
 psql -d postgresscanner -c "CHECKPOINT"
 psql -d postgresscanner -c "VACUUM"

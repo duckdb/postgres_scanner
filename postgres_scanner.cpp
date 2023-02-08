@@ -277,6 +277,11 @@ ORDER BY attnum;
 )",
 	                                   oid));
 
+	// can't scan a table without columns (yes those exist)
+	if (res->Count() == 0) {
+		throw InvalidInputException("Table %s does not contain any columns.", bind_data->table_name);
+	}
+
 	for (idx_t row = 0; row < res->Count(); row++) {
 		PostgresColumnInfo info;
 		info.attname = res->GetString(row, 0);
@@ -1065,10 +1070,12 @@ static void AttachFunction(ClientContext &context, TableFunctionInput &data_p, D
 	auto dconn = Connection(context.db->GetDatabase(context));
 	auto res = PGQuery(conn, StringUtil::Format(
 	                             R"(
-SELECT table_name
-FROM information_schema.tables
-WHERE table_schema='%s'
-AND table_type='BASE TABLE'
+SELECT relname
+FROM pg_class JOIN pg_namespace ON pg_class.relnamespace = pg_namespace.oid
+JOIN pg_attribute ON pg_class.oid = pg_attribute.attrelid
+WHERE relkind = 'r' AND attnum > 0 AND nspname = '%s'
+GROUP BY relname
+ORDER BY relname;
 )",
 	                             data.source_schema)
 	                             .c_str());

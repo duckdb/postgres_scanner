@@ -126,5 +126,5 @@ target_link_libraries(${TARGET_NAME}_loadable_extension ${OPENSSL_LIBRARIES})
 
 if(WIN32)
   target_link_libraries(${TARGET_NAME}_loadable_extension wsock32 ws2_32
-                        wldap32 secur32)
+                        wldap32 secur32 cypt32)
 endif()

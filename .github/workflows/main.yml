@@ -5,7 +5,7 @@ defaults:
     shell: bash
 
 jobs:
-  build:
+  linux:
     name: CentOS 7
     runs-on: ubuntu-latest
     container: centos:7
@@ -52,7 +52,7 @@ jobs:
         export PATH=/github/home/.local/bin:$PATH
         make release
 
-    - name: Make test databases
+    - name: Test
       run: |
         psql -c "SELECT 43"
         source ./create-postgres-tables.sh
@@ -60,6 +60,39 @@ jobs:
 
     - uses: actions/upload-artifact@v2
       with:
-        name: postgres-scanner
+        name: postgres-scanner-linux
         path: |
           build/release/postgres_scanner.duckdb_extension
+
+
+  windows:
+    name: Windows (64-bit)
+    runs-on: windows-latest
+
+    steps:
+      - uses: actions/checkout@v2
+        with:
+          fetch-depth: 0
+
+      - name: Install
+        shell: bash
+        run: |
+          choco install openssl postgresql -y --force
+
+      - name: Build
+        shell: bash
+        run: |
+          make release
+
+      - name: Test
+        shell: bash
+        run: |
+          psql -c "SELECT 43"
+          source ./create-postgres-tables.sh
+          ./duckdb/build/release/test/Release/unittest --test-dir . "[postgres_scanner]"
+
+      - uses: actions/upload-artifact@v2
+        with:
+          name: postgres-scanner-windows
+          path: |
+            build/release/postgres_scanner.duckdb_extension

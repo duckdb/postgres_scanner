@@ -13,7 +13,7 @@ jobs:
     steps:
     - name: Install
       run: |
-        yum install -y gcc gcc-c++ make python3 postgresql-server sudo openssl-devel
+        yum install -y gcc gcc-c++ make python3 postgresql-server sudo openssl-devel openssl-libs openssl-static
 
     - name: Install recent git yay
       run: |
@@ -50,7 +50,6 @@ jobs:
     - name: Build
       run: |
         export PATH=/github/home/.local/bin:$PATH
-        export OPENSSL_ROOT_DIR=/usr/local/ssl
         make release
 
     - name: Make test databases

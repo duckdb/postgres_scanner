@@ -77,7 +77,9 @@ jobs:
       - name: Install
         shell: bash
         run: |
-          choco install openssl postgresql -y --force
+          choco install openssl -y --force
+          choco install postgresql -y --force --params '/Password:asdf' --ia '--enable-components server,commandlinetools'
+          PGPASSWORD='asdf' psql -Upostgres -c "SELECT 43"
 
       - name: Build
         shell: bash
@@ -87,7 +89,6 @@ jobs:
       - name: Test
         shell: bash
         run: |
-          psql -c "SELECT 43"
           source ./create-postgres-tables.sh
           ./duckdb/build/release/test/Release/unittest --test-dir . "[postgres_scanner]"
 

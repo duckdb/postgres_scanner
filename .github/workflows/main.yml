@@ -50,6 +50,7 @@ jobs:
     - name: Build
       run: |
         export PATH=/github/home/.local/bin:$PATH
+        export OPENSSL_ROOT_DIR=/usr/local/ssl
         make release
 
     - name: Make test databases

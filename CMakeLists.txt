@@ -94,6 +94,7 @@ if(WIN32)
       postgres/src/port/pgsleep.c
       postgres/src/port/system.c
       postgres/src/port/win32error.c
+      postgres/src/port/win32ntdll.c
       postgres/src/port/win32setlocale.c
       postgres/src/port/win32stat.c)
 

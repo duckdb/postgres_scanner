@@ -14,6 +14,7 @@ createdb postgresscanner
 psql -d postgresscanner < /tmp/postgresscannertmp/schema.sql
 psql -d postgresscanner < /tmp/postgresscannertmp/load.sql
 psql -d postgresscanner < all_pg_types.sql
+psql -d postgresscanner < decimals.sql
 
 rm -rf /tmp/postgresscannertmp
 
@@ -71,7 +72,7 @@ INSERT INTO
   duckdb_arr_test
   (
     id,
-    my_nums
+    my_ints
   )
 VALUES
   (
@@ -120,7 +121,16 @@ insert into some_schema.some_table values ('two');
 " | psql -d postgresscanner
 
 echo "create table fail(n numeric(12,7));
-      insert into fail values (32.8875000);" | psql -d postgresscanner
+      insert into fail values
+(42.8875000),
+(42.0000000),
+(42.1000000),
+(42.1200000),
+(42.1230000),
+(42.1234000),
+(42.1234500),
+(42.1234560),
+(42.1234567) ;" | psql -d postgresscanner
 
 
 echo "

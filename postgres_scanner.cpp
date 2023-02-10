@@ -595,11 +595,16 @@ static T ReadDecimal(PostgresDecimalConfig &config, const_data_ptr_t value_ptr) 
 		// of ten this depends on how many times we multiplied with NBASE
 		// if that is different from scale, we need to divide the extra part away
 		// again
-		auto fractional_power = ((config.ndigits - config.weight - 1) * DEC_DIGITS);
-		D_ASSERT(fractional_power >= config.scale);
+		// similarly, if trailing zeroes have been suppressed, we have not been multiplying t
+		// the fractional part with NBASE often enough. If so, add additional powers
+		auto fractional_power = (config.ndigits - config.weight - 1) * DEC_DIGITS;
 		auto fractional_power_correction = fractional_power - config.scale;
 		D_ASSERT(fractional_power_correction < 20);
-		fractional_part /= POWERS_OF_TEN[fractional_power_correction];
+		if (fractional_power_correction >= 0) {
+			fractional_part /= POWERS_OF_TEN[fractional_power_correction];
+		} else {
+			fractional_part *= POWERS_OF_TEN[-fractional_power_correction];
+		}
 	}
 
 	// finally
@@ -689,9 +694,11 @@ static void ProcessValue(const LogicalType &type, const PostgresTypeInfo *type_i
 		case PhysicalType::INT64:
 			FlatVector::GetData<int64_t>(out_vec)[output_offset] = ReadDecimal<int64_t>(decimal_config, value_ptr);
 			break;
-
+		case PhysicalType::INT128:
+			FlatVector::GetData<hugeint_t>(out_vec)[output_offset] = ReadDecimal<hugeint_t>(decimal_config, value_ptr);
+			break;
 		default:
-			throw InternalException("Unsupported decimal storage type");
+			throw InvalidInputException("Unsupported decimal storage type");
 		}
 		break;
 	}

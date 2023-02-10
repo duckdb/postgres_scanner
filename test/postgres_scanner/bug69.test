@@ -7,4 +7,12 @@ CALL postgres_attach('dbname=postgresscanner');
 query I
 SELECT * FROM fail;
 ----
-32.8875000
+42.8875000
+42.0000000
+42.1000000
+42.1200000
+42.1230000
+42.1234000
+42.1234500
+42.1234560
+42.1234567

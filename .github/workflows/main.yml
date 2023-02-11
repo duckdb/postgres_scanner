@@ -79,8 +79,8 @@ jobs:
         run: |
           choco install openssl -y --force
           choco install postgresql -y --force --params '/Password:asdf' --ia '--enable-components server,commandlinetools'
-          ls -R "C:/Program Files/PostgreSQL/15/bin"
-          export PATH=$PATH:"C:/Program Files/PostgreSQL/15/bin"
+          export PATH="C:/Program\ Files/PostgreSQL/15/bin":$PATH
+          which psql
           PGPASSWORD='asdf' psql -Upostgres -c "SELECT 43"
 
       - name: Build

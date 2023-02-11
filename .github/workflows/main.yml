@@ -69,6 +69,11 @@ jobs:
     name: Windows (64-bit)
     runs-on: windows-latest
 
+    env:
+      PGUSER: postgres
+      PGPASSWORD: postgres
+      PGDATABASE: postgres
+
     steps:
       - uses: actions/checkout@v2
         with:

@@ -53,31 +53,50 @@ CREATE TABLE
   duckdb_arr_test
   (
     id      INTEGER     NOT NULL,
-    my_ints INTEGER[]   NOT NULL
+    my_ints INTEGER[]   NOT NULL,
+    e INTEGER
   );
 
 INSERT INTO
   duckdb_arr_test
   (
     id,
-    my_ints
+    my_ints,
+    e
   )
 VALUES
   (
     123,
-    ARRAY[11, 22, 33]
+    ARRAY[11, 22, 33],
+    42
   )
 ;
 INSERT INTO
   duckdb_arr_test
   (
     id,
-    my_ints
+    my_ints,
+    e
   )
 VALUES
   (
     234,
-    ARRAY[]::INTEGER[]
+    ARRAY[]::INTEGER[],
+    42
+  )
+;
+INSERT INTO
+  duckdb_arr_test
+  (
+    id,
+    my_ints,
+    e
+  )
+VALUES
+  (
+    456,
+    ARRAY[44, 55, 66],
+    42
   )
 ;
 " | psql -d postgresscanner

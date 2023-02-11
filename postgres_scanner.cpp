@@ -800,25 +800,31 @@ static void ProcessValue(const LogicalType &type, const PostgresTypeInfo *type_i
 	case LogicalTypeId::LIST: {
 		D_ASSERT(elem_info);
 		auto &list_entry = FlatVector::GetData<list_entry_t>(out_vec)[output_offset];
+		auto child_offset = ListVector::GetListSize(out_vec);
+
 		if (value_len < 1) {
 			list_entry.offset = ListVector::GetListSize(out_vec);
 			list_entry.length = 0;
 			break;
 		}
-		D_ASSERT(value_len >= 5 * sizeof(uint32_t));
+		D_ASSERT(value_len >= 3 * sizeof(uint32_t));
 		auto flag_one = LoadEndIncrement<uint32_t>(value_ptr);
-		D_ASSERT(flag_one == 1);
 		auto flag_two = LoadEndIncrement<uint32_t>(value_ptr);
+		if (flag_one == 0) {
+			list_entry.offset = child_offset;
+			list_entry.length = 0;
+			return;
+		}
 		// D_ASSERT(flag_two == 1); // TODO what is this?!
 		auto value_oid = LoadEndIncrement<uint32_t>(value_ptr);
 		D_ASSERT(value_oid == typelem);
 		auto array_length = LoadEndIncrement<uint32_t>(value_ptr);
 		auto array_dim = LoadEndIncrement<uint32_t>(value_ptr);
 		if (array_dim != 1) {
-			throw NotImplementedException("Only one-dimensional Postgres arrays are supported");
+			throw NotImplementedException("Only one-dimensional Postgres arrays are supported %u %u ", array_length,
+			                              array_dim);
 		}
 
-		auto child_offset = ListVector::GetListSize(out_vec);
 		auto &child_vec = ListVector::GetEntry(out_vec);
 		ListVector::Reserve(out_vec, child_offset + array_length);
 		for (idx_t child_idx = 0; child_idx < array_length; child_idx++) {

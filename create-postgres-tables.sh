@@ -1,5 +1,5 @@
 #!/bin/bash
-export PATH=./build/release:./build/release/Release/:$PATH
+export PATH=./build/release:./build/release/Debug/:$PATH
 echo "
 CREATE SCHEMA tpch; 
 CREATE SCHEMA tpcds;

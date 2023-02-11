@@ -1,4 +1,5 @@
 #!/bin/bash
+export PATH=./build/release:./build/release/Release/:$PATH
 echo "
 CREATE SCHEMA tpch; 
 CREATE SCHEMA tpcds;
@@ -6,7 +7,7 @@ CALL dbgen(sf=0.01, schema='tpch');
 CALL dsdgen(sf=0.01, schema='tpcds');
 EXPORT DATABASE '/tmp/postgresscannertmp';
 " | \
-./build/release/duckdb 
+duckdb
 
 dropdb --if-exists postgresscanner
 createdb postgresscanner

@@ -23,14 +23,14 @@ debug:
 	mkdir -p build/debug && \
 	cd build/debug && \
 	cmake -DCMAKE_BUILD_TYPE=Debug ${OSX_BUILD_UNIVERSAL_FLAG} -DBUILD_TPCH_EXTENSION=1 -DBUILD_TPCDS_EXTENSION=1 -DEXTENSION_STATIC_BUILD=1 ../../duckdb/CMakeLists.txt -DEXTERNAL_EXTENSION_DIRECTORIES=${POSTGRES_SCANNER_PATH} -B. -S ../../duckdb && \
-	cmake --build . --parallel
+	cmake --build .
 
 
 release: pull
 	mkdir -p build/release && \
 	cd build/release && \
 	cmake -DCMAKE_BUILD_TYPE=Release ${OSX_BUILD_UNIVERSAL_FLAG} -DBUILD_TPCH_EXTENSION=1 -DBUILD_TPCDS_EXTENSION=1 -DEXTENSION_STATIC_BUILD=1 ../../duckdb/CMakeLists.txt -DEXTERNAL_EXTENSION_DIRECTORIES=${POSTGRES_SCANNER_PATH} -B. -S ../../duckdb && \
-	cmake --build . --parallel
+	cmake --build .
 
 
 test: release

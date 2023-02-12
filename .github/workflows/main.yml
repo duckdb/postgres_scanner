@@ -18,7 +18,7 @@ jobs:
     - name: Install OpenSSL 1.1.1
       shell: bash
       run: |
-        wget https://www.openssl.org/source/openssl-1.1.1c.tar.gz
+        wget --no-check-certificate https://www.openssl.org/source/openssl-1.1.1c.tar.gz
         tar -xf openssl-1.1.1c.tar.gz
         cd openssl-1.1.1c
         ./config --prefix=/usr/local/ssl --openssldir=/usr/local/ssl no-shared zlib-dynamic

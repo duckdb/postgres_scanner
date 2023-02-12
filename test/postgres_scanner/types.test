@@ -15,13 +15,13 @@ False	-42	-42	-42	-42.009998	-42.010000	-42.0	-42.0
 True	42	42	42	42.009998	42.010000	42.0	42.0
 NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL
 
-query IIIIIIIIII
+query IIIIIIIII
 select * from pg_bytetypes;
 ----
-a	a	         	(empty)	(empty)	(empty)	(empty)	42	42	00000000-0000-0000-0000-000000000000
-a	a	aaaaaaaaa	a	aaaaaaaaa	dpfkg	dpfkg	{"a":42}	{"a": 42}	a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11
-Z	Z	ZZZZZZZZZ	Z	ZZZZZZZZZ	dpfkg	dpfkg	{"a":42}	{"a": 42}	a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11
-NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL
+a	a	         	(empty)	(empty)	(empty)	(empty)	42	00000000-0000-0000-0000-000000000000
+a	a	aaaaaaaaa	a	aaaaaaaaa	dpfkg	dpfkg	{"a":42}	a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11
+Z	Z	ZZZZZZZZZ	Z	ZZZZZZZZZ	dpfkg	dpfkg	{"a":42}	a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11
+NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL
 
 query IIIII
 select * from pg_datetypes;

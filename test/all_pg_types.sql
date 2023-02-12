@@ -17,7 +17,6 @@ CREATE TABLE pg_bytetypes (
 	text_col text,
 	blob_col bytea,
 	json_col json,
-	jsonb_col json,
 	uuid_col uuid);
 
 CREATE TABLE pg_datetypes (
@@ -46,7 +45,6 @@ CREATE TABLE pg_bytearraytypes (
                               text_col _text,
                               blob_col _bytea,
                               json_col _json,
-                              jsonb_col _json,
                               uuid_col _uuid);
 
 CREATE TABLE pg_datearraytypes (
@@ -63,11 +61,11 @@ INSERT INTO pg_numtypes (bool_col, smallint_col, integer_col, bigint_col, float_
 	(NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL);
 
 
-INSERT INTO pg_bytetypes (char_default, char_1_col, char_9_col, varchar_1_col, varchar_9_col, text_col, blob_col, json_col, jsonb_col, uuid_col) VALUES
-	('a', 'a', '', '', '', '', '',  '42', '42', '00000000-0000-0000-0000-000000000000'),
-	('a', 'a', 'aaaaaaaaa', 'a', 'aaaaaaaaa', 'dpfkg', 'dpfkg', '{"a":42}', '{"a":42}', 'a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11'),
-	('Z', 'Z', 'ZZZZZZZZZ', 'Z', 'ZZZZZZZZZ', 'dpfkg', 'dpfkg', '{"a":42}', '{"a":42}', 'A0EEBC99-9C0B-4EF8-BB6D-6BB9BD380A11'),
-	(NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL);
+INSERT INTO pg_bytetypes (char_default, char_1_col, char_9_col, varchar_1_col, varchar_9_col, text_col, blob_col, json_col, uuid_col) VALUES
+	('a', 'a', '', '', '', '', '',  '42', '00000000-0000-0000-0000-000000000000'),
+	('a', 'a', 'aaaaaaaaa', 'a', 'aaaaaaaaa', 'dpfkg', 'dpfkg', '{"a":42}', 'a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11'),
+	('Z', 'Z', 'ZZZZZZZZZ', 'Z', 'ZZZZZZZZZ', 'dpfkg', 'dpfkg', '{"a":42}',  'A0EEBC99-9C0B-4EF8-BB6D-6BB9BD380A11'),
+	(NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL);
 
 
 SET TIMEZONE='Asia/Kathmandu'; -- UTC - 05:45 hell yeah!
@@ -77,8 +75,8 @@ INSERT INTO pg_datetypes (date_col, time_col, timetz_col, timestamp_col, timesta
 insert into pg_numarraytypes (bool_col, smallint_col, integer_col, bigint_col, float_col, double_col, numeric_col, unumeric_col)
 VALUES ('{true, false, NULL}', '{-42, 42, NULL}', '{-4200, 4200, NULL}', '{-420000, 420000, NULL}', '{-4.2, 4.2}', '{-4.2, 4.2}', '{-4.2, 4.2}', '{-4.2, 4.2}'), (NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL);
 
-insert into pg_bytearraytypes (char_col, bpchar_col , varchar_col, uvarchar_col, text_col, blob_col , json_col , jsonb_col, uuid_col)
-VALUES ('{a, Z, NULL}', '{a, Z, NULL}', '{aaaa, ZZZZ, NULL}', '{aaaa, ZZZZ, NULL}', '{aaaa, ZZZZ, NULL}', '{\x00, \xff, NULL}', array['{"a":42}', NULL]::json[], array['{"a":42}', NULL]::json[], '{a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11, NULL}'), (NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL);
+insert into pg_bytearraytypes (char_col, bpchar_col , varchar_col, uvarchar_col, text_col, blob_col , json_col , uuid_col)
+VALUES ('{a, Z, NULL}', '{a, Z, NULL}', '{aaaa, ZZZZ, NULL}', '{aaaa, ZZZZ, NULL}', '{aaaa, ZZZZ, NULL}', '{\x00, \xff, NULL}', array['{"a":42}', NULL]::json[], '{a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11, NULL}'), (NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL);
 
 insert into pg_datearraytypes (date_col, time_col,timetz_col, timestamp_col, timestamptz_col)
 VALUES ('{2019-11-26, 2021-03-01, NULL}','{14:42:43, 12:45:01, NULL}','{14:42:43, 12:45:01, NULL}','{2019-11-26T12:45:01, 2021-03-01T12:45:01, NULL}','{2019-11-26T12:45:01, 2021-03-01T12:45:01, NULL}'), (NULL, NULL, NULL, NULL, NULL);

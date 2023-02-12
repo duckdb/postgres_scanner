@@ -13,7 +13,7 @@ jobs:
     steps:
     - name: Install
       run: |
-        yum install -y gcc gcc-c++ make python3 postgresql-server sudo wget perl
+        yum install -y gcc gcc-c++ make python3 postgresql-server sudo wget perl zlib-devel
 
     - name: Install OpenSSL 1.1.1
       shell: bash

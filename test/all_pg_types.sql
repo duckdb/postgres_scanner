@@ -17,7 +17,7 @@ CREATE TABLE pg_bytetypes (
 	text_col text,
 	blob_col bytea,
 	json_col json,
-	jsonb_col jsonb,
+	jsonb_col json,
 	uuid_col uuid);
 
 CREATE TABLE pg_datetypes (
@@ -46,7 +46,7 @@ CREATE TABLE pg_bytearraytypes (
                               text_col _text,
                               blob_col _bytea,
                               json_col _json,
-                              jsonb_col _jsonb,
+                              jsonb_col _json,
                               uuid_col _uuid);
 
 CREATE TABLE pg_datearraytypes (

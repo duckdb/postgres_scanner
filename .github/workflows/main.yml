@@ -87,7 +87,7 @@ jobs:
       - name: Test
         shell: bash
         run: |
-          ./duckdb/build/release/test/Debug/unittest --test-dir . test/postgres_scanner/aws-rds.test
+          ./build/release/test/Debug/unittest --test-dir . test/postgres_scanner/aws-rds.test
 
       - uses: actions/upload-artifact@v2
         with:

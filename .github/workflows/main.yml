@@ -61,6 +61,7 @@ jobs:
 
     - name: Build
       run: |
+        export OPENSSL_ROOT_DIR=/usr/local/ssl
         export PATH=/github/home/.local/bin:$PATH
         make release
 

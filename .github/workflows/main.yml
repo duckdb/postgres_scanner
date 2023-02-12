@@ -75,7 +75,7 @@ jobs:
       with:
         name: postgres-scanner-linux
         path: |
-          build/release/postgres_scanner.duckdb_extension
+          build/release/extension/postgres_scanner/postgres_scanner.duckdb_extension
 
 
   windows:
@@ -106,4 +106,4 @@ jobs:
         with:
           name: postgres-scanner-windows
           path: |
-            build/release/postgres_scanner.duckdb_extension
+            build/release/extension/postgres_scanner/postgres_scanner.duckdb_extension

@@ -20,6 +20,7 @@ struct PostgresTypeInfo {
 	string typname;
 	int64_t typlen;
 	string typtype;
+	string nspname;
 };
 
 struct PostgresColumnInfo {
@@ -47,6 +48,7 @@ struct PostgresBindData : public FunctionData {
 	vector<PostgresColumnInfo> columns;
 	vector<string> names;
 	vector<LogicalType> types;
+	vector<bool> needs_cast;
 
 	idx_t pages_per_task = 1000;
 	string dsn;
@@ -161,7 +163,8 @@ static LogicalType DuckDBType2(PostgresTypeInfo *type_info, int atttypmod, Postg
 	}
 
 	if (type_info->typtype == "e") { // ENUM
-		auto res = PGQuery(conn, StringUtil::Format("SELECT unnest(enum_range(NULL::%s))", type_info->typname));
+		auto res = PGQuery(
+		    conn, StringUtil::Format("SELECT unnest(enum_range(NULL::%s.%s))", type_info->nspname, type_info->typname));
 		Vector duckdb_levels(LogicalType::VARCHAR, res->Count());
 		for (idx_t row = 0; row < res->Count(); row++) {
 			duckdb_levels.SetValue(row, res->GetString(row, 0));
@@ -177,6 +180,8 @@ static LogicalType DuckDBType2(PostgresTypeInfo *type_info, int atttypmod, Postg
 		return LogicalType::INTEGER;
 	} else if (pgtypename == "int8") {
 		return LogicalType::BIGINT;
+	} else if (pgtypename == "oid") { // "The oid type is currently implemented as an unsigned four-byte integer."
+		return LogicalType::UINTEGER;
 	} else if (pgtypename == "float4") {
 		return LogicalType::FLOAT;
 	} else if (pgtypename == "float8") {
@@ -208,7 +213,7 @@ static LogicalType DuckDBType2(PostgresTypeInfo *type_info, int atttypmod, Postg
 	} else if (pgtypename == "uuid") {
 		return LogicalType::UUID;
 	} else {
-		throw IOException("Unsupported Postgres type %s", pgtypename);
+		return LogicalType::INVALID;
 	}
 }
 
@@ -260,33 +265,48 @@ WHERE nspname='%s' AND relname='%s'
 	res = PGQuery(bind_data->conn, StringUtil::Format(
 	                                   R"(
 SELECT
-    attname, atttypmod,
+    attname, atttypmod, pg_namespace.nspname,
     pg_type.typname, pg_type.typlen, pg_type.typtype, pg_type.typelem,
     pg_type_elem.typname elem_typname, pg_type_elem.typlen elem_typlen, pg_type_elem.typtype elem_typtype
 FROM pg_attribute
     JOIN pg_type ON atttypid=pg_type.oid
     LEFT JOIN pg_type pg_type_elem ON pg_type.typelem=pg_type_elem.oid
+    LEFT JOIN pg_namespace ON pg_type.typnamespace = pg_namespace.oid
 WHERE attrelid=%d AND attnum > 0
 ORDER BY attnum;
 )",
 	                                   oid));
+
+	// can't scan a table without columns (yes those exist)
+	if (res->Count() == 0) {
+		throw InvalidInputException("Table %s does not contain any columns.", bind_data->table_name);
+	}
 
 	for (idx_t row = 0; row < res->Count(); row++) {
 		PostgresColumnInfo info;
 		info.attname = res->GetString(row, 0);
 		info.atttypmod = res->GetInt32(row, 1);
 
-		info.type_info.typname = res->GetString(row, 2);
-		info.type_info.typlen = res->GetInt64(row, 3);
-		info.type_info.typtype = res->GetString(row, 4);
-		info.typelem = res->GetInt64(row, 5);
+		info.type_info.nspname = res->GetString(row, 2);
+		info.type_info.typname = res->GetString(row, 3);
+		info.type_info.typlen = res->GetInt64(row, 4);
+		info.type_info.typtype = res->GetString(row, 5);
+		info.typelem = res->GetInt64(row, 6);
 
-		info.elem_info.typname = res->GetString(row, 6);
-		info.elem_info.typlen = res->GetInt64(row, 7);
-		info.elem_info.typtype = res->GetString(row, 8);
+		info.elem_info.typname = res->GetString(row, 7);
+		info.elem_info.typlen = res->GetInt64(row, 8);
+		info.elem_info.typtype = res->GetString(row, 9);
 
 		bind_data->names.push_back(info.attname);
-		bind_data->types.push_back(DuckDBType(info, bind_data->conn, context));
+		auto duckdb_type = DuckDBType(info, bind_data->conn, context);
+		// we cast unsupported types to varchar on read
+		auto needs_cast = duckdb_type == LogicalType::INVALID;
+		bind_data->needs_cast.push_back(needs_cast);
+		if (!needs_cast) {
+			bind_data->types.push_back(move(duckdb_type));
+		} else {
+			bind_data->types.push_back(LogicalType::VARCHAR);
+		}
 
 		bind_data->columns.push_back(info);
 	}
@@ -382,8 +402,11 @@ static void PostgresInitInternal(ClientContext &context, const PostgresBindData 
 		// We are only counting rows, not interested in the actual values of the columns.
 		col_names = "NULL";
 	} else {
-		col_names = StringUtil::Join(lstate.column_ids.data(), lstate.column_ids.size(), ", ",
-		                             [&](const idx_t column_id) { return '"' + bind_data->names[column_id] + '"'; });
+		col_names =
+		    StringUtil::Join(lstate.column_ids.data(), lstate.column_ids.size(), ", ", [&](const idx_t column_id) {
+			    return StringUtil::Format("\"%s\"%s", bind_data->names[column_id],
+			                              bind_data->needs_cast[column_id] ? "::VARCHAR" : "");
+		    });
 	}
 
 	string filter_string;
@@ -572,11 +595,16 @@ static T ReadDecimal(PostgresDecimalConfig &config, const_data_ptr_t value_ptr) 
 		// of ten this depends on how many times we multiplied with NBASE
 		// if that is different from scale, we need to divide the extra part away
 		// again
-		auto fractional_power = ((config.ndigits - config.weight - 1) * DEC_DIGITS);
-		D_ASSERT(fractional_power >= config.scale);
+		// similarly, if trailing zeroes have been suppressed, we have not been multiplying t
+		// the fractional part with NBASE often enough. If so, add additional powers
+		auto fractional_power = (config.ndigits - config.weight - 1) * DEC_DIGITS;
 		auto fractional_power_correction = fractional_power - config.scale;
 		D_ASSERT(fractional_power_correction < 20);
-		fractional_part /= POWERS_OF_TEN[fractional_power_correction];
+		if (fractional_power_correction >= 0) {
+			fractional_part /= POWERS_OF_TEN[fractional_power_correction];
+		} else {
+			fractional_part *= POWERS_OF_TEN[-fractional_power_correction];
+		}
 	}
 
 	// finally
@@ -598,6 +626,11 @@ static void ProcessValue(const LogicalType &type, const PostgresTypeInfo *type_i
 	case LogicalTypeId::INTEGER:
 		D_ASSERT(value_len == sizeof(int32_t));
 		FlatVector::GetData<int32_t>(out_vec)[output_offset] = LoadEndIncrement<int32_t>(value_ptr);
+		break;
+
+	case LogicalTypeId::UINTEGER:
+		D_ASSERT(value_len == sizeof(uint32_t));
+		FlatVector::GetData<uint32_t>(out_vec)[output_offset] = LoadEndIncrement<uint32_t>(value_ptr);
 		break;
 
 	case LogicalTypeId::BIGINT:
@@ -661,9 +694,11 @@ static void ProcessValue(const LogicalType &type, const PostgresTypeInfo *type_i
 		case PhysicalType::INT64:
 			FlatVector::GetData<int64_t>(out_vec)[output_offset] = ReadDecimal<int64_t>(decimal_config, value_ptr);
 			break;
-
+		case PhysicalType::INT128:
+			FlatVector::GetData<hugeint_t>(out_vec)[output_offset] = ReadDecimal<hugeint_t>(decimal_config, value_ptr);
+			break;
 		default:
-			throw InternalException("Unsupported decimal storage type");
+			throw InvalidInputException("Unsupported decimal storage type");
 		}
 		break;
 	}
@@ -765,25 +800,31 @@ static void ProcessValue(const LogicalType &type, const PostgresTypeInfo *type_i
 	case LogicalTypeId::LIST: {
 		D_ASSERT(elem_info);
 		auto &list_entry = FlatVector::GetData<list_entry_t>(out_vec)[output_offset];
+		auto child_offset = ListVector::GetListSize(out_vec);
+
 		if (value_len < 1) {
 			list_entry.offset = ListVector::GetListSize(out_vec);
 			list_entry.length = 0;
 			break;
 		}
-		D_ASSERT(value_len >= 5 * sizeof(uint32_t));
+		D_ASSERT(value_len >= 3 * sizeof(uint32_t));
 		auto flag_one = LoadEndIncrement<uint32_t>(value_ptr);
-		D_ASSERT(flag_one == 1);
 		auto flag_two = LoadEndIncrement<uint32_t>(value_ptr);
+		if (flag_one == 0) {
+			list_entry.offset = child_offset;
+			list_entry.length = 0;
+			return;
+		}
 		// D_ASSERT(flag_two == 1); // TODO what is this?!
 		auto value_oid = LoadEndIncrement<uint32_t>(value_ptr);
 		D_ASSERT(value_oid == typelem);
 		auto array_length = LoadEndIncrement<uint32_t>(value_ptr);
 		auto array_dim = LoadEndIncrement<uint32_t>(value_ptr);
 		if (array_dim != 1) {
-			throw NotImplementedException("Only one-dimensional Postgres arrays are supported");
+			throw NotImplementedException("Only one-dimensional Postgres arrays are supported %u %u ", array_length,
+			                              array_dim);
 		}
 
-		auto child_offset = ListVector::GetListSize(out_vec);
 		auto &child_vec = ListVector::GetEntry(out_vec);
 		ListVector::Reserve(out_vec, child_offset + array_length);
 		for (idx_t child_idx = 0; child_idx < array_length; child_idx++) {
@@ -976,12 +1017,6 @@ static void PostgresScan(ClientContext &context, TableFunctionInput &data, DataC
 				FlatVector::Validity(out_vec).Set(output_offset, false);
 				continue;
 			}
-			auto typlen = bind_data->columns[col_idx].type_info.typlen;
-			if (typlen > 0 && typlen != raw_len && bind_data->columns[col_idx].type_info.typtype != "e") {
-				throw InvalidInputException("Type for column %s should have length %llu, but %llu bytes in value",
-				                            bind_data->columns[col_idx].attname, typlen, raw_len);
-			}
-
 			ProcessValue(bind_data->types[col_idx], &bind_data->columns[col_idx].type_info,
 			             bind_data->columns[col_idx].atttypmod, bind_data->columns[col_idx].typelem,
 			             &bind_data->columns[col_idx].elem_info, (data_ptr_t)buf.buffer_ptr, raw_len, out_vec,
@@ -1048,10 +1083,12 @@ static void AttachFunction(ClientContext &context, TableFunctionInput &data_p, D
 	auto dconn = Connection(context.db->GetDatabase(context));
 	auto res = PGQuery(conn, StringUtil::Format(
 	                             R"(
-SELECT table_name
-FROM information_schema.tables
-WHERE table_schema='%s'
-AND table_type='BASE TABLE'
+SELECT relname
+FROM pg_class JOIN pg_namespace ON pg_class.relnamespace = pg_namespace.oid
+JOIN pg_attribute ON pg_class.oid = pg_attribute.attrelid
+WHERE relkind = 'r' AND attnum > 0 AND nspname = '%s'
+GROUP BY relname
+ORDER BY relname;
 )",
 	                             data.source_schema)
 	                             .c_str());

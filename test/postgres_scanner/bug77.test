@@ -1,0 +1,12 @@
+statement ok
+LOAD 'build/release/extension/postgres_scanner/postgres_scanner.duckdb_extension';
+
+statement ok
+CALL postgres_attach('dbname=postgresscanner');
+
+query III
+SELECT id, my_ints,e FROM duckdb_arr_test;
+----
+123	[11, 22, 33]	42
+234	[]	42
+456	[44, 55, 66]	42

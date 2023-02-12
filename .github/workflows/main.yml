@@ -5,7 +5,7 @@ defaults:
     shell: bash
 
 jobs:
-  build:
+  linux:
     name: CentOS 7
     runs-on: ubuntu-latest
     container: centos:7
@@ -13,14 +13,26 @@ jobs:
     steps:
     - name: Install
       run: |
-        yum install -y gcc gcc-c++ make python3 postgresql-server sudo
+        yum install -y gcc gcc-c++ make python3 postgresql-server sudo wget perl zlib-devel
+
+    - name: Install OpenSSL 1.1.1
+      shell: bash
+      run: |
+        wget --no-check-certificate https://www.openssl.org/source/openssl-1.1.1t.tar.gz
+        tar -xf openssl-1.1.1t.tar.gz
+        cd openssl-1.1.1t
+        ./config --prefix=/usr/local/ssl --openssldir=/usr/local/ssl no-shared zlib-dynamic
+        make
+        make install
+        echo "/usr/local/ssl/lib" > /etc/ld.so.conf.d/openssl-1.1.1t.conf
+        ldconfig -v
 
     - name: Install recent git yay
       run: |
         yum -y install https://packages.endpointdev.com/rhel/7/os/x86_64/endpoint-repo.x86_64.rpm
         yum install -y git
 
-    - uses: actions/checkout@v2
+    - uses: actions/checkout@v3
       with:
         fetch-depth: 0
 
@@ -49,17 +61,49 @@ jobs:
 
     - name: Build
       run: |
+        export OPENSSL_ROOT_DIR=/usr/local/ssl
         export PATH=/github/home/.local/bin:$PATH
         make release
 
-    - name: Make test databases
+    - name: Test
       run: |
         psql -c "SELECT 43"
         source ./create-postgres-tables.sh
-        ./duckdb/build/release/test/unittest --test-dir . "[postgres_scanner]"
+        ./build/release/test/unittest --test-dir . "[postgres_scanner]"
 
-    - uses: actions/upload-artifact@v2
+    - uses: actions/upload-artifact@v3
       with:
-        name: postgres-scanner
+        name: postgres-scanner-linux
         path: |
-          build/release/postgres_scanner.duckdb_extension
+          build/release/extension/postgres_scanner/postgres_scanner.duckdb_extension
+
+
+  windows:
+    name: Windows (64-bit)
+    runs-on: windows-latest
+
+    steps:
+      - uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
+
+      - name: Install
+        shell: bash
+        run: |
+          choco install openssl -y --force
+
+      - name: Build
+        shell: bash
+        run: |
+          make release
+
+      - name: Test
+        shell: bash
+        run: |
+          ./build/release/test/Debug/unittest --test-dir . test/postgres_scanner/aws-rds.test
+
+      - uses: actions/upload-artifact@v3
+        with:
+          name: postgres-scanner-windows
+          path: |
+            build/release/extension/postgres_scanner/postgres_scanner.duckdb_extension

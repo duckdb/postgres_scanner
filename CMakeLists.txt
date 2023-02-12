@@ -3,6 +3,10 @@ set(TARGET_NAME postgres_scanner)
 project(${TARGET_NAME})
 
 add_definitions(-DFRONTEND=1 -D_GNU_SOURCE=1)
+add_definitions(-DUSE_OPENSSL=1 -DHAVE_BIO_GET_DATA=1 -DHAVE_BIO_METH_NEW=1)
+set(OPENSSL_USE_STATIC_LIBS TRUE)
+
+find_package(OpenSSL REQUIRED)
 
 if(NOT MSVC)
   set(POSTGRES_SCANNER_EXTRA_CFLAGS
@@ -25,7 +29,7 @@ set(CMAKE_C_FLAGS_RELWITHDEBINFO
     "${CMAKE_C_FLAGS_RELWITHDEBINFO} ${POSTGRES_SCANNER_EXTRA_CFLAGS}")
 
 include_directories(include postgres/src/include postgres/src/backend
-                    postgres/src/interfaces/libpq)
+                    postgres/src/interfaces/libpq ${OPENSSL_INCLUDE_DIR})
 
 if(WIN32)
   include_directories(postgres/src/include/port/win32 postgres/src/port
@@ -61,6 +65,8 @@ set(LIBPG_SOURCES
     postgres/src/interfaces/libpq/legacy-pqsignal.c
     postgres/src/interfaces/libpq/libpq-events.c
     postgres/src/interfaces/libpq/pqexpbuffer.c
+    postgres/src/interfaces/libpq/fe-secure-openssl.c
+    postgres/src/interfaces/libpq/fe-secure-common.c
     postgres/src/port/chklocale.c
     postgres/src/port/explicit_bzero.c
     postgres/src/port/inet_net_ntop.c
@@ -88,6 +94,7 @@ if(WIN32)
       postgres/src/port/pgsleep.c
       postgres/src/port/system.c
       postgres/src/port/win32error.c
+      postgres/src/port/win32ntdll.c
       postgres/src/port/win32setlocale.c
       postgres/src/port/win32stat.c)
 
@@ -115,7 +122,10 @@ set(PARAMETERS "-no-warnings")
 build_loadable_extension(${TARGET_NAME} ${PARAMETERS} postgres_scanner.cpp
                          ${LIBPG_SOURCES_FULLPATH})
 
+target_link_libraries(${TARGET_NAME}_loadable_extension ${OPENSSL_LIBRARIES})
+set_property(TARGET ${TARGET_NAME}_loadable_extension PROPERTY C_STANDARD 99)
+
 if(WIN32)
   target_link_libraries(${TARGET_NAME}_loadable_extension wsock32 ws2_32
-                        wldap32 secur32)
+                        wldap32 secur32 crypt32)
 endif()

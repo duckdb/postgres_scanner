@@ -1,7 +1,7 @@
 #!/bin/sh
 rm -rf postgres
 mkdir postgres
-curl -s -L https://github.com/postgres/postgres/archive/refs/tags/REL_14_2.tar.gz | tar xz --strip-components 1 -C postgres
+curl -s -L https://github.com/postgres/postgres/archive/refs/tags/REL_15_2.tar.gz | tar xz --strip-components 1 -C postgres
 
 if [ "$OS" = "Windows_NT" ]; then
   (cd postgres/src/tools/msvc/ && perl mkvcbuild.pl)

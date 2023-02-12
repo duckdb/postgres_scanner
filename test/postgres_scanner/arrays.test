@@ -14,11 +14,11 @@ select * from pg_numarraytypes;
 [true, false, NULL]	[-42, 42, NULL]	[-4200, 4200, NULL]	[-420000, 420000, NULL]	[-4.2, 4.2]	[-4.2, 4.2]	[-4.2, 4.2]	[-4.2, 4.2]
 NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL
 
-query IIIIIIIII
+query IIIIIIII
 select * from pg_bytearraytypes;
 ----
-[a, Z, NULL]	[a, Z, NULL]	[aaaa, ZZZZ, NULL]	[aaaa, ZZZZ, NULL]	[aaaa, ZZZZ, NULL]	[x00, xff, NULL]	[{"a":42}, NULL]	[{"a": 42}, NULL]	[a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11, NULL]
-NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL
+[a, Z, NULL]	[a, Z, NULL]	[aaaa, ZZZZ, NULL]	[aaaa, ZZZZ, NULL]	[aaaa, ZZZZ, NULL]	[x00, xff, NULL]	[{"a":42}, NULL]	[a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11, NULL]
+NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL
 
 query IIIII
 select * from pg_datearraytypes;

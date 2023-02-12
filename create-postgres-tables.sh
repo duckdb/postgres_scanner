@@ -1,23 +1,22 @@
 #!/bin/bash
-export PATH=./build/release:./build/release/Debug/:$PATH
 echo "
 CREATE SCHEMA tpch; 
 CREATE SCHEMA tpcds;
 CALL dbgen(sf=0.01, schema='tpch');
 CALL dsdgen(sf=0.01, schema='tpcds');
-EXPORT DATABASE 'postgresscannertmp';
+EXPORT DATABASE '/tmp/postgresscannertmp';
 " | \
-duckdb
+./build/release/duckdb
 
 dropdb --if-exists postgresscanner
 createdb postgresscanner
 
-psql -d postgresscanner < postgresscannertmp/schema.sql
-psql -d postgresscanner < postgresscannertmp/load.sql
+psql -d postgresscanner < /tmp/postgresscannertmp/schema.sql
+psql -d postgresscanner < /tmp/postgresscannertmp/load.sql
 psql -d postgresscanner < all_pg_types.sql
 psql -d postgresscanner < decimals.sql
 
-rm -rf postgresscannertmp
+rm -rf /tmp/postgresscannertmp
 
 echo "
 create table nulltest (c1 integer, c2 integer, c3 integer, c4 integer, c5 integer, c6 integer, c7 integer, c8 integer, c9 integer, c10 integer);

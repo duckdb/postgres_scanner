@@ -20,7 +20,7 @@ jobs:
         yum -y install https://packages.endpointdev.com/rhel/7/os/x86_64/endpoint-repo.x86_64.rpm
         yum install -y git
 
-    - uses: actions/checkout@v2
+    - uses: actions/checkout@v3
       with:
         fetch-depth: 0
 
@@ -58,7 +58,7 @@ jobs:
         source ./create-postgres-tables.sh
         ./duckdb/build/release/test/unittest --test-dir . "[postgres_scanner]"
 
-    - uses: actions/upload-artifact@v2
+    - uses: actions/upload-artifact@v3
       with:
         name: postgres-scanner-linux
         path: |
@@ -70,7 +70,7 @@ jobs:
     runs-on: windows-latest
 
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v3
         with:
           fetch-depth: 0
 
@@ -87,9 +87,9 @@ jobs:
       - name: Test
         shell: bash
         run: |
-          ./build/release/test/Debug/unittest --test-dir . test/postgres_scanner/aws-rds.test
+          ./build/release/test/Release/unittest --test-dir . test/postgres_scanner/aws-rds.test
 
-      - uses: actions/upload-artifact@v2
+      - uses: actions/upload-artifact@v3
         with:
           name: postgres-scanner-windows
           path: |

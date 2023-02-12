@@ -69,23 +69,15 @@ jobs:
     name: Windows (64-bit)
     runs-on: windows-latest
 
-    env:
-      PGUSER: postgres
-      PGPASSWORD: postgres
-      PGDATABASE: postgres
-
     steps:
       - uses: actions/checkout@v2
         with:
           fetch-depth: 0
 
-      - uses: ikalnytskyi/action-setup-postgres@v4
-
       - name: Install
         shell: bash
         run: |
           choco install openssl -y --force
-          psql -c "SELECT 42" postgres
 
       - name: Build
         shell: bash
@@ -95,8 +87,7 @@ jobs:
       - name: Test
         shell: bash
         run: |
-          source ./create-postgres-tables.sh
-          ./duckdb/build/release/test/Release/unittest --test-dir . "[postgres_scanner]"
+          ./duckdb/build/release/test/Debug/unittest --test-dir . test/postgres_scanner/aws-rds.test
 
       - uses: actions/upload-artifact@v2
         with:

@@ -303,7 +303,7 @@ ORDER BY attnum;
 		auto needs_cast = duckdb_type == LogicalType::INVALID;
 		bind_data->needs_cast.push_back(needs_cast);
 		if (!needs_cast) {
-			bind_data->types.push_back(move(duckdb_type));
+			bind_data->types.push_back(std::move(duckdb_type));
 		} else {
 			bind_data->types.push_back(LogicalType::VARCHAR);
 		}
@@ -315,7 +315,7 @@ ORDER BY attnum;
 	return_types = bind_data->types;
 	names = bind_data->names;
 
-	return move(bind_data);
+	return std::move(bind_data);
 }
 
 static string TransformFilter(string &column_name, TableFilter &filter);
@@ -967,7 +967,7 @@ static unique_ptr<LocalTableFunctionState> PostgresInitLocalState(ExecutionConte
 	if (!PostgresParallelStateNext(context.client, input.bind_data, *local_state, gstate)) {
 		local_state->done = true;
 	}
-	return move(local_state);
+	return std::move(local_state);
 }
 
 static void PostgresScan(ClientContext &context, TableFunctionInput &data, DataChunk &output) {
@@ -1070,7 +1070,7 @@ static unique_ptr<FunctionData> AttachBind(ClientContext &context, TableFunction
 
 	return_types.push_back(LogicalType::BOOLEAN);
 	names.emplace_back("Success");
-	return move(result);
+	return std::move(result);
 }
 
 static void AttachFunction(ClientContext &context, TableFunctionInput &data_p, DataChunk &output) {

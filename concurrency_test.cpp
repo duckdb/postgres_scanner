@@ -31,7 +31,7 @@ struct PGQueryResult {
 };
 
 static void PGExec(PGconn *conn, string q) {
-	auto res = make_unique<PGQueryResult>();
+	auto res = make_uniq<PGQueryResult>();
 	res->res = PQexec(conn, q.c_str());
 
 	if (!res->res) {
@@ -43,7 +43,7 @@ static void PGExec(PGconn *conn, string q) {
 }
 
 static unique_ptr<PGQueryResult> PGQuery(PGconn *conn, string q) {
-	auto res = make_unique<PGQueryResult>();
+	auto res = make_uniq<PGQueryResult>();
 	res->res = PQexec(conn, q.c_str());
 
 	if (!res->res) {

@@ -56,7 +56,7 @@ CREATE TABLE pg_datearraytypes (
                               timestamp_col _timestamp,
                               timestamptz_col _timestamptz);
 
-CREATE TABLE pg_enumarraypgtypes (
+CREATE TABLE pg_enumarraytypes (
 							  enum_col _enum_type);
 
 INSERT INTO pg_numtypes (bool_col, smallint_col, integer_col, bigint_col, float_col, double_col, decimal_col, udecimal_col) VALUES
@@ -86,5 +86,5 @@ VALUES ('{a, Z, NULL}', '{a, Z, NULL}', '{aaaa, ZZZZ, NULL}', '{aaaa, ZZZZ, NULL
 insert into pg_datearraytypes (date_col, time_col,timetz_col, timestamp_col, timestamptz_col)
 VALUES ('{2019-11-26, 2021-03-01, NULL}','{14:42:43, 12:45:01, NULL}','{14:42:43, 12:45:01, NULL}','{2019-11-26T12:45:01, 2021-03-01T12:45:01, NULL}','{2019-11-26T12:45:01, 2021-03-01T12:45:01, NULL}'), (NULL, NULL, NULL, NULL, NULL);
 
-insert into pg_enumarraypgtypes (enum_col)
+insert into pg_enumarraytypes (enum_col)
 VALUES ('{}'), ('{foo}'), ('{foo, bar}'), ('{foo, bar, baz}'), ('{foo, bar, baz, NULL}'), (NULL); 

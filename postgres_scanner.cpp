@@ -293,6 +293,7 @@ ORDER BY attnum;
 		info.type_info.typtype = res->GetString(row, 5);
 		info.typelem = res->GetInt64(row, 6);
 
+		info.elem_info.nspname = res->GetString(row, 2);
 		info.elem_info.typname = res->GetString(row, 7);
 		info.elem_info.typlen = res->GetInt64(row, 8);
 		info.elem_info.typtype = res->GetString(row, 9);
@@ -835,11 +836,11 @@ static void ProcessValue(const LogicalType &type, const PostgresTypeInfo *type_i
 				continue;
 			}
 
-			if (elem_info->typlen > 0 && ele_len != elem_info->typlen) {
-				throw InvalidInputException(
-				    "Expected to read a Postgres list value of length %d, but only have size %d", elem_info->typlen,
-				    ele_len);
-			}
+			// if (elem_info->typlen > 0 && ele_len != elem_info->typlen) {
+			// 	throw InvalidInputException(
+			// 	    "Expected to read a Postgres list value of length %d, but only have size %d", elem_info->typlen,
+			// 	    ele_len);
+			// }
 			ProcessValue(ListType::GetChildType(type), elem_info, atttypmod, 0, nullptr, value_ptr, ele_len, child_vec,
 			             child_offset + child_idx);
 			value_ptr += ele_len;

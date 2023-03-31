@@ -140,7 +140,7 @@ static PGconn *PGConnect(string &dsn) {
 }
 
 static unique_ptr<PGQueryResult> PGQuery(PGconn *conn, string q, ExecStatusType response_code = PGRES_TUPLES_OK) {
-	auto res = make_unique<PGQueryResult>(PQexec(conn, q.c_str()));
+	auto res = make_uniq<PGQueryResult>(PQexec(conn, q.c_str()));
 	if (!res->res || PQresultStatus(res->res) != response_code) {
 		throw IOException("Unable to query Postgres: %s %s", string(PQerrorMessage(conn)),
 		                  string(PQresultErrorMessage(res->res)));
@@ -224,7 +224,7 @@ static LogicalType DuckDBType(PostgresColumnInfo &info, PGconn *conn, ClientCont
 static unique_ptr<FunctionData> PostgresBind(ClientContext &context, TableFunctionBindInput &input,
                                              vector<LogicalType> &return_types, vector<string> &names) {
 
-	auto bind_data = make_unique<PostgresBindData>();
+	auto bind_data = make_uniq<PostgresBindData>();
 
 	bind_data->dsn = input.inputs[0].GetValue<string>();
 	bind_data->schema_name = input.inputs[1].GetValue<string>();
@@ -304,7 +304,7 @@ ORDER BY attnum;
 		auto needs_cast = duckdb_type == LogicalType::INVALID;
 		bind_data->needs_cast.push_back(needs_cast);
 		if (!needs_cast) {
-			bind_data->types.push_back(move(duckdb_type));
+			bind_data->types.push_back(std::move(duckdb_type));
 		} else {
 			bind_data->types.push_back(LogicalType::VARCHAR);
 		}
@@ -316,7 +316,7 @@ ORDER BY attnum;
 	return_types = bind_data->types;
 	names = bind_data->names;
 
-	return move(bind_data);
+	return std::move(bind_data);
 }
 
 static string TransformFilter(string &column_name, TableFilter &filter);
@@ -925,7 +925,7 @@ static idx_t PostgresMaxThreads(ClientContext &context, const FunctionData *bind
 
 static unique_ptr<GlobalTableFunctionState> PostgresInitGlobalState(ClientContext &context,
                                                                     TableFunctionInitInput &input) {
-	return make_unique<PostgresGlobalState>(PostgresMaxThreads(context, input.bind_data));
+	return make_uniq<PostgresGlobalState>(PostgresMaxThreads(context, input.bind_data));
 }
 
 static bool PostgresParallelStateNext(ClientContext &context, const FunctionData *bind_data_p,
@@ -956,14 +956,14 @@ static unique_ptr<LocalTableFunctionState> PostgresInitLocalState(ExecutionConte
 	auto bind_data = (const PostgresBindData *)input.bind_data;
 	auto &gstate = (PostgresGlobalState &)*global_state;
 
-	auto local_state = make_unique<PostgresLocalState>();
+	auto local_state = make_uniq<PostgresLocalState>();
 	local_state->column_ids = input.column_ids;
 	local_state->conn = PostgresScanConnect(bind_data->dsn, bind_data->in_recovery, bind_data->snapshot);
 	local_state->filters = input.filters;
 	if (!PostgresParallelStateNext(context.client, input.bind_data, *local_state, gstate)) {
 		local_state->done = true;
 	}
-	return move(local_state);
+	return std::move(local_state);
 }
 
 static void PostgresScan(ClientContext &context, TableFunctionInput &data, DataChunk &output) {
@@ -1049,7 +1049,7 @@ struct AttachFunctionData : public TableFunctionData {
 static unique_ptr<FunctionData> AttachBind(ClientContext &context, TableFunctionBindInput &input,
                                            vector<LogicalType> &return_types, vector<string> &names) {
 
-	auto result = make_unique<AttachFunctionData>();
+	auto result = make_uniq<AttachFunctionData>();
 	result->dsn = input.inputs[0].GetValue<string>();
 
 	for (auto &kv : input.named_parameters) {
@@ -1066,7 +1066,7 @@ static unique_ptr<FunctionData> AttachBind(ClientContext &context, TableFunction
 
 	return_types.push_back(LogicalType::BOOLEAN);
 	names.emplace_back("Success");
-	return move(result);
+	return std::move(result);
 }
 
 static void AttachFunction(ClientContext &context, TableFunctionInput &data_p, DataChunk &output) {

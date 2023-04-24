@@ -1133,11 +1133,11 @@ DUCKDB_EXTENSION_API void postgres_scanner_init(duckdb::DatabaseInstance &db) {
 
 	PostgresScanFunction postgres_fun;
 	CreateTableFunctionInfo postgres_info(postgres_fun);
-	catalog.CreateTableFunction(context, &postgres_info);
+	catalog.CreateTableFunction(context, postgres_info);
 
 	PostgresScanFunctionFilterPushdown postgres_fun_filter_pushdown;
 	CreateTableFunctionInfo postgres_filter_pushdown_info(postgres_fun_filter_pushdown);
-	catalog.CreateTableFunction(context, &postgres_filter_pushdown_info);
+	catalog.CreateTableFunction(context, postgres_filter_pushdown_info);
 
 	TableFunction attach_func("postgres_attach", {LogicalType::VARCHAR}, AttachFunction, AttachBind);
 	attach_func.named_parameters["overwrite"] = LogicalType::BOOLEAN;
@@ -1148,7 +1148,7 @@ DUCKDB_EXTENSION_API void postgres_scanner_init(duckdb::DatabaseInstance &db) {
 	attach_func.named_parameters["suffix"] = LogicalType::VARCHAR;
 
 	CreateTableFunctionInfo attach_info(attach_func);
-	catalog.CreateTableFunction(context, &attach_info);
+	catalog.CreateTableFunction(context, attach_info);
 
 	con.Commit();
 }

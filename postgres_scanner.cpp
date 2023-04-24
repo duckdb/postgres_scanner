@@ -925,7 +925,7 @@ static idx_t PostgresMaxThreads(ClientContext &context, const FunctionData *bind
 
 static unique_ptr<GlobalTableFunctionState> PostgresInitGlobalState(ClientContext &context,
                                                                     TableFunctionInitInput &input) {
-	return make_uniq<PostgresGlobalState>(PostgresMaxThreads(context, input.bind_data));
+	return make_uniq<PostgresGlobalState>(PostgresMaxThreads(context, input.bind_data.get()));
 }
 
 static bool PostgresParallelStateNext(ClientContext &context, const FunctionData *bind_data_p,
@@ -953,35 +953,35 @@ static bool PostgresParallelStateNext(ClientContext &context, const FunctionData
 static unique_ptr<LocalTableFunctionState> PostgresInitLocalState(ExecutionContext &context,
                                                                   TableFunctionInitInput &input,
                                                                   GlobalTableFunctionState *global_state) {
-	auto bind_data = (const PostgresBindData *)input.bind_data;
-	auto &gstate = (PostgresGlobalState &)*global_state;
+	auto &bind_data = input.bind_data->Cast<PostgresBindData>();
+	auto &gstate = global_state->Cast<PostgresGlobalState>();
 
 	auto local_state = make_uniq<PostgresLocalState>();
 	local_state->column_ids = input.column_ids;
-	local_state->conn = PostgresScanConnect(bind_data->dsn, bind_data->in_recovery, bind_data->snapshot);
-	local_state->filters = input.filters;
-	if (!PostgresParallelStateNext(context.client, input.bind_data, *local_state, gstate)) {
+	local_state->conn = PostgresScanConnect(bind_data.dsn, bind_data.in_recovery, bind_data.snapshot);
+	local_state->filters = input.filters.get();
+	if (!PostgresParallelStateNext(context.client, input.bind_data.get(), *local_state, gstate)) {
 		local_state->done = true;
 	}
 	return std::move(local_state);
 }
 
 static void PostgresScan(ClientContext &context, TableFunctionInput &data, DataChunk &output) {
-	auto bind_data = (const PostgresBindData *)data.bind_data;
-	auto local_state = (PostgresLocalState *)data.local_state;
-	auto gstate = (PostgresGlobalState *)data.global_state;
+	auto &bind_data = data.bind_data->Cast<PostgresBindData>();
+	auto &local_state = data.local_state->Cast<PostgresLocalState>();
+	auto &gstate = data.global_state->Cast<PostgresGlobalState>();
 
 	idx_t output_offset = 0;
-	PostgresBinaryBuffer buf(local_state->conn);
+	PostgresBinaryBuffer buf(local_state.conn);
 
 	while (true) {
-		if (local_state->done && !PostgresParallelStateNext(context, data.bind_data, *local_state, *gstate)) {
+		if (local_state.done && !PostgresParallelStateNext(context, data.bind_data.get(), local_state, gstate)) {
 			return;
 		}
 
-		if (!local_state->exec) {
-			PGQuery(local_state->conn, local_state->sql, PGRES_COPY_OUT);
-			local_state->exec = true;
+		if (!local_state.exec) {
+			PGQuery(local_state.conn, local_state.sql, PGRES_COPY_OUT);
+			local_state.exec = true;
 			buf.Next();
 			buf.CheckHeader();
 			// the first tuple immediately follows the header in the first message, so
@@ -999,23 +999,23 @@ static void PostgresScan(ClientContext &context, TableFunctionInput &data, DataC
 
 		auto tuple_count = (int16_t)ntohs(buf.Read<uint16_t>());
 		if (tuple_count == -1) { // done here, lets try to get more
-			local_state->done = true;
+			local_state.done = true;
 			continue;
 		}
 
-		D_ASSERT(tuple_count == local_state->column_ids.size());
+		D_ASSERT(tuple_count == local_state.column_ids.size());
 
 		for (idx_t output_idx = 0; output_idx < output.ColumnCount(); output_idx++) {
-			auto col_idx = local_state->column_ids[output_idx];
+			auto col_idx = local_state.column_ids[output_idx];
 			auto &out_vec = output.data[output_idx];
 			auto raw_len = (int32_t)ntohl(buf.Read<uint32_t>());
 			if (raw_len == -1) { // NULL
 				FlatVector::Validity(out_vec).Set(output_offset, false);
 				continue;
 			}
-			ProcessValue(bind_data->types[col_idx], &bind_data->columns[col_idx].type_info,
-			             bind_data->columns[col_idx].atttypmod, bind_data->columns[col_idx].typelem,
-			             &bind_data->columns[col_idx].elem_info, (data_ptr_t)buf.buffer_ptr, raw_len, out_vec,
+			ProcessValue(bind_data.types[col_idx], &bind_data.columns[col_idx].type_info,
+			             bind_data.columns[col_idx].atttypmod, bind_data.columns[col_idx].typelem,
+			             &bind_data.columns[col_idx].elem_info, (data_ptr_t)buf.buffer_ptr, raw_len, out_vec,
 			             output_offset);
 			buf.buffer_ptr += raw_len;
 		}
@@ -1133,11 +1133,11 @@ DUCKDB_EXTENSION_API void postgres_scanner_init(duckdb::DatabaseInstance &db) {
 
 	PostgresScanFunction postgres_fun;
 	CreateTableFunctionInfo postgres_info(postgres_fun);
-	catalog.CreateTableFunction(context, &postgres_info);
+	catalog.CreateTableFunction(context, postgres_info);
 
 	PostgresScanFunctionFilterPushdown postgres_fun_filter_pushdown;
 	CreateTableFunctionInfo postgres_filter_pushdown_info(postgres_fun_filter_pushdown);
-	catalog.CreateTableFunction(context, &postgres_filter_pushdown_info);
+	catalog.CreateTableFunction(context, postgres_filter_pushdown_info);
 
 	TableFunction attach_func("postgres_attach", {LogicalType::VARCHAR}, AttachFunction, AttachBind);
 	attach_func.named_parameters["overwrite"] = LogicalType::BOOLEAN;
@@ -1148,7 +1148,7 @@ DUCKDB_EXTENSION_API void postgres_scanner_init(duckdb::DatabaseInstance &db) {
 	attach_func.named_parameters["suffix"] = LogicalType::VARCHAR;
 
 	CreateTableFunctionInfo attach_info(attach_func);
-	catalog.CreateTableFunction(context, &attach_info);
+	catalog.CreateTableFunction(context, attach_info);
 
 	con.Commit();
 }

@@ -925,7 +925,7 @@ static idx_t PostgresMaxThreads(ClientContext &context, const FunctionData *bind
 
 static unique_ptr<GlobalTableFunctionState> PostgresInitGlobalState(ClientContext &context,
                                                                     TableFunctionInitInput &input) {
-	return make_uniq<PostgresGlobalState>(PostgresMaxThreads(context, input.bind_data));
+	return make_uniq<PostgresGlobalState>(PostgresMaxThreads(context, input.bind_data.get()));
 }
 
 static bool PostgresParallelStateNext(ClientContext &context, const FunctionData *bind_data_p,
@@ -959,8 +959,8 @@ static unique_ptr<LocalTableFunctionState> PostgresInitLocalState(ExecutionConte
 	auto local_state = make_uniq<PostgresLocalState>();
 	local_state->column_ids = input.column_ids;
 	local_state->conn = PostgresScanConnect(bind_data.dsn, bind_data.in_recovery, bind_data.snapshot);
-	local_state->filters = input.filters;
-	if (!PostgresParallelStateNext(context.client, input.bind_data, *local_state, gstate)) {
+	local_state->filters = input.filters.get();
+	if (!PostgresParallelStateNext(context.client, input.bind_data.get(), *local_state, gstate)) {
 		local_state->done = true;
 	}
 	return std::move(local_state);

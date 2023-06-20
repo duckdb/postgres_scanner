@@ -229,6 +229,7 @@ static unique_ptr<FunctionData> PostgresBind(ClientContext &context, TableFuncti
 	bind_data->dsn = input.inputs[0].GetValue<string>();
 	bind_data->schema_name = input.inputs[1].GetValue<string>();
 	bind_data->table_name = input.inputs[2].GetValue<string>();
+	bind_data->pages_per_task = input.inputs[3].GetValue<int>();
 
 	bind_data->conn = PGConnect(bind_data->dsn);
 
@@ -1106,7 +1107,7 @@ ORDER BY relname;
 class PostgresScanFunction : public TableFunction {
 public:
 	PostgresScanFunction()
-	    : TableFunction("postgres_scan", {LogicalType::VARCHAR, LogicalType::VARCHAR, LogicalType::VARCHAR},
+	    : TableFunction("postgres_scan", {LogicalType::VARCHAR, LogicalType::VARCHAR, LogicalType::VARCHAR, LogicalType::UBIGINT},
 	                    PostgresScan, PostgresBind, PostgresInitGlobalState, PostgresInitLocalState) {
 		to_string = PostgresScanToString;
 		projection_pushdown = true;
@@ -1116,7 +1117,7 @@ public:
 class PostgresScanFunctionFilterPushdown : public TableFunction {
 public:
 	PostgresScanFunctionFilterPushdown()
-	    : TableFunction("postgres_scan_pushdown", {LogicalType::VARCHAR, LogicalType::VARCHAR, LogicalType::VARCHAR},
+	    : TableFunction("postgres_scan_pushdown", {LogicalType::VARCHAR, LogicalType::VARCHAR, LogicalType::VARCHAR, LogicalType::UBIGINT} ,
 	                    PostgresScan, PostgresBind, PostgresInitGlobalState, PostgresInitLocalState) {
 		to_string = PostgresScanToString;
 		projection_pushdown = true;

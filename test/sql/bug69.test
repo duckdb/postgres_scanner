@@ -1,5 +1,8 @@
-statement ok
-LOAD 'build/release/extension/postgres_scanner/postgres_scanner.duckdb_extension';
+# name: test/sql/bug69.test
+# description:
+# group: [postgres_scanner]
+
+require postgres_scanner
 
 statement ok
 CALL postgres_attach('dbname=postgresscanner');

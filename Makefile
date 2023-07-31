@@ -24,9 +24,8 @@ EXTENSION_FLAGS=\
 -DDUCKDB_EXTENSION_NAMES="postgres_scanner" \
 -DDUCKDB_EXTENSION_POSTGRES_SCANNER_PATH="$(PROJ_DIR)" \
 -DDUCKDB_EXTENSION_POSTGRES_SCANNER_SHOULD_LINK=0 \
--DDUCKDB_EXTENSION_POSTGRES_SCANNER_LOAD_TESTS=0
-#-DDUCKDB_EXTENSION_POSTGRES_SCANNER_TEST_PATH="$(PROJ_DIR)test" \
-#-DDUCKDB_EXTENSION_POSTGRES_SCANNER_INCLUDE_PATH="$(PROJ_DIR)src/include"
+-DDUCKDB_EXTENSION_POSTGRES_SCANNER_LOAD_TESTS=1 \
+-DDUCKDB_EXTENSION_POSTGRES_SCANNER_TEST_PATH="$(PROJ_DIR)test"
 
 pull:
 	git submodule init
@@ -53,10 +52,10 @@ release:
 test: test_release
 
 test_release: release
-	./build/release/test/unittest --test-dir . "[postgres_scanner]"
+	./build/release/test/unittest "$(PROJ_DIR)test/*"
 
 test_debug: debug
-	./build/debug/test/unittest --test-dir . "[postgres_scanner]"
+	./build/debug/test/unittest "$(PROJ_DIR)test/*"
 
 format:
 	find src/ -iname *.hpp -o -iname *.cpp | xargs clang-format --sort-includes=0 -style=file -i

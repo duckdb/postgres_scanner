@@ -1,5 +1,8 @@
-statement ok
-LOAD 'build/release/extension/postgres_scanner/postgres_scanner.duckdb_extension';
+# name: test/sql/arrays.test
+# description:
+# group: [postgres_scanner]
+
+require postgres_scanner
 
 statement ok
 pragma enable_verification

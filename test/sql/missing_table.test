@@ -1,0 +1,8 @@
+# name: test/sql/missing_table.test
+# description:
+# group: [postgres_scanner]
+
+require postgres_scanner
+
+statement error
+select * from postgres_scan('dbname=postgresscanner', 'public', 'does_not_exist')

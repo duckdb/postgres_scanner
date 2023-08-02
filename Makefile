@@ -9,6 +9,13 @@ OSX_BUILD_UNIVERSAL_FLAG=
 ifneq (${OSX_BUILD_ARCH}, "")
 	OSX_BUILD_UNIVERSAL_FLAG=-DOSX_BUILD_ARCH=${OSX_BUILD_ARCH}
 endif
+VCPKG_TOOLCHAIN_PATH?=
+ifneq ("${VCPKG_TOOLCHAIN_PATH}", "")
+	TOOLCHAIN_FLAGS:=${TOOLCHAIN_FLAGS} -DVCPKG_MANIFEST_DIR='${PROJ_DIR}' -DVCPKG_BUILD=1 -DCMAKE_TOOLCHAIN_FILE='${VCPKG_TOOLCHAIN_PATH}'
+endif
+ifneq ("${VCPKG_TARGET_TRIPLET}", "")
+	TOOLCHAIN_FLAGS:=${TOOLCHAIN_FLAGS} -DVCPKG_TARGET_TRIPLET='${VCPKG_TARGET_TRIPLET}'
+endif
 
 ifeq ($(GEN),ninja)
 	GENERATOR=-G "Ninja"
@@ -35,7 +42,6 @@ clean:
 	rm -rf build
 	rm -rf testext
 	cd duckdb && make clean
-	rm -rf postgres
 
 # Main build
 debug:

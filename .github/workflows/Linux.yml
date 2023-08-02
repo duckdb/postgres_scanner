@@ -21,12 +21,17 @@ jobs:
         include:
           - arch: 'linux_amd64_gcc4'
             container: 'quay.io/pypa/manylinux2014_x86_64'
+            vcpkg_triplet: 'x64-linux'
           - arch: 'linux_amd64'
             container: 'ubuntu:18.04'
+            vcpkg_triplet: 'x64-linux'
           - arch: 'linux_arm64'
             container: 'ubuntu:18.04'
+            vcpkg_triplet: 'arm64-linux'
     env:
+      VCPKG_TARGET_TRIPLET: ${{ matrix.vcpkg_triplet }}
       GEN: Ninja
+      VCPKG_TOOLCHAIN_PATH: ${{ github.workspace }}/vcpkg/scripts/buildsystems/vcpkg.cmake
 
     steps:
     - name: Install required ubuntu packages
@@ -70,6 +75,11 @@ jobs:
       uses: ./duckdb/.github/actions/ubuntu_18_setup
       with:
         aarch64_cross_compile: 1
+
+    - name: Setup vcpkg
+      uses: lukka/run-vcpkg@v11
+      with:
+        vcpkgGitCommitId: 501db0f17ef6df184fcdbfbe0f87cde2313b6ab1
 
     - name: Install postgres (${{ matrix.arch }})
       if: ${{ matrix.arch == 'linux_amd64' }}

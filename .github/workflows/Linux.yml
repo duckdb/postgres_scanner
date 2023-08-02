@@ -81,19 +81,14 @@ jobs:
       with:
         vcpkgGitCommitId: 501db0f17ef6df184fcdbfbe0f87cde2313b6ab1
 
-    - name: Install postgres (${{ matrix.arch }})
-      if: ${{ matrix.arch == 'linux_amd64' }}
-      run: |
-        apt-get install -y postgresql
-
-    - name: Install postgres (${{ matrix.arch }})
+    - name: Install postgres (amd64_gcc4)
       if: ${{ matrix.arch == 'linux_amd64_gcc4' }}
       run: |
         yum install -y sudo
         yum install -y postgresql-server
 
     - name: Setup Postgres
-      if: ${{ matrix.arch == 'linux_amd64' || matrix.arch == 'linux_amd64_gcc4' }}
+      if: ${{ matrix.arch == 'linux_amd64_gcc4' }}
       run: |
         mkdir pgdata
         chown postgres pgdata
@@ -114,11 +109,11 @@ jobs:
         make release
 
     - name: Test extension
-      if: ${{ matrix.arch == 'linux_amd64_gcc4' || matrix.arch == 'linux_amd64'}}
+      if: ${{ matrix.arch == 'linux_amd64_gcc4' }}
       run: |
         psql -c "SELECT 43"
         source ./create-postgres-tables.sh
-        ./build/release/test/unittest --test-dir . "[postgres_scanner]"
+        make test_release
 
     - uses: actions/upload-artifact@v2
       with:

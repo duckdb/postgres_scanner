@@ -93,6 +93,7 @@ jobs:
         yum install -y postgresql-server
 
     - name: Setup Postgres
+      if: ${{ matrix.arch == 'linux_amd64' || matrix.arch == 'linux_amd64_gcc4' }}
       run: |
         mkdir pgdata
         chown postgres pgdata

@@ -1,0 +1,28 @@
+# name: test/sql/unbounded_numeric.test
+# description: ensure unbounded numerics do not overflow
+# group: [postgres_scanner]
+
+require postgres_scanner
+
+statement ok
+pragma enable_verification
+
+statement ok
+CALL postgres_attach('dbname=postgresscanner');
+
+query II
+select * from unbounded_numeric;
+----
+0.46	0.45999999999999996
+-0.4599999999999999	-0.45999999999999996
+-1001.46	-1001.4555555555555
+1001.4555555555555	1000.4555555555555
+1000001.4555555555	1000000.4555555555
+1000000001.4555556	1000000000.4555556
+1000000000000.4556	1000000000000.4556
+1000000000000000.4	1000000000000000.5
+1e+18	1e+18
+1e+21	1e+21
+-1000000000000000.4	-1000000000000000.5
+-1e+18	-1e+18
+-1e+21	-1e+21

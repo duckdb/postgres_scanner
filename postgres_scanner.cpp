@@ -14,6 +14,7 @@
 #include "duckdb/planner/table_filter.hpp"
 #include "duckdb/planner/filter/conjunction_filter.hpp"
 #include "duckdb/planner/filter/constant_filter.hpp"
+#include "duckdb/common/types/hugeint.hpp"
 
 using namespace duckdb;
 
@@ -651,8 +652,8 @@ static void ProcessValue(const LogicalType &type, const PostgresTypeInfo *type_i
 		if (type_info->typname ==
 		    "numeric") { // this was an unbounded decimal, read params from value and cast to double
 			auto config = ReadDecimalConfig(value_ptr);
-			auto val = ReadDecimal<int64_t>(config, value_ptr);
-			FlatVector::GetData<double>(out_vec)[output_offset] = (double)val / POWERS_OF_TEN[config.scale];
+			auto val = ReadDecimal<hugeint_t>(config, value_ptr);
+			FlatVector::GetData<double>(out_vec)[output_offset] = duckdb::Hugeint::Cast<double>(val) / POWERS_OF_TEN[config.scale];
 			break;
 		}
 		D_ASSERT(value_len == sizeof(double));

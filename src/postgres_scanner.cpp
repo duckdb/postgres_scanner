@@ -2,12 +2,6 @@
 
 #include <libpq-fe.h>
 
-#include <arpa/inet.h>
-// htonll is not available on Linux it seems
-#ifndef ntohll
-#define ntohll(x) ((((uint64_t)ntohl(x & 0xFFFFFFFF)) << 32) + ntohl(x >> 32))
-#endif
-
 #include "duckdb/main/extension_util.hpp"
 #include "duckdb/parser/parsed_data/create_table_function_info.hpp"
 #include "duckdb/planner/table_filter.hpp"
@@ -15,6 +9,7 @@
 #include "duckdb/planner/filter/constant_filter.hpp"
 #include "postgres_scanner.hpp"
 #include "postgres_result.hpp"
+#include "postgres_conversion.hpp"
 
 namespace duckdb {
 
@@ -64,8 +59,8 @@ public:
 	unique_ptr<FunctionData> Copy() const override {
 		throw NotImplementedException("");
 	}
-	bool Equals(const FunctionData &other) const override {
-		throw NotImplementedException("");
+	bool Equals(const FunctionData &other_p) const override {
+		return false;
 	}
 };
 
@@ -402,8 +397,6 @@ static PGconn *PostgresScanConnect(string dsn, bool in_recovery, string snapshot
 	return conn;
 }
 
-#define POSTGRES_EPOCH_JDATE 2451545 /* == date2j(2000, 1, 1) */
-
 #define NBASE      10000
 #define DEC_DIGITS 4 /* decimal digits per NBASE digit */
 
@@ -482,22 +475,6 @@ static const int64_t POWERS_OF_TEN[] {1,
                                       100000000000000000,
                                       1000000000000000000};
 
-template <class T>
-T LoadEndIncrement(const_data_ptr_t &pspsptr) {
-	T val = Load<T>(pspsptr);
-	if (sizeof(T) == sizeof(uint16_t)) {
-		val = ntohs(val);
-	} else if (sizeof(T) == sizeof(uint32_t)) {
-		val = ntohl(val);
-	} else if (sizeof(T) == sizeof(uint64_t)) {
-		val = ntohll(val);
-	} else {
-		D_ASSERT(0);
-	}
-	pspsptr += sizeof(T);
-	return val;
-}
-
 struct PostgresDecimalConfig {
 	uint16_t scale;
 	uint16_t ndigits;
@@ -507,16 +484,16 @@ struct PostgresDecimalConfig {
 
 static PostgresDecimalConfig ReadDecimalConfig(const_data_ptr_t &value_ptr) {
 	PostgresDecimalConfig config;
-	config.ndigits = LoadEndIncrement<uint16_t>(value_ptr);
-	config.weight = LoadEndIncrement<int16_t>(value_ptr);
-	auto sign = LoadEndIncrement<uint16_t>(value_ptr);
+	config.ndigits = PostgresConversion::LoadInteger<uint16_t>(value_ptr);
+	config.weight = PostgresConversion::LoadInteger<int16_t>(value_ptr);
+	auto sign = PostgresConversion::LoadInteger<uint16_t>(value_ptr);
 
 	if (!(sign == NUMERIC_POS || sign == NUMERIC_NAN || sign == NUMERIC_PINF || sign == NUMERIC_NINF ||
 	      sign == NUMERIC_NEG)) {
 		throw NotImplementedException("Postgres numeric NA/Inf");
 	}
 	config.is_negative = sign == NUMERIC_NEG;
-	config.scale = LoadEndIncrement<uint16_t>(value_ptr);
+	config.scale = PostgresConversion::LoadInteger<uint16_t>(value_ptr);
 
 	return config;
 };
@@ -533,22 +510,22 @@ static T ReadDecimal(PostgresDecimalConfig &config, const_data_ptr_t value_ptr) 
 
 	if (config.weight >= 0) {
 		D_ASSERT(config.weight <= config.ndigits);
-		integral_part = LoadEndIncrement<uint16_t>(value_ptr);
+		integral_part = PostgresConversion::LoadInteger<uint16_t>(value_ptr);
 		for (auto i = 1; i <= config.weight; i++) {
 			integral_part *= NBASE;
 			if (i < config.ndigits) {
-				integral_part += LoadEndIncrement<uint16_t>(value_ptr);
+				integral_part += PostgresConversion::LoadInteger<uint16_t>(value_ptr);
 			}
 		}
 		integral_part *= scale_POWER;
 	}
 
 	if (config.ndigits > config.weight + 1) {
-		fractional_part = LoadEndIncrement<uint16_t>(value_ptr);
+		fractional_part = PostgresConversion::LoadInteger<uint16_t>(value_ptr);
 		for (auto i = config.weight + 2; i < config.ndigits; i++) {
 			fractional_part *= NBASE;
 			if (i < config.ndigits) {
-				fractional_part += LoadEndIncrement<uint16_t>(value_ptr);
+				fractional_part += PostgresConversion::LoadInteger<uint16_t>(value_ptr);
 			}
 		}
 
@@ -578,31 +555,29 @@ static void ProcessValue(const LogicalType &type, const PostgresTypeInfo *type_i
                          Vector &out_vec, idx_t output_offset) {
 
 	switch (type.id()) {
-
 	case LogicalTypeId::SMALLINT:
 		D_ASSERT(value_len == sizeof(int16_t));
-		FlatVector::GetData<int16_t>(out_vec)[output_offset] = LoadEndIncrement<int16_t>(value_ptr);
+		FlatVector::GetData<int16_t>(out_vec)[output_offset] = PostgresConversion::LoadInteger<int16_t>(value_ptr);
 		break;
 
 	case LogicalTypeId::INTEGER:
 		D_ASSERT(value_len == sizeof(int32_t));
-		FlatVector::GetData<int32_t>(out_vec)[output_offset] = LoadEndIncrement<int32_t>(value_ptr);
+		FlatVector::GetData<int32_t>(out_vec)[output_offset] = PostgresConversion::LoadInteger<int32_t>(value_ptr);
 		break;
 
 	case LogicalTypeId::UINTEGER:
 		D_ASSERT(value_len == sizeof(uint32_t));
-		FlatVector::GetData<uint32_t>(out_vec)[output_offset] = LoadEndIncrement<uint32_t>(value_ptr);
+		FlatVector::GetData<uint32_t>(out_vec)[output_offset] = PostgresConversion::LoadInteger<uint32_t>(value_ptr);
 		break;
 
 	case LogicalTypeId::BIGINT:
 		D_ASSERT(value_len == sizeof(int64_t));
-		FlatVector::GetData<int64_t>(out_vec)[output_offset] = LoadEndIncrement<int64_t>(value_ptr);
+		FlatVector::GetData<int64_t>(out_vec)[output_offset] = PostgresConversion::LoadInteger<int64_t>(value_ptr);
 		break;
 
 	case LogicalTypeId::FLOAT: {
 		D_ASSERT(value_len == sizeof(float));
-		auto i = LoadEndIncrement<uint32_t>(value_ptr);
-		FlatVector::GetData<float>(out_vec)[output_offset] = *((float *)&i);
+		FlatVector::GetData<float>(out_vec)[output_offset] = PostgresConversion::LoadFloat(value_ptr);
 		break;
 	}
 
@@ -615,8 +590,7 @@ static void ProcessValue(const LogicalType &type, const PostgresTypeInfo *type_i
 			break;
 		}
 		D_ASSERT(value_len == sizeof(double));
-		auto i = LoadEndIncrement<uint64_t>(value_ptr);
-		FlatVector::GetData<double>(out_vec)[output_offset] = *((double *)&i);
+		FlatVector::GetData<double>(out_vec)[output_offset] = PostgresConversion::LoadDouble(value_ptr);
 		break;
 	}
 
@@ -666,10 +640,8 @@ static void ProcessValue(const LogicalType &type, const PostgresTypeInfo *type_i
 
 	case LogicalTypeId::DATE: {
 		D_ASSERT(value_len == sizeof(int32_t));
-
-		auto jd = LoadEndIncrement<uint32_t>(value_ptr);
 		auto out_ptr = FlatVector::GetData<date_t>(out_vec);
-		out_ptr[output_offset].days = jd + POSTGRES_EPOCH_JDATE - 2440588; // magic!
+		out_ptr[output_offset] = PostgresConversion::LoadDate(value_ptr);
 		break;
 	}
 
@@ -677,7 +649,7 @@ static void ProcessValue(const LogicalType &type, const PostgresTypeInfo *type_i
 		D_ASSERT(value_len == sizeof(int64_t));
 		D_ASSERT(atttypmod == -1);
 
-		FlatVector::GetData<dtime_t>(out_vec)[output_offset].micros = LoadEndIncrement<uint64_t>(value_ptr);
+		FlatVector::GetData<dtime_t>(out_vec)[output_offset].micros = PostgresConversion::LoadInteger<uint64_t>(value_ptr);
 		break;
 	}
 
@@ -685,8 +657,8 @@ static void ProcessValue(const LogicalType &type, const PostgresTypeInfo *type_i
 		D_ASSERT(value_len == sizeof(int64_t) + sizeof(int32_t));
 		D_ASSERT(atttypmod == -1);
 
-		auto usec = LoadEndIncrement<uint64_t>(value_ptr);
-		auto tzoffset = LoadEndIncrement<int32_t>(value_ptr);
+		auto usec = PostgresConversion::LoadInteger<uint64_t>(value_ptr);
+		auto tzoffset = PostgresConversion::LoadInteger<int32_t>(value_ptr);
 		FlatVector::GetData<dtime_t>(out_vec)[output_offset].micros = usec + tzoffset * Interval::MICROS_PER_SEC;
 		break;
 	}
@@ -695,13 +667,7 @@ static void ProcessValue(const LogicalType &type, const PostgresTypeInfo *type_i
 	case LogicalTypeId::TIMESTAMP: {
 		D_ASSERT(value_len == sizeof(int64_t));
 		D_ASSERT(atttypmod == -1);
-
-		auto usec = ntohll(Load<uint64_t>(value_ptr));
-		auto time = usec % Interval::MICROS_PER_DAY;
-		// adjust date
-		auto date = (usec / Interval::MICROS_PER_DAY) + POSTGRES_EPOCH_JDATE - 2440588;
-		// glue it back together
-		FlatVector::GetData<timestamp_t>(out_vec)[output_offset].value = date * Interval::MICROS_PER_DAY + time;
+		FlatVector::GetData<timestamp_t>(out_vec)[output_offset] = PostgresConversion::LoadTimestamp(value_ptr);
 		break;
 	}
 	case LogicalTypeId::ENUM: {
@@ -733,28 +699,14 @@ static void ProcessValue(const LogicalType &type, const PostgresTypeInfo *type_i
 		if (atttypmod != -1) {
 			throw IOException("Interval with unsupported typmod %d", atttypmod);
 		}
-
-		interval_t res;
-
-		res.micros = LoadEndIncrement<uint64_t>(value_ptr);
-		res.days = LoadEndIncrement<uint32_t>(value_ptr);
-		res.months = LoadEndIncrement<uint32_t>(value_ptr);
-
-		FlatVector::GetData<interval_t>(out_vec)[output_offset] = res;
+		FlatVector::GetData<interval_t>(out_vec)[output_offset] = PostgresConversion::LoadInterval(value_ptr);
 		break;
 	}
 
 	case LogicalTypeId::UUID: {
 		D_ASSERT(value_len == 2 * sizeof(int64_t));
 		D_ASSERT(atttypmod == -1);
-
-		hugeint_t res;
-
-		auto upper = LoadEndIncrement<uint64_t>(value_ptr);
-		res.upper = upper ^ (int64_t(1) << 63);
-		res.lower = LoadEndIncrement<uint64_t>(value_ptr);
-
-		FlatVector::GetData<hugeint_t>(out_vec)[output_offset] = res;
+		FlatVector::GetData<hugeint_t>(out_vec)[output_offset] = PostgresConversion::LoadUUID(value_ptr);
 		break;
 	}
 
@@ -769,18 +721,18 @@ static void ProcessValue(const LogicalType &type, const PostgresTypeInfo *type_i
 			break;
 		}
 		D_ASSERT(value_len >= 3 * sizeof(uint32_t));
-		auto flag_one = LoadEndIncrement<uint32_t>(value_ptr);
-		auto flag_two = LoadEndIncrement<uint32_t>(value_ptr);
+		auto flag_one = PostgresConversion::LoadInteger<uint32_t>(value_ptr);
+		auto flag_two = PostgresConversion::LoadInteger<uint32_t>(value_ptr);
 		if (flag_one == 0) {
 			list_entry.offset = child_offset;
 			list_entry.length = 0;
 			return;
 		}
 		// D_ASSERT(flag_two == 1); // TODO what is this?!
-		auto value_oid = LoadEndIncrement<uint32_t>(value_ptr);
+		auto value_oid = PostgresConversion::LoadInteger<uint32_t>(value_ptr);
 		D_ASSERT(value_oid == typelem);
-		auto array_length = LoadEndIncrement<uint32_t>(value_ptr);
-		auto array_dim = LoadEndIncrement<uint32_t>(value_ptr);
+		auto array_length = PostgresConversion::LoadInteger<uint32_t>(value_ptr);
+		auto array_dim = PostgresConversion::LoadInteger<uint32_t>(value_ptr);
 		if (array_dim != 1) {
 			throw NotImplementedException("Only one-dimensional Postgres arrays are supported %u %u ", array_length,
 			                              array_dim);
@@ -790,7 +742,7 @@ static void ProcessValue(const LogicalType &type, const PostgresTypeInfo *type_i
 		ListVector::Reserve(out_vec, child_offset + array_length);
 		for (idx_t child_idx = 0; child_idx < array_length; child_idx++) {
 			// handle NULLs again (TODO: unify this with scan)
-			auto ele_len = LoadEndIncrement<int32_t>(value_ptr);
+			auto ele_len = PostgresConversion::LoadInteger<int32_t>(value_ptr);
 			if (ele_len == -1) { // NULL
 				FlatVector::Validity(child_vec).Set(child_offset + child_idx, false);
 				continue;

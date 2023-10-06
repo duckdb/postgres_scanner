@@ -29,7 +29,7 @@ PostgresInsert::PostgresInsert(LogicalOperator &op, SchemaCatalogEntry &schema, 
 //===--------------------------------------------------------------------===//
 class PostgresInsertGlobalState : public GlobalSinkState {
 public:
-	explicit PostgresInsertGlobalState(ClientContext &context, PostgresTableEntry *table) : insert_count(0) {
+	explicit PostgresInsertGlobalState(ClientContext &context, PostgresTableEntry *table) : table(table), insert_count(0) {
 	}
 
 	PostgresTableEntry *table;
@@ -84,19 +84,23 @@ unique_ptr<GlobalSinkState> PostgresInsert::GetGlobalSinkState(ClientContext &co
 //===--------------------------------------------------------------------===//
 SinkResultType PostgresInsert::Sink(ExecutionContext &context, DataChunk &chunk, OperatorSinkInput &input) const {
 	auto &gstate = sink_state->Cast<PostgresInsertGlobalState>();
-	chunk.Flatten();
-	throw InternalException("FIXME: Sink Data");
-//	for (idx_t r = 0; r < chunk.size(); r++) {
-//		for (idx_t c = 0; c < chunk.ColumnCount(); c++) {
-//			auto &col = chunk.data[c];
-//			stmt.BindValue(col, c, r);
-//		}
-//		// execute and clear bindings
-//		stmt.Execute();
-//		stmt.Reset();
-//	}
+	auto &transaction = PostgresTransaction::Get(context.client, gstate.table->catalog);
+	auto &connection = transaction.GetConnection();
+	connection.CopyChunk(chunk);
 	gstate.insert_count += chunk.size();
 	return SinkResultType::NEED_MORE_INPUT;
+}
+
+//===--------------------------------------------------------------------===//
+// Finalize
+//===--------------------------------------------------------------------===//
+SinkFinalizeType PostgresInsert::Finalize(Pipeline &pipeline, Event &event, ClientContext &context,
+						  OperatorSinkFinalizeInput &input) const {
+	auto &gstate = sink_state->Cast<PostgresInsertGlobalState>();
+	auto &transaction = PostgresTransaction::Get(context, gstate.table->catalog);
+	auto &connection = transaction.GetConnection();
+	connection.FinishCopyTo();
+	return SinkFinalizeType::READY;
 }
 
 //===--------------------------------------------------------------------===//

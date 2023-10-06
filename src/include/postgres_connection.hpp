@@ -49,6 +49,7 @@ public:
 
 	void BeginCopyTo(const string &table_name, const vector<string> &column_names);
 	void CopyData(data_ptr_t buffer, idx_t size);
+	void CopyChunk(DataChunk &chunk);
 	void FinishCopyTo();
 
 	bool IsOpen();

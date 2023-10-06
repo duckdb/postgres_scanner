@@ -41,6 +41,8 @@ public:
 	// Sink interface
 	unique_ptr<GlobalSinkState> GetGlobalSinkState(ClientContext &context) const override;
 	SinkResultType Sink(ExecutionContext &context, DataChunk &chunk, OperatorSinkInput &input) const override;
+	SinkFinalizeType Finalize(Pipeline &pipeline, Event &event, ClientContext &context,
+	                          OperatorSinkFinalizeInput &input) const override;
 
 	bool IsSink() const override {
 		return true;

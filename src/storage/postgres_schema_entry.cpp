@@ -291,14 +291,7 @@ void PostgresSchemaEntry::DropEntry(ClientContext &context, DropInfo &info) {
 optional_ptr<CatalogEntry> PostgresSchemaEntry::GetEntry(CatalogTransaction transaction, CatalogType type,
                                                        const string &name) {
 	auto &postgres_transaction = GetPostgresTransaction(transaction);
-	switch (type) {
-	case CatalogType::INDEX_ENTRY:
-	case CatalogType::TABLE_ENTRY:
-	case CatalogType::VIEW_ENTRY:
-		return postgres_transaction.GetCatalogEntry(name);
-	default:
-		return nullptr;
-	}
+	return postgres_transaction.GetCatalogEntry(type, name);
 }
 
 } // namespace duckdb

@@ -57,9 +57,30 @@ PostgresStatement PostgresConnection::Prepare(const string &query) {
 	return stmt;
 }
 
+static bool ResultHasError(PGresult *result) {
+	if (!result) {
+		return true;
+	}
+	switch(PQresultStatus(result)) {
+	case PGRES_COMMAND_OK:
+	case PGRES_TUPLES_OK:
+		return false;
+	default:
+		return true;
+	}
+}
+
+unique_ptr<PostgresResult> PostgresConnection::TryQuery(const string &query) {
+	auto result = PQexec(connection, query.c_str());
+	if (ResultHasError(result)) {
+		return nullptr;
+	}
+	return make_uniq<PostgresResult>(result);
+}
+
 unique_ptr<PostgresResult> PostgresConnection::Query(const string &query) {
 	auto result = PQexec(connection, query.c_str());
-	if (!result || PQresultStatus(result) != PGRES_COMMAND_OK) {
+	if (ResultHasError(result)) {
 		throw std::runtime_error("Failed to execute query \"" + query + "\": " + string(PQresultErrorMessage(result)));
 	}
 	return make_uniq<PostgresResult>(result);
@@ -89,10 +110,6 @@ vector<string> PostgresConnection::GetTables() {
 	return GetEntries("table");
 }
 
-CatalogType PostgresConnection::GetEntryType(const string &name) {
-	throw InternalException("GetEntryType");
-}
-
 void PostgresConnection::GetIndexInfo(const string &index_name, string &sql, string &table_name) {
 	throw InternalException("GetIndexInfo");
 }
@@ -101,8 +118,40 @@ void PostgresConnection::GetViewInfo(const string &view_name, string &sql) {
 	throw InternalException("GetViewInfo(");
 }
 
-void PostgresConnection::GetTableInfo(const string &table_name, ColumnList &columns, vector<unique_ptr<Constraint>> &constraints) {
-	throw InternalException("GetTableInfo");
+bool PostgresConnection::GetTableInfo(const string &table_name, ColumnList &columns, vector<unique_ptr<Constraint>> &constraints) {
+	// query the columns that belong to this table
+	auto query = StringUtil::Replace(R"(
+SELECT column_name, data_type, column_default, is_nullable
+FROM information_schema.columns
+WHERE table_name='${TABLE_NAME}'
+ORDER BY ordinal_position;
+)", "${TABLE_NAME}", table_name);
+	auto result = Query(query);
+	auto rows = result->Count();
+	if (rows == 0) {
+		return false;
+	}
+	for(idx_t row = 0; row < rows; row++) {
+		auto column_name = result->GetString(row, 0);
+		auto data_type = result->GetString(row, 1);
+		auto default_value = result->GetString(row, 2);
+		auto is_nullable = result->GetString(row, 3);
+		auto column_type = PostgresUtils::TypeToLogicalType(data_type);
+
+		ColumnDefinition column(std::move(column_name), std::move(column_type));
+		if (!default_value.empty()) {
+			auto expressions = Parser::ParseExpressionList(default_value);
+			if (expressions.empty()) {
+				throw InternalException("Expression list is empty");
+			}
+			column.SetDefaultValue(std::move(expressions[0]));
+		}
+		columns.AddColumn(std::move(column));
+		if (is_nullable != "YES") {
+			constraints.push_back(make_uniq<NotNullConstraint>(LogicalIndex(row)));
+		}
+	}
+	return true;
 }
 
 bool PostgresConnection::ColumnExists(const string &table_name, const string &column_name) {

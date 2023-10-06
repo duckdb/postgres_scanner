@@ -12,6 +12,22 @@ PGconn *PostgresUtils::PGConnect(const string &dsn) {
 	return conn;
 }
 
+LogicalType PostgresUtils::TypeToLogicalType(const string &input) {
+	if (input == "integer") {
+		return LogicalType::INTEGER;
+	}
+	if (input == "bigint") {
+		return LogicalType::BIGINT;
+	}
+	if (input == "date") {
+		return LogicalType::DATE;
+	}
+	if (input == "character varying") {
+		return LogicalType::VARCHAR;
+	}
+	throw NotImplementedException("Unsupported type for PostgresUtils::TypeToLogicalType: %s", input);
+}
+
 LogicalType PostgresUtils::ToPostgresType(const LogicalType &input) {
 	switch (input.id()) {
 	case LogicalTypeId::BOOLEAN:

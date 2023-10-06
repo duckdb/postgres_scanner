@@ -18,6 +18,7 @@ public:
 	static PGconn *PGConnect(const string &dsn);
 
 	static LogicalType ToPostgresType(const LogicalType &input);
+	static LogicalType TypeToLogicalType(const string &input);
 
 };
 

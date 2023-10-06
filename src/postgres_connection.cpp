@@ -102,6 +102,42 @@ void PostgresConnection::Close() {
 	connection = nullptr;
 }
 
+void PostgresConnection::BeginCopyTo(const string &table_name, const vector<string> &column_names) {
+	string query = "COPY " + KeywordHelper::WriteOptionallyQuoted(table_name) + " ";
+	if (!column_names.empty()) {
+		query += "(";
+		for(idx_t c = 0; c < column_names.size(); c++) {
+			if (c > 0) {
+				query += ", ";
+			}
+			query += KeywordHelper::WriteOptionallyQuoted(column_names[c]);
+		}
+		query += ") ";
+	}
+	query += "FROM STDIN;";
+	auto result = PQexec(connection, query.c_str());
+	if (!result || PQresultStatus(result) != PGRES_COPY_IN) {
+		throw std::runtime_error("Failed to prepare COPY \"" + query + "\": " + string(PQresultErrorMessage(result)));
+	}
+}
+
+void PostgresConnection::CopyData(data_ptr_t buffer, idx_t size) {
+	int result;
+	do {
+		result = PQputCopyData(connection, (const char *) buffer, size);
+	} while(result == 0);
+	if (result == -1) {
+		throw InternalException("Error during PQputCopyEnd: %s", PQerrorMessage(connection));
+	}
+}
+
+void PostgresConnection::FinishCopyTo() {
+	auto result = PQputCopyEnd(connection, nullptr);
+	if (result == -1) {
+		throw InternalException("Error during PQputCopyEnd: %s", PQerrorMessage(connection));
+	}
+}
+
 vector<string> PostgresConnection::GetEntries(string entry_type) {
 	throw InternalException("Get Entries");
 }

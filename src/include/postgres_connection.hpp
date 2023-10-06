@@ -47,6 +47,10 @@ public:
 	bool ColumnExists(const string &table_name, const string &column_name);
 	vector<IndexInfo> GetIndexInfo(const string &table_name);
 
+	void BeginCopyTo(const string &table_name, const vector<string> &column_names);
+	void CopyData(data_ptr_t buffer, idx_t size);
+	void FinishCopyTo();
+
 	bool IsOpen();
 	void Close();
 

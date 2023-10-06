@@ -8,6 +8,9 @@ statement ok
 ATTACH 'dbname=postgresscanner' AS simple (TYPE POSTGRES)
 
 statement ok
+DROP TABLE IF EXISTS simple.test
+
+statement ok
 CREATE TABLE simple.test(i INTEGER);
 
 query I

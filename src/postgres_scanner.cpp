@@ -1,4 +1,3 @@
-#define DUCKDB_BUILD_LOADABLE_EXTENSION
 #include "duckdb.hpp"
 
 #include <libpq-fe.h>
@@ -14,8 +13,9 @@
 #include "duckdb/planner/table_filter.hpp"
 #include "duckdb/planner/filter/conjunction_filter.hpp"
 #include "duckdb/planner/filter/constant_filter.hpp"
+#include "postgres_scanner.hpp"
 
-using namespace duckdb;
+namespace duckdb {
 
 struct PostgresTypeInfo {
 	string typname;
@@ -648,8 +648,8 @@ static void ProcessValue(const LogicalType &type, const PostgresTypeInfo *type_i
 	}
 
 	case LogicalTypeId::DOUBLE: {
-		if (type_info->typname ==
-		    "numeric") { // this was an unbounded decimal, read params from value and cast to double
+		// this was an unbounded decimal, read params from value and cast to double
+		if (type_info->typname == "numeric") {
 			auto config = ReadDecimalConfig(value_ptr);
 			auto val = ReadDecimal<int64_t>(config, value_ptr);
 			FlatVector::GetData<double>(out_vec)[output_offset] = (double)val / POWERS_OF_TEN[config.scale];
@@ -1104,47 +1104,23 @@ ORDER BY relname;
 	data.finished = true;
 }
 
-class PostgresScanFunction : public TableFunction {
-public:
-	PostgresScanFunction()
-	    : TableFunction("postgres_scan", {LogicalType::VARCHAR, LogicalType::VARCHAR, LogicalType::VARCHAR},
-	                    PostgresScan, PostgresBind, PostgresInitGlobalState, PostgresInitLocalState) {
-		to_string = PostgresScanToString;
-		projection_pushdown = true;
-	}
-};
-
-class PostgresScanFunctionFilterPushdown : public TableFunction {
-public:
-	PostgresScanFunctionFilterPushdown()
-	    : TableFunction("postgres_scan_pushdown", {LogicalType::VARCHAR, LogicalType::VARCHAR, LogicalType::VARCHAR},
-	                    PostgresScan, PostgresBind, PostgresInitGlobalState, PostgresInitLocalState) {
-		to_string = PostgresScanToString;
-		projection_pushdown = true;
-		filter_pushdown = true;
-	}
-};
-
-extern "C" {
-DUCKDB_EXTENSION_API void postgres_scanner_init(duckdb::DatabaseInstance &db) {
-	PostgresScanFunction postgres_fun;
-	ExtensionUtil::RegisterFunction(db, postgres_fun);
-
-	PostgresScanFunctionFilterPushdown postgres_fun_filter_pushdown;
-	ExtensionUtil::RegisterFunction(db, postgres_fun_filter_pushdown);
-
-	TableFunction attach_func("postgres_attach", {LogicalType::VARCHAR}, AttachFunction, AttachBind);
-	attach_func.named_parameters["overwrite"] = LogicalType::BOOLEAN;
-	attach_func.named_parameters["filter_pushdown"] = LogicalType::BOOLEAN;
-
-	attach_func.named_parameters["source_schema"] = LogicalType::VARCHAR;
-	attach_func.named_parameters["sink_schema"] = LogicalType::VARCHAR;
-	attach_func.named_parameters["suffix"] = LogicalType::VARCHAR;
-
-	ExtensionUtil::RegisterFunction(db, attach_func);
+PostgresScanFunction::PostgresScanFunction()
+	: TableFunction("postgres_scan", {LogicalType::VARCHAR, LogicalType::VARCHAR, LogicalType::VARCHAR},
+					PostgresScan, PostgresBind, PostgresInitGlobalState, PostgresInitLocalState) {
+	to_string = PostgresScanToString;
+	projection_pushdown = true;
 }
 
-DUCKDB_EXTENSION_API const char *postgres_scanner_version() {
-	return DuckDB::LibraryVersion();
+PostgresScanFunctionFilterPushdown::PostgresScanFunctionFilterPushdown()
+	: TableFunction("postgres_scan_pushdown", {LogicalType::VARCHAR, LogicalType::VARCHAR, LogicalType::VARCHAR},
+					PostgresScan, PostgresBind, PostgresInitGlobalState, PostgresInitLocalState) {
+	to_string = PostgresScanToString;
+	projection_pushdown = true;
+	filter_pushdown = true;
 }
+
+PostgresAttachFunction::PostgresAttachFunction()
+	: TableFunction("postgres_attach", {LogicalType::VARCHAR}, AttachFunction, AttachBind) {
+}
+
 }

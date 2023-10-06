@@ -1,0 +1,41 @@
+# name: test/sql/storage/attach_simple.test
+# description:
+# group: [postgres_storage]
+
+require postgres_scanner
+
+statement ok
+ATTACH 'dbname=postgresscanner' AS simple (TYPE POSTGRES)
+
+statement ok
+CREATE TABLE simple.test(i INTEGER);
+
+query I
+INSERT INTO simple.test VALUES (42);
+----
+1
+
+query I
+SELECT * FROM simple.test
+----
+42
+
+# insert into a non-existent table
+statement error
+INSERT INTO tst VALUES (84)
+----
+simple.test
+
+statement error
+INSERT INTO tst VALUES (84)
+----
+test
+
+# create table as
+statement ok
+CREATE TABLE simple.test2 AS SELECT 84
+
+query I
+SELECT * FROM simple.test2
+----
+84

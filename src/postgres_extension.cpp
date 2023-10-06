@@ -30,6 +30,9 @@ static void LoadInternal(DatabaseInstance &db) {
 	attach_func.named_parameters["suffix"] = LogicalType::VARCHAR;
 
 	ExtensionUtil::RegisterFunction(db, attach_func);
+
+	auto &config = DBConfig::GetConfig(db);
+	config.storage_extensions["postgres_scanner"] = make_uniq<PostgresStorageExtension>();
 }
 
 void PostgresScannerExtension::Load(DuckDB &db) {
@@ -44,7 +47,8 @@ DUCKDB_EXTENSION_API const char *postgres_scanner_version() {
 	return DuckDB::LibraryVersion();
 }
 
-//DUCKDB_EXTENSION_API void postgres_scanner_storage_init(DBConfig &config) {
-//	config.storage_extensions["postgres_scanner"] = make_uniq<PostgresStorageExtension>();
-//}
+DUCKDB_EXTENSION_API void postgres_scanner_storage_init(DBConfig &config) {
+	config.storage_extensions["postgres_scanner"] = make_uniq<PostgresStorageExtension>();
+}
+
 }

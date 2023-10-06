@@ -14,6 +14,7 @@
 #include "duckdb/planner/filter/conjunction_filter.hpp"
 #include "duckdb/planner/filter/constant_filter.hpp"
 #include "postgres_scanner.hpp"
+#include "postgres_result.hpp"
 
 namespace duckdb {
 
@@ -68,38 +69,6 @@ public:
 	}
 };
 
-struct PGQueryResult {
-
-	PGQueryResult(PGresult *res_p) : res(res_p) {
-	}
-	~PGQueryResult() {
-		if (res) {
-			PQclear(res);
-		}
-	}
-	PGresult *res = nullptr;
-
-public:
-	string GetString(idx_t row, idx_t col) {
-		D_ASSERT(res);
-		return string(PQgetvalue(res, row, col));
-	}
-
-	int32_t GetInt32(idx_t row, idx_t col) {
-		return atoi(PQgetvalue(res, row, col));
-	}
-	int64_t GetInt64(idx_t row, idx_t col) {
-		return atoll(PQgetvalue(res, row, col));
-	}
-	bool GetBool(idx_t row, idx_t col) {
-		return strcmp(PQgetvalue(res, row, col), "t");
-	}
-	idx_t Count() {
-		D_ASSERT(res);
-		return PQntuples(res);
-	}
-};
-
 struct PostgresLocalState : public LocalTableFunctionState {
 	~PostgresLocalState() {
 		if (conn) {
@@ -130,18 +99,8 @@ struct PostgresGlobalState : public GlobalTableFunctionState {
 	}
 };
 
-static PGconn *PGConnect(string &dsn) {
-	PGconn *conn = PQconnectdb(dsn.c_str());
-
-	// both PQStatus and PQerrorMessage check for nullptr
-	if (PQstatus(conn) == CONNECTION_BAD) {
-		throw IOException("Unable to connect to Postgres at %s: %s", dsn, string(PQerrorMessage(conn)));
-	}
-	return conn;
-}
-
-static unique_ptr<PGQueryResult> PGQuery(PGconn *conn, string q, ExecStatusType response_code = PGRES_TUPLES_OK) {
-	auto res = make_uniq<PGQueryResult>(PQexec(conn, q.c_str()));
+static unique_ptr<PostgresResult> PGQuery(PGconn *conn, string q, ExecStatusType response_code = PGRES_TUPLES_OK) {
+	auto res = make_uniq<PostgresResult>(PQexec(conn, q.c_str()));
 	if (!res->res || PQresultStatus(res->res) != response_code) {
 		throw IOException("Unable to query Postgres: %s %s", string(PQerrorMessage(conn)),
 		                  string(PQresultErrorMessage(res->res)));
@@ -231,7 +190,7 @@ static unique_ptr<FunctionData> PostgresBind(ClientContext &context, TableFuncti
 	bind_data->schema_name = input.inputs[1].GetValue<string>();
 	bind_data->table_name = input.inputs[2].GetValue<string>();
 
-	bind_data->conn = PGConnect(bind_data->dsn);
+	bind_data->conn = PostgresUtils::PGConnect(bind_data->dsn);
 
 	// we create a transaction here, and get the snapshot id so the parallel
 	// reader threads can use the same snapshot
@@ -435,7 +394,7 @@ COPY (SELECT %s FROM "%s"."%s" WHERE ctid BETWEEN '(%d,0)'::tid AND '(%d,0)'::ti
 }
 
 static PGconn *PostgresScanConnect(string dsn, bool in_recovery, string snapshot) {
-	auto conn = PGConnect(dsn);
+	auto conn = PostgresUtils::PGConnect(dsn);
 	PGExec(conn, "BEGIN TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY");
 	if (!in_recovery) {
 		PGExec(conn, StringUtil::Format("SET TRANSACTION SNAPSHOT '%s'", snapshot));
@@ -1076,7 +1035,7 @@ static void AttachFunction(ClientContext &context, TableFunctionInput &data_p, D
 		return;
 	}
 
-	auto conn = PGConnect(data.dsn);
+	auto conn = PostgresUtils::PGConnect(data.dsn);
 	auto dconn = Connection(context.db->GetDatabase(context));
 	auto res = PGQuery(conn, StringUtil::Format(
 	                             R"(

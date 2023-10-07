@@ -26,6 +26,7 @@ public:
 
 	static LogicalType ToPostgresType(const LogicalType &input);
 	static LogicalType TypeToLogicalType(const PostgresTypeData &input);
+	static string TypeToString(const LogicalType &input);
 
 };
 

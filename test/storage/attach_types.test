@@ -1,0 +1,57 @@
+# name: test/storage/attach_types.test
+# description:
+# group: [postgres_storage]
+
+require postgres_scanner
+
+statement ok
+ATTACH 'dbname=postgresscanner' AS s (TYPE POSTGRES)
+
+statement ok
+DROP TABLE IF EXISTS s.types
+
+statement ok
+CREATE TABLE s.types(i INTEGER, j BIGINT, k DOUBLE, l VARCHAR);
+
+statement ok
+INSERT INTO s.types VALUES (42, 84, 0.5, 'hello world this is my string');
+
+statement ok
+INSERT INTO s.types VALUES (NULL, NULL, NULL, NULL);
+
+statement ok
+SELECT * FROM s.types
+
+query IIII
+SELECT * FROM s.types
+----
+42	84	0.5	hello world this is my string
+NULL	NULL	NULL	NULL
+
+# FIXME - all types
+mode skip
+
+# test all types
+statement ok
+CREATE TABLE s.all_types AS SELECT * FROM test_all_types();
+
+query IIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIII nosort r1
+SELECT COLUMNS(* EXCLUDE (float, double))::VARCHAR FROM s.all_types;
+----
+
+statement ok
+CREATE TEMPORARY TABLE all_types_modified AS SELECT * EXCLUDE (float, double) REPLACE (bool::INT AS bool) FROM test_all_types()
+
+query IIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIII nosort r1
+SELECT COLUMNS(*)::VARCHAR FROM all_types_modified;
+----
+
+statement ok
+UPDATE s.all_types SET timestamp=TIMESTAMP '2022-01-01 01:02:03';
+
+query I
+SELECT timestamp FROM s.all_types
+----
+2022-01-01 01:02:03
+2022-01-01 01:02:03
+2022-01-01 01:02:03

@@ -12,6 +12,19 @@ PGconn *PostgresUtils::PGConnect(const string &dsn) {
 	return conn;
 }
 
+string PostgresUtils::TypeToString(const LogicalType &input) {
+	switch(input.id()) {
+	case LogicalTypeId::FLOAT:
+		return "REAL";
+	case LogicalTypeId::DOUBLE:
+		return "FLOAT";
+	case LogicalTypeId::BLOB:
+		return "BYTEA";
+	default:
+		return input.ToString();
+	}
+}
+
 LogicalType PostgresUtils::TypeToLogicalType(const PostgresTypeData &type_info) {
 	auto &pgtypename = type_info.type_name;
 	if (StringUtil::StartsWith(pgtypename, "_")) {
@@ -72,19 +85,27 @@ LogicalType PostgresUtils::TypeToLogicalType(const PostgresTypeData &type_info) 
 LogicalType PostgresUtils::ToPostgresType(const LogicalType &input) {
 	switch (input.id()) {
 	case LogicalTypeId::BOOLEAN:
-	case LogicalTypeId::TINYINT:
 	case LogicalTypeId::SMALLINT:
 	case LogicalTypeId::INTEGER:
 	case LogicalTypeId::BIGINT:
+	case LogicalTypeId::FLOAT:
+	case LogicalTypeId::DOUBLE:
+	case LogicalTypeId::BLOB:
+	case LogicalTypeId::DATE:
+	case LogicalTypeId::INTERVAL:
+	case LogicalTypeId::TIME:
+	case LogicalTypeId::TIME_TZ:
+	case LogicalTypeId::TIMESTAMP:
+	case LogicalTypeId::TIMESTAMP_TZ:
+	case LogicalTypeId::VARCHAR:
+		return input;
+	case LogicalTypeId::TINYINT:
+		return LogicalType::SMALLINT;
+		return LogicalType::INTEGER;
 	case LogicalTypeId::UTINYINT:
 	case LogicalTypeId::USMALLINT:
 	case LogicalTypeId::UINTEGER:
 		return LogicalType::BIGINT;
-	case LogicalTypeId::FLOAT:
-	case LogicalTypeId::DOUBLE:
-		return LogicalType::DOUBLE;
-	case LogicalTypeId::BLOB:
-		return LogicalType::BLOB;
 	default:
 		return LogicalType::VARCHAR;
 	}

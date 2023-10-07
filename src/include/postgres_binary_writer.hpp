@@ -34,12 +34,12 @@ public:
 
 	template<class T>
 	void WriteRawInteger(T val) {
-		serializer.Write<T>(GetInteger(val));
+		stream.Write<T>(GetInteger(val));
 	}
 
 public:
 	void WriteHeader() {
-		serializer.WriteData(const_data_ptr_cast("PGCOPY\n\377\r\n\0"), 11);
+		stream.WriteData(const_data_ptr_cast("PGCOPY\n\377\r\n\0"), 11);
 		WriteRawInteger<int32_t>(0);
 		WriteRawInteger<int32_t>(0);
 	}
@@ -66,8 +66,23 @@ public:
 		WriteRawInteger<T>(value);
 	}
 
+	void WriteFloat(float value) {
+		uint32_t i = *reinterpret_cast<uint32_t *>(&value);
+		WriteInteger<uint32_t>(i);
+	}
+
+	void WriteDouble(double value) {
+		uint64_t i = *reinterpret_cast<uint64_t *>(&value);
+		WriteInteger<uint64_t>(i);
+	}
+
+	void WriteVarchar(string_t value) {
+		WriteRawInteger<int32_t>(value.GetSize());
+		stream.WriteData(const_data_ptr_cast(value.GetData()), value.GetSize());
+	}
+
 public:
-	MemoryStream serializer;
+	MemoryStream stream;
 };
 
 } // namespace duckdb

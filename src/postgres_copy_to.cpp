@@ -36,7 +36,7 @@ void PostgresConnection::CopyData(data_ptr_t buffer, idx_t size) {
 }
 
 void PostgresConnection::CopyData(PostgresBinaryWriter &writer) {
-	CopyData(writer.serializer.GetData(), writer.serializer.GetPosition());
+	CopyData(writer.stream.GetData(), writer.stream.GetPosition());
 }
 
 void PostgresConnection::FinishCopyTo() {
@@ -63,10 +63,39 @@ void PostgresConnection::CopyChunk(DataChunk &chunk) {
 		writer.BeginRow(chunk.ColumnCount());
 		for (idx_t c = 0; c < chunk.ColumnCount(); c++) {
 			auto &col = chunk.data[c];
+			if (FlatVector::IsNull(col, r)) {
+				writer.WriteNull();
+				continue;
+			}
 			switch(col.GetType().id()) {
+			case LogicalTypeId::SMALLINT: {
+				auto data = FlatVector::GetData<int16_t>(col)[r];
+				writer.WriteInteger<int16_t>(data);
+				break;
+			}
+			case LogicalTypeId::INTEGER: {
+				auto data = FlatVector::GetData<int32_t>(col)[r];
+				writer.WriteInteger<int32_t>(data);
+				break;
+			}
 			case LogicalTypeId::BIGINT: {
 				auto data = FlatVector::GetData<int64_t>(col)[r];
 				writer.WriteInteger<int64_t>(data);
+				break;
+			}
+			case LogicalTypeId::FLOAT: {
+				auto data = FlatVector::GetData<float>(col)[r];
+				writer.WriteFloat(data);
+				break;
+			}
+			case LogicalTypeId::DOUBLE: {
+				auto data = FlatVector::GetData<double>(col)[r];
+				writer.WriteDouble(data);
+				break;
+			}
+			case LogicalTypeId::VARCHAR: {
+				auto data = FlatVector::GetData<string_t>(col)[r];
+				writer.WriteVarchar(data);
 				break;
 			}
 			default:

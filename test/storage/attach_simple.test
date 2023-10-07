@@ -36,7 +36,7 @@ test
 
 # create table as
 statement ok
-CREATE TABLE simple.test2 AS SELECT 84
+CREATE OR REPLACE TABLE simple.test2 AS SELECT 84
 
 query I
 SELECT * FROM simple.test2

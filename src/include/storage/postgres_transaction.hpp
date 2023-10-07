@@ -28,6 +28,7 @@ public:
 
 	PostgresConnection &GetConnection();
 	optional_ptr<CatalogEntry> GetCatalogEntry(CatalogType type, PostgresSchemaEntry &schema, const string &table_name);
+	vector<reference<CatalogEntry>> GetEntries(CatalogType type, PostgresSchemaEntry &schema);
 	void DropEntry(CatalogType type, const string &table_name, bool cascade);
 	void ClearTableEntry(const string &table_name);
 

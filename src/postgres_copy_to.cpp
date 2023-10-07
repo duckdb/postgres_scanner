@@ -36,7 +36,7 @@ void PostgresConnection::CopyData(data_ptr_t buffer, idx_t size) {
 }
 
 void PostgresConnection::CopyData(PostgresBinaryWriter &writer) {
-	CopyData(writer.serializer.blob.data.get(), writer.serializer.blob.size);
+	CopyData(writer.serializer.GetData(), writer.serializer.GetPosition());
 }
 
 void PostgresConnection::FinishCopyTo() {

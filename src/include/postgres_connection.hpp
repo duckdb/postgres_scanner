@@ -13,6 +13,7 @@
 
 namespace duckdb {
 class PostgresBinaryWriter;
+class PostgresSchemaEntry;
 class PostgresStatement;
 class PostgresResult;
 struct IndexInfo;
@@ -36,10 +37,10 @@ public:
 	void Execute(const string &query);
 	unique_ptr<PostgresResult> TryQuery(const string &query);
 	unique_ptr<PostgresResult> Query(const string &query);
-	vector<string> GetTables(const string &schema);
 
 	vector<string> GetEntries(string entry_type);
-	bool GetTableInfo(const string &schema_name, const string &table_name, ColumnList &columns, vector<unique_ptr<Constraint>> &constraints);
+	vector<unique_ptr<CreateTableInfo>> GetTables(const PostgresSchemaEntry &schema);
+	unique_ptr<CreateTableInfo> GetTableInfo(const PostgresSchemaEntry &schema, const string &table_name);
 	void GetViewInfo(const string &view_name, string &sql);
 	void GetIndexInfo(const string &index_name, string &sql, string &table_name);
 	//! Gets the max row id of a table, returns false if the table does not have a rowid column

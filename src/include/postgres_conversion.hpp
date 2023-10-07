@@ -10,7 +10,6 @@
 
 #include "duckdb.hpp"
 #include "duckdb/common/types/interval.hpp"
-#include "duckdb/common/serializer/buffered_serializer.hpp"
 
 #include <arpa/inet.h>
 // htonll is not available on Linux it seems

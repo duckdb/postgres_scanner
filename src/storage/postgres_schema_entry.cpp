@@ -247,23 +247,9 @@ void PostgresSchemaEntry::Alter(ClientContext &context, AlterInfo &info) {
 void PostgresSchemaEntry::Scan(ClientContext &context, CatalogType type,
                              const std::function<void(CatalogEntry &)> &callback) {
 	auto &transaction = PostgresTransaction::Get(context, catalog);
-	vector<string> entries;
-	switch (type) {
-	case CatalogType::TABLE_ENTRY:
-		entries = transaction.GetConnection().GetTables(name);
-		break;
-	case CatalogType::VIEW_ENTRY:
-		entries = transaction.GetConnection().GetEntries("view");
-		break;
-	case CatalogType::INDEX_ENTRY:
-		entries = transaction.GetConnection().GetEntries("index");
-		break;
-	default:
-		// no entries of this catalog type
-		return;
-	}
-	for (auto &entry_name : entries) {
-		callback(*GetEntry(GetCatalogTransaction(context), type, entry_name));
+	auto entries = transaction.GetEntries(type, *this);
+	for (auto &entry : entries) {
+		callback(entry.get());
 	}
 }
 void PostgresSchemaEntry::Scan(CatalogType type, const std::function<void(CatalogEntry &)> &callback) {

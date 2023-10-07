@@ -36,6 +36,25 @@ PostgresTransaction &PostgresTransaction::Get(ClientContext &context, Catalog &c
 	return Transaction::Get(context, catalog).Cast<PostgresTransaction>();
 }
 
+vector<reference<CatalogEntry>> PostgresTransaction::GetEntries(CatalogType type, PostgresSchemaEntry &schema) {
+	if (type != CatalogType::TABLE_ENTRY) {
+		throw InternalException("FIXME: only tables supported for now");
+	}
+	vector<reference<CatalogEntry>> result;
+	auto tables = connection.GetTables(schema);
+	for(auto &table_info : tables) {
+		auto entry = catalog_entries.find(table_info->table);
+		if (entry != catalog_entries.end()) {
+			result.push_back(*entry->second);
+			continue;
+		}
+		auto table_entry = make_uniq<PostgresTableEntry>(postgres_catalog, schema, *table_info);
+		result.push_back(*table_entry);
+		catalog_entries[table_info->table] = std::move(table_entry);
+	}
+	return result;
+}
+
 optional_ptr<CatalogEntry> PostgresTransaction::GetCatalogEntry(CatalogType type, PostgresSchemaEntry &schema, const string &entry_name) {
 	auto entry = catalog_entries.find(entry_name);
 	if (entry != catalog_entries.end()) {
@@ -44,14 +63,13 @@ optional_ptr<CatalogEntry> PostgresTransaction::GetCatalogEntry(CatalogType type
 	unique_ptr<CatalogEntry> result;
 	switch (type) {
 	case CatalogType::TABLE_ENTRY: {
-		CreateTableInfo info(schema, entry_name);
-		auto exists = connection.GetTableInfo(schema.name, entry_name, info.columns, info.constraints);
-		if (!exists) {
+		auto info = connection.GetTableInfo(schema, entry_name);
+		if (!info) {
 			return nullptr;
 		}
-		D_ASSERT(!info.columns.empty());
+		D_ASSERT(!info->columns.empty());
 
-		result = make_uniq<PostgresTableEntry>(postgres_catalog, schema, info);
+		result = make_uniq<PostgresTableEntry>(postgres_catalog, schema, *info);
 		break;
 	}
 	case CatalogType::VIEW_ENTRY: {

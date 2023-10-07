@@ -10,7 +10,7 @@
 
 #include "duckdb.hpp"
 #include "duckdb/common/types/interval.hpp"
-#include "duckdb/common/serializer/buffered_serializer.hpp"
+#include "duckdb/common/serializer/memory_stream.hpp"
 #include "postgres_conversion.hpp"
 
 namespace duckdb {
@@ -67,7 +67,7 @@ public:
 	}
 
 public:
-	BufferedSerializer serializer;
+	MemoryStream serializer;
 };
 
 } // namespace duckdb

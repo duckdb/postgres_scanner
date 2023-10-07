@@ -82,39 +82,4 @@ struct PostgresConversion {
 	}
 };
 
-struct PostgresBinaryWriter {
-public:
-	template<class T>
-	void WriteRawInteger(T val) {
-		if (sizeof(T) == sizeof(uint16_t)) {
-			val = ntohs(val);
-		} else if (sizeof(T) == sizeof(uint32_t)) {
-			val = ntohl(val);
-		} else if (sizeof(T) == sizeof(uint64_t)) {
-			val = ntohll(val);
-		} else {
-			D_ASSERT(0);
-		}
-		serializer.Write<T>(val);
-	}
-
-public:
-	void BeginRow(idx_t column_count) {
-		WriteRawInteger<int16_t>(column_count);
-	}
-
-	void WriteNull() {
-		WriteRawInteger<int32_t>(-1);
-	}
-
-	template<class T>
-	void WriteInteger(T value) {
-		WriteRawInteger<int32_t>(sizeof(T));
-		WriteRawInteger<T>(value);
-	}
-
-public:
-	BufferedSerializer serializer;
-};
-
 } // namespace duckdb

@@ -15,7 +15,7 @@
 
 namespace duckdb {
 
-PostgresSchemaEntry::PostgresSchemaEntry(Catalog &catalog) : SchemaCatalogEntry(catalog, DEFAULT_SCHEMA, true) {
+PostgresSchemaEntry::PostgresSchemaEntry(Catalog &catalog) : SchemaCatalogEntry(catalog, "public", true) {
 }
 
 PostgresTransaction &GetPostgresTransaction(CatalogTransaction transaction) {
@@ -250,7 +250,7 @@ void PostgresSchemaEntry::Scan(ClientContext &context, CatalogType type,
 	vector<string> entries;
 	switch (type) {
 	case CatalogType::TABLE_ENTRY:
-		entries = transaction.GetConnection().GetTables();
+		entries = transaction.GetConnection().GetTables(name);
 		break;
 	case CatalogType::VIEW_ENTRY:
 		entries = transaction.GetConnection().GetEntries("view");
@@ -291,7 +291,7 @@ void PostgresSchemaEntry::DropEntry(ClientContext &context, DropInfo &info) {
 optional_ptr<CatalogEntry> PostgresSchemaEntry::GetEntry(CatalogTransaction transaction, CatalogType type,
                                                        const string &name) {
 	auto &postgres_transaction = GetPostgresTransaction(transaction);
-	return postgres_transaction.GetCatalogEntry(type, name);
+	return postgres_transaction.GetCatalogEntry(type, *this, name);
 }
 
 } // namespace duckdb

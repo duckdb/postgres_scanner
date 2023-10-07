@@ -38,6 +38,9 @@ public:
 	bool GetBool(idx_t row, idx_t col) {
 		return strcmp(PQgetvalue(res, row, col), "t");
 	}
+	bool IsNull(idx_t row, idx_t col) {
+		return PQgetisnull(res, row, col);
+	}
 	idx_t Count() {
 		D_ASSERT(res);
 		return PQntuples(res);

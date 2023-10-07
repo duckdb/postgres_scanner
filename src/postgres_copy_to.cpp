@@ -1,9 +1,59 @@
 #include "postgres_connection.hpp"
-#include "postgres_conversion.hpp"
+#include "postgres_binary_writer.hpp"
 
 namespace duckdb {
 
+void PostgresConnection::BeginCopyTo(const string &table_name, const vector<string> &column_names) {
+	string query = "COPY " + KeywordHelper::WriteOptionallyQuoted(table_name) + " ";
+	if (!column_names.empty()) {
+		query += "(";
+		for(idx_t c = 0; c < column_names.size(); c++) {
+			if (c > 0) {
+				query += ", ";
+			}
+			query += KeywordHelper::WriteOptionallyQuoted(column_names[c]);
+		}
+		query += ") ";
+	}
+	query += "FROM STDIN (FORMAT binary)";
+	auto result = PQexec(connection, query.c_str());
+	if (!result || PQresultStatus(result) != PGRES_COPY_IN) {
+		throw std::runtime_error("Failed to prepare COPY \"" + query + "\": " + string(PQresultErrorMessage(result)));
+	}
+	PostgresBinaryWriter writer;
+	writer.WriteHeader();
+	CopyData(writer);
+}
 
+void PostgresConnection::CopyData(data_ptr_t buffer, idx_t size) {
+	int result;
+	do {
+		result = PQputCopyData(connection, (const char *) buffer, size);
+	} while(result == 0);
+	if (result == -1) {
+		throw InternalException("Error during PQputCopyData: %s", PQerrorMessage(connection));
+	}
+}
+
+void PostgresConnection::CopyData(PostgresBinaryWriter &writer) {
+	CopyData(writer.serializer.blob.data.get(), writer.serializer.blob.size);
+}
+
+void PostgresConnection::FinishCopyTo() {
+	PostgresBinaryWriter writer;
+	writer.WriteFooter();
+	CopyData(writer);
+
+	auto result_code = PQputCopyEnd(connection, nullptr);
+	if (result_code != 1) {
+		throw InternalException("Error during PQputCopyEnd: %s", PQerrorMessage(connection));
+	}
+	// fetch the query result to check for errors
+	auto result = PQgetResult(connection);
+	if (!result || PQresultStatus(result) != PGRES_COMMAND_OK) {
+		throw std::runtime_error("Failed to copy data: " + string(PQresultErrorMessage(result)));
+	}
+}
 
 void PostgresConnection::CopyChunk(DataChunk &chunk) {
 	chunk.Flatten();
@@ -23,8 +73,9 @@ void PostgresConnection::CopyChunk(DataChunk &chunk) {
 				throw InternalException("Unsupported type for Postgres insert");
 			}
 		}
+		writer.FinishRow();
 	}
-	CopyData(writer.serializer.blob.data.get(), writer.serializer.blob.size);
+	CopyData(writer);
 }
 
 

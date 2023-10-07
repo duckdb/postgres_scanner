@@ -12,20 +12,61 @@ PGconn *PostgresUtils::PGConnect(const string &dsn) {
 	return conn;
 }
 
-LogicalType PostgresUtils::TypeToLogicalType(const string &input) {
-	if (input == "integer") {
+LogicalType PostgresUtils::TypeToLogicalType(const PostgresTypeData &type_info) {
+	auto &pgtypename = type_info.type_name;
+	if (StringUtil::StartsWith(pgtypename, "_")) {
+		PostgresTypeData child_type_info;
+		child_type_info.type_name = pgtypename.substr(1);
+		return LogicalType::LIST(TypeToLogicalType(child_type_info));
+	}
+
+//	if (type_info->typtype == "e") { // ENUM
+//		throw NotImplementedException("FIXME: enum");
+//	}
+
+	if (pgtypename == "bool") {
+		return LogicalType::BOOLEAN;
+	} else if (pgtypename == "int2") {
+		return LogicalType::SMALLINT;
+	} else if (pgtypename == "int4") {
 		return LogicalType::INTEGER;
-	}
-	if (input == "bigint") {
+	} else if (pgtypename == "int8") {
 		return LogicalType::BIGINT;
-	}
-	if (input == "date") {
+	} else if (pgtypename == "oid") { // "The oid type is currently implemented as an unsigned four-byte integer."
+		return LogicalType::UINTEGER;
+	} else if (pgtypename == "float4") {
+		return LogicalType::FLOAT;
+	} else if (pgtypename == "float8") {
+		return LogicalType::DOUBLE;
+	} else if (pgtypename == "numeric") {
+		if (type_info.precision < 0 || type_info.scale < 0 || type_info.precision > 38) {
+			// fallback to double
+			return LogicalType::DOUBLE;
+		}
+		return LogicalType::DECIMAL(type_info.precision, type_info.scale);
+	} else if (pgtypename == "char" || pgtypename == "bpchar" || pgtypename == "varchar" || pgtypename == "text" ||
+	           pgtypename == "jsonb" || pgtypename == "json") {
+		return LogicalType::VARCHAR;
+	} else if (pgtypename == "date") {
 		return LogicalType::DATE;
-	}
-	if (input == "character varying") {
+	} else if (pgtypename == "bytea") {
+		return LogicalType::BLOB;
+	} else if (pgtypename == "time") {
+		return LogicalType::TIME;
+	} else if (pgtypename == "timetz") {
+		return LogicalType::TIME_TZ;
+	} else if (pgtypename == "timestamp") {
+		return LogicalType::TIMESTAMP;
+	} else if (pgtypename == "timestamptz") {
+		return LogicalType::TIMESTAMP_TZ;
+	} else if (pgtypename == "interval") {
+		return LogicalType::INTERVAL;
+	} else if (pgtypename == "uuid") {
+		return LogicalType::UUID;
+	} else {
+		// unsupported so fallback to varchar
 		return LogicalType::VARCHAR;
 	}
-	throw NotImplementedException("Unsupported type for PostgresUtils::TypeToLogicalType: %s", input);
 }
 
 LogicalType PostgresUtils::ToPostgresType(const LogicalType &input) {

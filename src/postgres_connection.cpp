@@ -4,6 +4,7 @@
 #include "duckdb/storage/table_storage_info.hpp"
 #include "duckdb/parser/column_list.hpp"
 #include "duckdb/parser/parser.hpp"
+#include "postgres_conversion.hpp"
 #include "postgres_connection.hpp"
 #include "postgres_stmt.hpp"
 #include "duckdb/common/types/uuid.hpp"
@@ -13,26 +14,25 @@ namespace duckdb {
 PostgresConnection::PostgresConnection() : connection(nullptr) {
 }
 
-PostgresConnection::PostgresConnection(PGconn *connection_p) :
-	connection(connection_p) {
-}
-
 PostgresConnection::~PostgresConnection() {
 	Close();
 }
 
 PostgresConnection::PostgresConnection(PostgresConnection &&other) noexcept {
 	std::swap(connection, other.connection);
+	std::swap(dsn, other.dsn);
 }
 
 PostgresConnection &PostgresConnection::operator=(PostgresConnection &&other) noexcept {
 	std::swap(connection, other.connection);
+	std::swap(dsn, other.dsn);
 	return *this;
 }
 
 PostgresConnection PostgresConnection::Open(const string &connection_string) {
 	PostgresConnection result;
 	result.connection = PostgresUtils::PGConnect(connection_string);
+	result.dsn = connection_string;
 	return result;
 }
 
@@ -102,48 +102,24 @@ void PostgresConnection::Close() {
 	connection = nullptr;
 }
 
-void PostgresConnection::BeginCopyTo(const string &table_name, const vector<string> &column_names) {
-	string query = "COPY " + KeywordHelper::WriteOptionallyQuoted(table_name) + " ";
-	if (!column_names.empty()) {
-		query += "(";
-		for(idx_t c = 0; c < column_names.size(); c++) {
-			if (c > 0) {
-				query += ", ";
-			}
-			query += KeywordHelper::WriteOptionallyQuoted(column_names[c]);
-		}
-		query += ") ";
-	}
-	query += "FROM STDIN;";
-	auto result = PQexec(connection, query.c_str());
-	if (!result || PQresultStatus(result) != PGRES_COPY_IN) {
-		throw std::runtime_error("Failed to prepare COPY \"" + query + "\": " + string(PQresultErrorMessage(result)));
-	}
-}
-
-void PostgresConnection::CopyData(data_ptr_t buffer, idx_t size) {
-	int result;
-	do {
-		result = PQputCopyData(connection, (const char *) buffer, size);
-	} while(result == 0);
-	if (result == -1) {
-		throw InternalException("Error during PQputCopyEnd: %s", PQerrorMessage(connection));
-	}
-}
-
-void PostgresConnection::FinishCopyTo() {
-	auto result = PQputCopyEnd(connection, nullptr);
-	if (result == -1) {
-		throw InternalException("Error during PQputCopyEnd: %s", PQerrorMessage(connection));
-	}
-}
-
 vector<string> PostgresConnection::GetEntries(string entry_type) {
 	throw InternalException("Get Entries");
 }
 
-vector<string> PostgresConnection::GetTables() {
-	return GetEntries("table");
+vector<string> PostgresConnection::GetTables(const string &schema) {
+	auto query = StringUtil::Replace(R"(
+	SELECT table_name
+	FROM information_schema.tables
+	WHERE table_schema='${SCHEMA}';
+)", "${SCHEMA}", schema);
+
+	vector<string> tables;
+	auto result = Query(query);
+	auto rows = result->Count();
+	for(idx_t row = 0; row < rows; row++) {
+		tables.push_back(result->GetString(row, 0));
+	}
+	return tables;
 }
 
 void PostgresConnection::GetIndexInfo(const string &index_name, string &sql, string &table_name) {
@@ -154,25 +130,29 @@ void PostgresConnection::GetViewInfo(const string &view_name, string &sql) {
 	throw InternalException("GetViewInfo(");
 }
 
-bool PostgresConnection::GetTableInfo(const string &table_name, ColumnList &columns, vector<unique_ptr<Constraint>> &constraints) {
+bool PostgresConnection::GetTableInfo(const string &schema_name, const string &table_name, ColumnList &columns, vector<unique_ptr<Constraint>> &constraints) {
 	// query the columns that belong to this table
-	auto query = StringUtil::Replace(R"(
-SELECT column_name, data_type, column_default, is_nullable
+	auto query = StringUtil::Replace(StringUtil::Replace(R"(
+SELECT column_name, udt_name, column_default, is_nullable, numeric_precision, numeric_scale
 FROM information_schema.columns
-WHERE table_name='${TABLE_NAME}'
+WHERE table_schema='${SCHEMA_NAME}' AND table_name='${TABLE_NAME}'
 ORDER BY ordinal_position;
-)", "${TABLE_NAME}", table_name);
+)", "${TABLE_NAME}", table_name), "${SCHEMA_NAME}", schema_name);
 	auto result = Query(query);
 	auto rows = result->Count();
 	if (rows == 0) {
 		return false;
 	}
 	for(idx_t row = 0; row < rows; row++) {
+		PostgresTypeData type_info;
 		auto column_name = result->GetString(row, 0);
-		auto data_type = result->GetString(row, 1);
+		type_info.type_name = result->GetString(row, 1);
 		auto default_value = result->GetString(row, 2);
 		auto is_nullable = result->GetString(row, 3);
-		auto column_type = PostgresUtils::TypeToLogicalType(data_type);
+		type_info.precision = result->IsNull(row, 4) ? -1 : result->GetInt64(row, 4);
+		type_info.scale = result->IsNull(row, 5) ? -1 : result->GetInt64(row, 5);
+
+		auto column_type = PostgresUtils::TypeToLogicalType(type_info);
 
 		ColumnDefinition column(std::move(column_name), std::move(column_type));
 		if (!default_value.empty()) {

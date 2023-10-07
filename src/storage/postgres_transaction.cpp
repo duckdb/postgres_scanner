@@ -36,7 +36,7 @@ PostgresTransaction &PostgresTransaction::Get(ClientContext &context, Catalog &c
 	return Transaction::Get(context, catalog).Cast<PostgresTransaction>();
 }
 
-optional_ptr<CatalogEntry> PostgresTransaction::GetCatalogEntry(CatalogType type, const string &entry_name) {
+optional_ptr<CatalogEntry> PostgresTransaction::GetCatalogEntry(CatalogType type, PostgresSchemaEntry &schema, const string &entry_name) {
 	auto entry = catalog_entries.find(entry_name);
 	if (entry != catalog_entries.end()) {
 		return entry->second.get();
@@ -44,14 +44,14 @@ optional_ptr<CatalogEntry> PostgresTransaction::GetCatalogEntry(CatalogType type
 	unique_ptr<CatalogEntry> result;
 	switch (type) {
 	case CatalogType::TABLE_ENTRY: {
-		CreateTableInfo info(postgres_catalog.GetMainSchema(), entry_name);
-		auto exists = connection.GetTableInfo(entry_name, info.columns, info.constraints);
+		CreateTableInfo info(schema, entry_name);
+		auto exists = connection.GetTableInfo(schema.name, entry_name, info.columns, info.constraints);
 		if (!exists) {
 			return nullptr;
 		}
 		D_ASSERT(!info.columns.empty());
 
-		result = make_uniq<PostgresTableEntry>(postgres_catalog, postgres_catalog.GetMainSchema(), info);
+		result = make_uniq<PostgresTableEntry>(postgres_catalog, schema, info);
 		break;
 	}
 	case CatalogType::VIEW_ENTRY: {
@@ -60,7 +60,7 @@ optional_ptr<CatalogEntry> PostgresTransaction::GetCatalogEntry(CatalogType type
 
 		auto view_info = CreateViewInfo::FromCreateView(*context.lock(), sql);
 		view_info->internal = false;
-		result = make_uniq<ViewCatalogEntry>(postgres_catalog, postgres_catalog.GetMainSchema(), *view_info);
+		result = make_uniq<ViewCatalogEntry>(postgres_catalog, schema, *view_info);
 		break;
 	}
 	case CatalogType::INDEX_ENTRY: {

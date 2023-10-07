@@ -12,6 +12,7 @@
 #include "postgres_result.hpp"
 
 namespace duckdb {
+class PostgresBinaryWriter;
 class PostgresStatement;
 class PostgresResult;
 struct IndexInfo;
@@ -19,7 +20,6 @@ struct IndexInfo;
 class PostgresConnection {
 public:
 	PostgresConnection();
-	PostgresConnection(PGconn *connection);
 	~PostgresConnection();
 	// disable copy constructors
 	PostgresConnection(const PostgresConnection &other) = delete;
@@ -36,10 +36,10 @@ public:
 	void Execute(const string &query);
 	unique_ptr<PostgresResult> TryQuery(const string &query);
 	unique_ptr<PostgresResult> Query(const string &query);
-	vector<string> GetTables();
+	vector<string> GetTables(const string &schema);
 
 	vector<string> GetEntries(string entry_type);
-	bool GetTableInfo(const string &table_name, ColumnList &columns, vector<unique_ptr<Constraint>> &constraints);
+	bool GetTableInfo(const string &schema_name, const string &table_name, ColumnList &columns, vector<unique_ptr<Constraint>> &constraints);
 	void GetViewInfo(const string &view_name, string &sql);
 	void GetIndexInfo(const string &index_name, string &sql, string &table_name);
 	//! Gets the max row id of a table, returns false if the table does not have a rowid column
@@ -49,14 +49,23 @@ public:
 
 	void BeginCopyTo(const string &table_name, const vector<string> &column_names);
 	void CopyData(data_ptr_t buffer, idx_t size);
+	void CopyData(PostgresBinaryWriter &writer);
 	void CopyChunk(DataChunk &chunk);
 	void FinishCopyTo();
 
 	bool IsOpen();
 	void Close();
 
+	PGconn *GetConnection() {
+		return connection;
+	}
+	string GetDSN() {
+		return dsn;
+	}
+
 private:
 	PGconn *connection;
+	string dsn;
 
 };
 

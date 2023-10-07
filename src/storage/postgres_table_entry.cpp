@@ -19,7 +19,19 @@ void PostgresTableEntry::BindUpdateConstraints(LogicalGet &, LogicalProjection &
 }
 
 TableFunction PostgresTableEntry::GetScanFunction(ClientContext &context, unique_ptr<FunctionData> &bind_data) {
-	throw InternalException("FIXME: PostgresTableEntry GetScanFunction");
+	auto &transaction = Transaction::Get(context, catalog).Cast<PostgresTransaction>();
+	auto &conn = transaction.GetConnection();
+
+	auto result = make_uniq<PostgresBindData>(conn.GetConnection());
+
+	result->schema_name = schema.name;
+	result->table_name = name;
+	result->dsn = conn.GetDSN();
+
+	PostgresScanFunction::PrepareBind(context, *result);
+
+	bind_data = std::move(result);
+	return PostgresScanFunction();
 }
 
 TableStorageInfo PostgresTableEntry::GetStorageInfo(ClientContext &context) {

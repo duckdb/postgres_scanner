@@ -28,7 +28,7 @@ void PostgresCatalog::ScanSchemas(ClientContext &context, std::function<void(Sch
 optional_ptr<SchemaCatalogEntry> PostgresCatalog::GetSchema(CatalogTransaction transaction, const string &schema_name,
                                                           OnEntryNotFound if_not_found,
                                                           QueryErrorContext error_context) {
-	if (schema_name == DEFAULT_SCHEMA || schema_name == INVALID_SCHEMA) {
+	if (schema_name == "public" || schema_name == DEFAULT_SCHEMA || schema_name == INVALID_SCHEMA) {
 		return main_schema.get();
 	}
 	if (if_not_found == OnEntryNotFound::RETURN_NULL) {

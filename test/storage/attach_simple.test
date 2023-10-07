@@ -27,7 +27,7 @@ SELECT * FROM simple.test
 statement error
 INSERT INTO tst VALUES (84)
 ----
-simple.test
+test
 
 statement error
 INSERT INTO tst VALUES (84)

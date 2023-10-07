@@ -13,56 +13,7 @@
 
 namespace duckdb {
 
-struct PostgresTypeInfo {
-	string typname;
-	int64_t typlen;
-	string typtype;
-	string nspname;
-};
-
-struct PostgresColumnInfo {
-	string attname;
-	int atttypmod;
-	PostgresTypeInfo type_info;
-	int64_t typelem; // OID pointer for arrays
-	PostgresTypeInfo elem_info;
-};
-
 static constexpr uint32_t POSTGRES_TID_MAX = 4294967295;
-
-struct PostgresBindData : public FunctionData {
-	~PostgresBindData() {
-		if (conn) {
-			PQfinish(conn);
-			conn = nullptr;
-		}
-	}
-
-	string schema_name;
-	string table_name;
-	idx_t pages_approx = 0;
-
-	vector<PostgresColumnInfo> columns;
-	vector<string> names;
-	vector<LogicalType> types;
-	vector<bool> needs_cast;
-
-	idx_t pages_per_task = 1000;
-	string dsn;
-
-	string snapshot;
-	bool in_recovery;
-
-	PGconn *conn = nullptr;
-
-public:
-	unique_ptr<FunctionData> Copy() const override {
-		throw NotImplementedException("");
-	}
-	bool Equals(const FunctionData &other_p) const override {
-		return false;
-	}
-};
 
 struct PostgresLocalState : public LocalTableFunctionState {
 	~PostgresLocalState() {
@@ -176,48 +127,36 @@ static LogicalType DuckDBType(PostgresColumnInfo &info, PGconn *conn, ClientCont
 	return DuckDBType2(&info.type_info, info.atttypmod, &info.elem_info, conn, context);
 }
 
-static unique_ptr<FunctionData> PostgresBind(ClientContext &context, TableFunctionBindInput &input,
-                                             vector<LogicalType> &return_types, vector<string> &names) {
-
-	auto bind_data = make_uniq<PostgresBindData>();
-
-	bind_data->dsn = input.inputs[0].GetValue<string>();
-	bind_data->schema_name = input.inputs[1].GetValue<string>();
-	bind_data->table_name = input.inputs[2].GetValue<string>();
-
-	bind_data->conn = PostgresUtils::PGConnect(bind_data->dsn);
-
+void PostgresScanFunction::PrepareBind(ClientContext &context, PostgresBindData &bind_data) {
 	// we create a transaction here, and get the snapshot id so the parallel
 	// reader threads can use the same snapshot
-	PGExec(bind_data->conn, "BEGIN TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY");
+	bind_data.in_recovery = (bool)PGQuery(bind_data.conn, "SELECT pg_is_in_recovery()")->GetBool(0, 0);
+	bind_data.snapshot = "";
 
-	bind_data->in_recovery = (bool)PGQuery(bind_data->conn, "SELECT pg_is_in_recovery()")->GetBool(0, 0);
-	bind_data->snapshot = "";
-
-	if (!bind_data->in_recovery) {
-		bind_data->snapshot = PGQuery(bind_data->conn, "SELECT pg_export_snapshot()")->GetString(0, 0);
+	if (!bind_data.in_recovery) {
+		bind_data.snapshot = PGQuery(bind_data.conn, "SELECT pg_export_snapshot()")->GetString(0, 0);
 	}
 
 	// find the id of the table in question to simplify below queries and avoid
 	// complex joins (ha)
-	auto res = PGQuery(bind_data->conn, StringUtil::Format(R"(
+	auto res = PGQuery(bind_data.conn, StringUtil::Format(R"(
 SELECT pg_class.oid, GREATEST(relpages, 1)
 FROM pg_class JOIN pg_namespace ON relnamespace = pg_namespace.oid
 WHERE nspname='%s' AND relname='%s'
 )",
-	                                                       bind_data->schema_name, bind_data->table_name));
+	                                                       bind_data.schema_name, bind_data.table_name));
 	if (res->Count() != 1) {
-		throw InvalidInputException("Postgres table \"%s\".\"%s\" not found", bind_data->schema_name,
-		                            bind_data->table_name);
+		throw InvalidInputException("Postgres table \"%s\".\"%s\" not found", bind_data.schema_name,
+		                            bind_data.table_name);
 	}
 	auto oid = res->GetInt64(0, 0);
-	bind_data->pages_approx = res->GetInt64(0, 1);
+	bind_data.pages_approx = res->GetInt64(0, 1);
 
 	res.reset();
 
 	// query the table schema so we can interpret the bits in the pages
 	// fun fact: this query also works in DuckDB ^^
-	res = PGQuery(bind_data->conn, StringUtil::Format(
+	res = PGQuery(bind_data.conn, StringUtil::Format(
 	                                   R"(
 SELECT
     attname, atttypmod, pg_namespace.nspname,
@@ -234,7 +173,7 @@ ORDER BY attnum;
 
 	// can't scan a table without columns (yes those exist)
 	if (res->Count() == 0) {
-		throw InvalidInputException("Table %s does not contain any columns.", bind_data->table_name);
+		throw InvalidInputException("Table %s does not contain any columns.", bind_data.table_name);
 	}
 
 	for (idx_t row = 0; row < res->Count(); row++) {
@@ -253,20 +192,34 @@ ORDER BY attnum;
 		info.elem_info.typlen = res->GetInt64(row, 8);
 		info.elem_info.typtype = res->GetString(row, 9);
 
-		bind_data->names.push_back(info.attname);
-		auto duckdb_type = DuckDBType(info, bind_data->conn, context);
+		bind_data.names.push_back(info.attname);
+		auto duckdb_type = DuckDBType(info, bind_data.conn, context);
 		// we cast unsupported types to varchar on read
 		auto needs_cast = duckdb_type == LogicalType::INVALID;
-		bind_data->needs_cast.push_back(needs_cast);
+		bind_data.needs_cast.push_back(needs_cast);
 		if (!needs_cast) {
-			bind_data->types.push_back(std::move(duckdb_type));
+			bind_data.types.push_back(std::move(duckdb_type));
 		} else {
-			bind_data->types.push_back(LogicalType::VARCHAR);
+			bind_data.types.push_back(LogicalType::VARCHAR);
 		}
 
-		bind_data->columns.push_back(info);
+		bind_data.columns.push_back(info);
 	}
 	res.reset();
+}
+
+static unique_ptr<FunctionData> PostgresBind(ClientContext &context, TableFunctionBindInput &input,
+                                             vector<LogicalType> &return_types, vector<string> &names) {
+	auto bind_data = make_uniq<PostgresBindData>();
+
+	bind_data->dsn = input.inputs[0].GetValue<string>();
+	bind_data->schema_name = input.inputs[1].GetValue<string>();
+	bind_data->table_name = input.inputs[2].GetValue<string>();
+
+	bind_data->conn = PostgresUtils::PGConnect(bind_data->dsn);
+
+	PGExec(bind_data->conn, "BEGIN TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY");
+	PostgresScanFunction::PrepareBind(context, *bind_data);
 
 	return_types = bind_data->types;
 	names = bind_data->names;

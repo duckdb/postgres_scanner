@@ -13,12 +13,19 @@
 
 namespace duckdb {
 
+
+struct PostgresTypeData {
+	string type_name;
+	int32_t precision;
+	int32_t scale;
+};
+
 class PostgresUtils {
 public:
 	static PGconn *PGConnect(const string &dsn);
 
 	static LogicalType ToPostgresType(const LogicalType &input);
-	static LogicalType TypeToLogicalType(const string &input);
+	static LogicalType TypeToLogicalType(const PostgresTypeData &input);
 
 };
 

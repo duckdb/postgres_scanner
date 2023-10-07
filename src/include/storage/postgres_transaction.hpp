@@ -14,6 +14,7 @@
 
 namespace duckdb {
 class PostgresCatalog;
+class PostgresSchemaEntry;
 class PostgresTableEntry;
 
 class PostgresTransaction : public Transaction {
@@ -26,7 +27,7 @@ public:
 	void Rollback();
 
 	PostgresConnection &GetConnection();
-	optional_ptr<CatalogEntry> GetCatalogEntry(CatalogType type, const string &table_name);
+	optional_ptr<CatalogEntry> GetCatalogEntry(CatalogType type, PostgresSchemaEntry &schema, const string &table_name);
 	void DropEntry(CatalogType type, const string &table_name, bool cascade);
 	void ClearTableEntry(const string &table_name);
 

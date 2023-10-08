@@ -142,9 +142,8 @@ void PostgresScanFunction::PrepareBind(ClientContext &context, PostgresBindData 
 	auto res = PGQuery(bind_data.conn, StringUtil::Format(R"(
 SELECT pg_class.oid, GREATEST(relpages, 1)
 FROM pg_class JOIN pg_namespace ON relnamespace = pg_namespace.oid
-WHERE nspname='%s' AND relname='%s'
-)",
-	                                                       bind_data.schema_name, bind_data.table_name));
+WHERE nspname=%s AND relname=%s
+)", KeywordHelper::WriteQuoted(bind_data.schema_name), KeywordHelper::WriteQuoted(bind_data.table_name)));
 	if (res->Count() != 1) {
 		throw InvalidInputException("Postgres table \"%s\".\"%s\" not found", bind_data.schema_name,
 		                            bind_data.table_name);
@@ -297,7 +296,7 @@ static void PostgresInitInternal(ClientContext &context, const PostgresBindData 
 		if (column_id == COLUMN_IDENTIFIER_ROW_ID) {
 			col_names += "ctid";
 		} else {
-			col_names += bind_data->names[column_id];
+			col_names += KeywordHelper::WriteQuoted(bind_data->names[column_id], '"');
 			if (bind_data->needs_cast[column_id]) {
 				col_names += "::VARCHAR";
 			}
@@ -308,8 +307,7 @@ static void PostgresInitInternal(ClientContext &context, const PostgresBindData 
 	if (lstate.filters && !lstate.filters->filters.empty()) {
 		vector<string> filter_entries;
 		for (auto &entry : lstate.filters->filters) {
-			// TODO properly escape " in column names
-			auto column_name = "\"" + bind_data->names[lstate.column_ids[entry.first]] + "\"";
+			auto column_name = KeywordHelper::WriteQuoted(bind_data->names[lstate.column_ids[entry.first]]);
 			auto &filter = *entry.second;
 			filter_entries.push_back(TransformFilter(column_name, filter));
 		}
@@ -318,10 +316,10 @@ static void PostgresInitInternal(ClientContext &context, const PostgresBindData 
 
 	lstate.sql = StringUtil::Format(
 	    R"(
-COPY (SELECT %s FROM "%s"."%s" WHERE ctid BETWEEN '(%d,0)'::tid AND '(%d,0)'::tid %s) TO STDOUT (FORMAT binary);
+COPY (SELECT %s FROM %s.%s WHERE ctid BETWEEN '(%d,0)'::tid AND '(%d,0)'::tid %s) TO STDOUT (FORMAT binary);
 )",
 
-	    col_names, bind_data->schema_name, bind_data->table_name, task_min, task_max, filter_string);
+	    col_names, KeywordHelper::WriteQuoted(bind_data->schema_name, '"'), KeywordHelper::WriteQuoted(bind_data->table_name, '"'), task_min, task_max, filter_string);
 
 	lstate.exec = false;
 	lstate.done = false;

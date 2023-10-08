@@ -146,9 +146,9 @@ vector<unique_ptr<CreateTableInfo>> PostgresConnection::GetTables(const Postgres
 	auto query = StringUtil::Replace(R"(
 SELECT table_name, column_name, udt_name, column_default, is_nullable, numeric_precision, numeric_scale
 FROM information_schema.columns
-WHERE table_schema='${SCHEMA_NAME}'
+WHERE table_schema=${SCHEMA_NAME}
 ORDER BY table_name, ordinal_position;
-)", "${SCHEMA_NAME}", schema.name);
+)", "${SCHEMA_NAME}", KeywordHelper::WriteQuoted(schema.name));
 
 	auto result = Query(query);
 	auto rows = result->Count();
@@ -176,9 +176,9 @@ unique_ptr<CreateTableInfo> PostgresConnection::GetTableInfo(const PostgresSchem
 	auto query = StringUtil::Replace(StringUtil::Replace(R"(
 SELECT column_name, udt_name, column_default, is_nullable, numeric_precision, numeric_scale
 FROM information_schema.columns
-WHERE table_schema='${SCHEMA_NAME}' AND table_name='${TABLE_NAME}'
+WHERE table_schema=${SCHEMA_NAME} AND table_name=${TABLE_NAME}
 ORDER BY ordinal_position;
-)", "${TABLE_NAME}", table_name), "${SCHEMA_NAME}", schema.name);
+)", "${TABLE_NAME}", KeywordHelper::WriteQuoted(table_name)), "${SCHEMA_NAME}", KeywordHelper::WriteQuoted(schema.name));
 	auto result = Query(query);
 	auto rows = result->Count();
 	if (rows == 0) {

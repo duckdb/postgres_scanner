@@ -1,6 +1,7 @@
 add_library(
   postgres_ext_storage OBJECT
   postgres_catalog.cpp
+  postgres_delete.cpp
   postgres_insert.cpp
   postgres_schema_entry.cpp
   postgres_table_entry.cpp

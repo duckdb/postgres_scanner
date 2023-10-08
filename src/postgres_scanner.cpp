@@ -289,33 +289,19 @@ static void PostgresInitInternal(ClientContext &context, const PostgresBindData 
 
 	auto bind_data = (const PostgresBindData *)bind_data_p;
 
-	// Queries like SELECT count(*) do not require actually returning the columns from the
-	// Postgres table, but only counting the row. In this case, we will be asked to return
-	// the 'rowid' special column here. It must be the only selected column. The corresponding
-	// deparsed query will be 'SELECT NULL'..Note that the user is not allowed to explicitly
-	// request the 'rowid' special column from a Postgres table in a SQL query.
-	bool have_rowid = false;
-	for (idx_t i = 0; i < lstate.column_ids.size(); i++) {
-		if (lstate.column_ids[i] == (column_t)-1) {
-			have_rowid = true;
-			break;
+	string col_names;
+	for(auto &column_id : lstate.column_ids) {
+		if (!col_names.empty()) {
+			col_names += ", ";
 		}
-	}
-
-	if (have_rowid && lstate.column_ids.size() > 1) {
-		throw InternalException("Cannot return ROW_ID from Postgres table");
-	}
-
-	std::string col_names;
-	if (have_rowid) {
-		// We are only counting rows, not interested in the actual values of the columns.
-		col_names = "NULL";
-	} else {
-		col_names =
-		    StringUtil::Join(lstate.column_ids.data(), lstate.column_ids.size(), ", ", [&](const idx_t column_id) {
-			    return StringUtil::Format("\"%s\"%s", bind_data->names[column_id],
-			                              bind_data->needs_cast[column_id] ? "::VARCHAR" : "");
-		    });
+		if (column_id == column_t(-1)) {
+			col_names += "ctid";
+		} else {
+			col_names += bind_data->names[column_id];
+			if (bind_data->needs_cast[column_id]) {
+				col_names += "::VARCHAR";
+			}
+		}
 	}
 
 	string filter_string;
@@ -878,10 +864,21 @@ static void PostgresScan(ClientContext &context, TableFunctionInput &data, DataC
 				FlatVector::Validity(out_vec).Set(output_offset, false);
 				continue;
 			}
-			ProcessValue(bind_data.types[col_idx], &bind_data.columns[col_idx].type_info,
-			             bind_data.columns[col_idx].atttypmod, bind_data.columns[col_idx].typelem,
-			             &bind_data.columns[col_idx].elem_info, (data_ptr_t)buf.buffer_ptr, raw_len, out_vec,
-			             output_offset);
+			if (col_idx == column_t(-1)) {
+				// row id
+				// ctid in postgres are a composite type of (page_index, tuple_in_page)
+				// the page index is a 4-byte integer, the tuple_in_page a 2-byte integer
+				D_ASSERT(raw_len == 6);
+				auto value_ptr = (const_data_ptr_t)buf.buffer_ptr;
+				auto page_index = PostgresConversion::LoadInteger<int32_t>(value_ptr);
+				auto row_in_page = PostgresConversion::LoadInteger<int16_t>(value_ptr);
+				FlatVector::GetData<int64_t>(out_vec)[output_offset] = (page_index << 16) + row_in_page;
+			} else {
+				ProcessValue(bind_data.types[col_idx], &bind_data.columns[col_idx].type_info,
+							 bind_data.columns[col_idx].atttypmod, bind_data.columns[col_idx].typelem,
+							 &bind_data.columns[col_idx].elem_info, (data_ptr_t)buf.buffer_ptr, raw_len, out_vec,
+							 output_offset);
+			}
 			buf.buffer_ptr += raw_len;
 		}
 

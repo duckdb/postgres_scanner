@@ -2,6 +2,10 @@
 
 namespace duckdb {
 
+static void
+PGNoticeProcessor(void *arg, const char *message) {
+}
+
 PGconn *PostgresUtils::PGConnect(const string &dsn) {
 	PGconn *conn = PQconnectdb(dsn.c_str());
 
@@ -9,6 +13,7 @@ PGconn *PostgresUtils::PGConnect(const string &dsn) {
 	if (PQstatus(conn) == CONNECTION_BAD) {
 		throw IOException("Unable to connect to Postgres at %s: %s", dsn, string(PQerrorMessage(conn)));
 	}
+	PQsetNoticeProcessor(conn, PGNoticeProcessor, nullptr);
 	return conn;
 }
 

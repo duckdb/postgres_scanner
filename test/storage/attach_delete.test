@@ -1,0 +1,95 @@
+# name: test/storage/attach_delete.test
+# description:
+# group: [postgres_storage]
+
+require postgres_scanner
+
+statement ok
+ATTACH 'dbname=postgresscanner' AS s1 (TYPE POSTGRES)
+
+statement ok
+CREATE OR REPLACE TABLE s1.test(i INTEGER);
+
+statement ok
+INSERT INTO s1.test VALUES (1), (2), (3), (NULL);
+
+query II
+SELECT rowid, * FROM s1.test
+----
+1	1
+2	2
+3	3
+4	NULL
+
+# simple delete
+query I
+DELETE FROM s1.test WHERE i=2
+----
+1
+
+query II
+SELECT rowid, * FROM s1.test
+----
+1	1
+3	3
+4	NULL
+
+# no matches
+query I
+DELETE FROM s1.test WHERE i=999
+----
+0
+
+query II
+SELECT rowid, * FROM s1.test
+----
+1	1
+3	3
+4	NULL
+
+# delete without parameters
+query I
+DELETE FROM s1.test
+----
+3
+
+query I
+SELECT * FROM s1.test
+
+query I
+DELETE FROM s1.test
+----
+0
+
+# RETURNING statement
+statement error
+DELETE FROM s1.test RETURNING *;
+----
+not yet supported
+
+statement ok
+INSERT INTO s1.test VALUES (1), (2), (3), (NULL);
+
+statement ok
+CREATE TABLE duckdb_table AS SELECT 1 i UNION ALL SELECT 3 UNION ALL SELECT 1
+
+# DELETE with join on another table
+statement ok
+DELETE FROM s1.test USING duckdb_table WHERE test.i = duckdb_table.i
+
+query I
+SELECT * FROM s1.test
+----
+2
+NULL
+
+# DELETE with subquery referring to itself
+query I
+DELETE FROM s1.test WHERE i=(SELECT MIN(i) FROM s1.test)
+----
+1
+
+query I
+SELECT * FROM s1.test
+----
+NULL

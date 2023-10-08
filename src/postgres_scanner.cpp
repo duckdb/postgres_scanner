@@ -294,7 +294,7 @@ static void PostgresInitInternal(ClientContext &context, const PostgresBindData 
 		if (!col_names.empty()) {
 			col_names += ", ";
 		}
-		if (column_id == column_t(-1)) {
+		if (column_id == COLUMN_IDENTIFIER_ROW_ID) {
 			col_names += "ctid";
 		} else {
 			col_names += bind_data->names[column_id];
@@ -864,15 +864,15 @@ static void PostgresScan(ClientContext &context, TableFunctionInput &data, DataC
 				FlatVector::Validity(out_vec).Set(output_offset, false);
 				continue;
 			}
-			if (col_idx == column_t(-1)) {
+			if (col_idx == COLUMN_IDENTIFIER_ROW_ID) {
 				// row id
 				// ctid in postgres are a composite type of (page_index, tuple_in_page)
 				// the page index is a 4-byte integer, the tuple_in_page a 2-byte integer
 				D_ASSERT(raw_len == 6);
 				auto value_ptr = (const_data_ptr_t)buf.buffer_ptr;
-				auto page_index = PostgresConversion::LoadInteger<int32_t>(value_ptr);
-				auto row_in_page = PostgresConversion::LoadInteger<int16_t>(value_ptr);
-				FlatVector::GetData<int64_t>(out_vec)[output_offset] = (page_index << 16) + row_in_page;
+				int64_t page_index = PostgresConversion::LoadInteger<int32_t>(value_ptr);
+				int64_t row_in_page = PostgresConversion::LoadInteger<int16_t>(value_ptr);
+				FlatVector::GetData<int64_t>(out_vec)[output_offset] = (page_index << 16LL) + row_in_page;
 			} else {
 				ProcessValue(bind_data.types[col_idx], &bind_data.columns[col_idx].type_info,
 							 bind_data.columns[col_idx].atttypmod, bind_data.columns[col_idx].typelem,

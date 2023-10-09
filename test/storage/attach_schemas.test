@@ -11,7 +11,7 @@ statement ok
 USE s;
 
 statement ok
-DROP SCHEMA test_schema CASCADE
+DROP SCHEMA IF EXISTS test_schema CASCADE
 
 statement ok
 CREATE OR REPLACE SCHEMA test_schema;

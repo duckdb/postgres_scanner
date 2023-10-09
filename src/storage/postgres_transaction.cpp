@@ -10,14 +10,18 @@
 namespace duckdb {
 
 PostgresTransaction::PostgresTransaction(PostgresCatalog &postgres_catalog, TransactionManager &manager, ClientContext &context)
-    : Transaction(manager, context), schemas(postgres_catalog, *this) {
+    : Transaction(manager, context), postgres_catalog(postgres_catalog), schemas(postgres_catalog, *this) {
 	connection = PostgresConnection::Open(postgres_catalog.path);
 }
 
 PostgresTransaction::~PostgresTransaction() = default;
 
 void PostgresTransaction::Start() {
-	connection.Execute("BEGIN TRANSACTION");
+	string query = "BEGIN TRANSACTION";
+	if (postgres_catalog.access_mode == AccessMode::READ_ONLY) {
+		query += " READ ONLY";
+	}
+	connection.Execute(query);
 }
 void PostgresTransaction::Commit() {
 	connection.Execute("COMMIT");

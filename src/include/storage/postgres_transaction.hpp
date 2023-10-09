@@ -34,6 +34,7 @@ public:
 	static PostgresTransaction &Get(ClientContext &context, Catalog &catalog);
 
 private:
+	PostgresCatalog &postgres_catalog;
 	PostgresConnection connection;
 	PostgresSchemaSet schemas;
 };

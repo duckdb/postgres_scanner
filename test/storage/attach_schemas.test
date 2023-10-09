@@ -1,0 +1,50 @@
+# name: test/storage/attach_schemas.test
+# description:
+# group: [postgres_storage]
+
+require postgres_scanner
+
+statement ok
+ATTACH 'dbname=postgresscanner' AS s (TYPE POSTGRES)
+
+statement ok
+USE s;
+
+statement ok
+DROP SCHEMA test_schema CASCADE
+
+statement ok
+CREATE OR REPLACE SCHEMA test_schema;
+
+statement ok
+DROP SCHEMA test_schema
+
+statement error
+DROP SCHEMA test_schema;
+----
+does not exist
+
+statement ok
+DROP SCHEMA IF EXISTS test_schema
+
+statement ok
+CREATE SCHEMA test_schema;
+
+statement ok
+CREATE TABLE test_schema.test_table(i INTEGER);
+
+statement ok
+INSERT INTO test_schema.test_table VALUES (42);
+
+query I
+SELECT * FROM test_schema.test_table
+----
+42
+
+statement error
+DROP SCHEMA test_schema
+----
+CASCADE
+
+statement ok
+DROP SCHEMA test_schema CASCADE

@@ -29,7 +29,6 @@ public:
 	PostgresConnection(PostgresConnection &&other) noexcept;
 	PostgresConnection &operator=(PostgresConnection &&) noexcept;
 
-
 public:
 	static PostgresConnection Open(const string &connection_string);
 	bool TryPrepare(const string &query, PostgresStatement &result, string &error);
@@ -41,12 +40,13 @@ public:
 	vector<string> GetEntries(string entry_type);
 	void GetViewInfo(const string &view_name, string &sql);
 	void GetIndexInfo(const string &index_name, string &sql, string &table_name);
-	//! Gets the max row id of a table, returns false if the table does not have a rowid column
+	//! Gets the max row id of a table, returns false if the table does not have a
+	//! rowid column
 	bool GetMaxRowId(const string &table_name, idx_t &row_id);
 	bool ColumnExists(const string &table_name, const string &column_name);
 	vector<IndexInfo> GetIndexInfo(const string &table_name);
 
-	void BeginCopyTo(const string &table_name, const vector<string> &column_names);
+	void BeginCopyTo(const string &schema_name, const string &table_name, const vector<string> &column_names);
 	void CopyData(data_ptr_t buffer, idx_t size);
 	void CopyData(PostgresBinaryWriter &writer);
 	void CopyChunk(DataChunk &chunk);
@@ -65,7 +65,6 @@ public:
 private:
 	PGconn *connection;
 	string dsn;
-
 };
 
 } // namespace duckdb

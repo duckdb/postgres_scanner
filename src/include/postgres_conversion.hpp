@@ -22,7 +22,7 @@
 namespace duckdb {
 
 struct PostgresConversion {
-	template<class T>
+	template <class T>
 	static T LoadInteger(const_data_ptr_t &value_ptr) {
 		T val = Load<T>(value_ptr);
 		if (sizeof(T) == sizeof(uint16_t)) {

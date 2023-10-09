@@ -13,7 +13,6 @@
 
 namespace duckdb {
 
-
 struct PostgresTypeData {
 	string type_name;
 	int32_t precision;
@@ -27,7 +26,6 @@ public:
 	static LogicalType ToPostgresType(const LogicalType &input);
 	static LogicalType TypeToLogicalType(const PostgresTypeData &input);
 	static string TypeToString(const LogicalType &input);
-
 };
 
 } // namespace duckdb

@@ -3,6 +3,8 @@
 #include "storage/postgres_transaction.hpp"
 #include "postgres_connection.hpp"
 #include "duckdb/storage/database_size.hpp"
+#include "duckdb/parser/parsed_data/drop_info.hpp"
+#include "duckdb/parser/parsed_data/create_schema_info.hpp"
 
 namespace duckdb {
 
@@ -10,14 +12,26 @@ PostgresCatalog::PostgresCatalog(AttachedDatabase &db_p, const string &path, Acc
     : Catalog(db_p), path(path), access_mode(access_mode) {
 }
 
-PostgresCatalog::~PostgresCatalog() {
-}
+PostgresCatalog::~PostgresCatalog() = default;
 
 void PostgresCatalog::Initialize(bool load_builtin) {
 }
 
 optional_ptr<CatalogEntry> PostgresCatalog::CreateSchema(CatalogTransaction transaction, CreateSchemaInfo &info) {
-	throw BinderException("Postgres databases do not support creating new schemas");
+	auto &postgres_transaction = PostgresTransaction::Get(transaction.GetContext(), *this);
+	if (info.on_conflict == OnCreateConflict::REPLACE_ON_CONFLICT) {
+		DropInfo try_drop;
+		try_drop.name = info.schema;
+		try_drop.if_not_found = OnEntryNotFound::RETURN_NULL;
+		try_drop.cascade = false;
+		postgres_transaction.GetSchemas().DropEntry(try_drop);
+	}
+	return postgres_transaction.GetSchemas().CreateSchema(info);
+}
+
+void PostgresCatalog::DropSchema(ClientContext &context, DropInfo &info) {
+	auto &postgres_transaction = PostgresTransaction::Get(context, *this);
+	return postgres_transaction.GetSchemas().DropEntry(info);
 }
 
 void PostgresCatalog::ScanSchemas(ClientContext &context, std::function<void(SchemaCatalogEntry &)> callback) {
@@ -47,10 +61,6 @@ bool PostgresCatalog::InMemory() {
 
 string PostgresCatalog::GetDBPath() {
 	return string();
-}
-
-void PostgresCatalog::DropSchema(ClientContext &context, DropInfo &info) {
-	throw BinderException("Postgres databases do not support dropping schemas");
 }
 
 DatabaseSize PostgresCatalog::GetDatabaseSize(ClientContext &context) {

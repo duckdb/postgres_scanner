@@ -1,5 +1,6 @@
 #include "storage/postgres_schema_set.hpp"
 #include "storage/postgres_transaction.hpp"
+#include "duckdb/parser/parsed_data/create_schema_info.hpp"
 
 namespace duckdb {
 
@@ -21,6 +22,15 @@ FROM information_schema.schemata;
 		auto schema = make_uniq<PostgresSchemaEntry>(transaction, catalog, schema_name);
 		entries.insert(make_pair(schema_name, std::move(schema)));
 	}
+}
+
+optional_ptr<CatalogEntry> PostgresSchemaSet::CreateSchema(CreateSchemaInfo &info) {
+	auto &conn = transaction.GetConnection();
+
+	string create_sql = "CREATE SCHEMA " + KeywordHelper::WriteQuoted(info.schema, '"');
+	conn.Execute(create_sql);
+	auto schema_entry = make_uniq<PostgresSchemaEntry>(transaction, catalog, info.schema);
+	return CreateEntry(std::move(schema_entry));
 }
 
 }

@@ -29,8 +29,10 @@ struct PostgresColumnInfo {
 };
 
 struct PostgresBindData : public FunctionData {
-	PostgresBindData() : owns_connection(true) {}
-	PostgresBindData(PGconn *conn) : conn(conn), owns_connection(false) {}
+	PostgresBindData() : owns_connection(true) {
+	}
+	PostgresBindData(PGconn *conn) : conn(conn), owns_connection(false) {
+	}
 	~PostgresBindData() {
 		if (owns_connection && conn) {
 			PQfinish(conn);
@@ -81,6 +83,5 @@ class PostgresScanFunctionFilterPushdown : public TableFunction {
 public:
 	PostgresScanFunctionFilterPushdown();
 };
-
 
 } // namespace duckdb

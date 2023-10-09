@@ -173,7 +173,11 @@ string GetCreateTableSQL(CreateTableInfo &info) {
 	if (info.on_conflict == OnCreateConflict::IGNORE_ON_CONFLICT) {
 		ss << "IF NOT EXISTS ";
 	}
-	ss << KeywordHelper::WriteOptionallyQuoted(info.table);
+	if (!info.schema.empty()) {
+		ss << KeywordHelper::WriteQuoted(info.schema, '"');
+		ss << ".";
+	}
+	ss << KeywordHelper::WriteQuoted(info.table, '"');
 	ss << PostgresColumnsToSQL(info.columns, info.constraints);
 	ss << ";";
 	return ss.str();
@@ -184,11 +188,8 @@ optional_ptr<CatalogEntry> PostgresTableSet::CreateTable(BoundCreateTableInfo &i
 
 	auto create_sql = GetCreateTableSQL(info.Base());
 	conn.Execute(create_sql);
-
 	auto tbl_entry = make_uniq<PostgresTableEntry>(catalog, schema, info.Base());
-	auto result = tbl_entry.get();
-	entries.insert(make_pair(info.Base().table, std::move(tbl_entry)));
-	return result;
+	return CreateEntry(std::move(tbl_entry));
 }
 
 }

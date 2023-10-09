@@ -10,10 +10,10 @@ using namespace duckdb;
 
 class PostgresScannerExtension : public Extension {
 public:
-  std::string Name() override {
-    return "postgres_scanner";
-  }
-  void Load(DuckDB &db) override;
+	std::string Name() override {
+		return "postgres_scanner";
+	}
+	void Load(DuckDB &db) override;
 };
 
 extern "C" {

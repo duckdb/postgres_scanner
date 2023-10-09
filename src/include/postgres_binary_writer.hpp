@@ -17,8 +17,7 @@ namespace duckdb {
 
 class PostgresBinaryWriter {
 public:
-
-	template<class T>
+	template <class T>
 	T GetInteger(T val) {
 		if (sizeof(T) == sizeof(uint16_t)) {
 			return htons(val);
@@ -32,7 +31,7 @@ public:
 		}
 	}
 
-	template<class T>
+	template <class T>
 	void WriteRawInteger(T val) {
 		stream.Write<T>(GetInteger(val));
 	}
@@ -60,7 +59,7 @@ public:
 		WriteRawInteger<int32_t>(-1);
 	}
 
-	template<class T>
+	template <class T>
 	void WriteInteger(T value) {
 		WriteRawInteger<int32_t>(sizeof(T));
 		WriteRawInteger<T>(value);

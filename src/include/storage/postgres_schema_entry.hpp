@@ -9,13 +9,14 @@
 #pragma once
 
 #include "duckdb/catalog/catalog_entry/schema_catalog_entry.hpp"
+#include "storage/postgres_table_set.hpp"
 
 namespace duckdb {
 class PostgresTransaction;
 
 class PostgresSchemaEntry : public SchemaCatalogEntry {
 public:
-	PostgresSchemaEntry(Catalog &catalog);
+	PostgresSchemaEntry(PostgresTransaction &transaction, Catalog &catalog, string name);
 
 public:
 	optional_ptr<CatalogEntry> CreateTable(CatalogTransaction transaction, BoundCreateTableInfo &info) override;
@@ -45,6 +46,11 @@ private:
 	void AlterTable(PostgresTransaction &transaction, RemoveColumnInfo &info);
 
 	void TryDropEntry(ClientContext &context, CatalogType catalog_type, const string &name);
+
+	PostgresCatalogSet &GetCatalogSet(CatalogType type);
+
+private:
+	PostgresTableSet tables;
 };
 
 } // namespace duckdb

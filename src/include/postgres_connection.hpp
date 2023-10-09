@@ -39,8 +39,6 @@ public:
 	unique_ptr<PostgresResult> Query(const string &query);
 
 	vector<string> GetEntries(string entry_type);
-	vector<unique_ptr<CreateTableInfo>> GetTables(const PostgresSchemaEntry &schema);
-	unique_ptr<CreateTableInfo> GetTableInfo(const PostgresSchemaEntry &schema, const string &table_name);
 	void GetViewInfo(const string &view_name, string &sql);
 	void GetIndexInfo(const string &index_name, string &sql, string &table_name);
 	//! Gets the max row id of a table, returns false if the table does not have a rowid column

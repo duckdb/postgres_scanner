@@ -1,4 +1,4 @@
-# name: test/sql/storage/attach_create_if_exists.test
+# name: test/storage/attach_create_if_exists.test
 # description:
 # group: [postgres_storage]
 

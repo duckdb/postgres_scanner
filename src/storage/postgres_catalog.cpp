@@ -14,7 +14,6 @@ PostgresCatalog::~PostgresCatalog() {
 }
 
 void PostgresCatalog::Initialize(bool load_builtin) {
-	main_schema = make_uniq<PostgresSchemaEntry>(*this);
 }
 
 optional_ptr<CatalogEntry> PostgresCatalog::CreateSchema(CatalogTransaction transaction, CreateSchemaInfo &info) {
@@ -22,19 +21,24 @@ optional_ptr<CatalogEntry> PostgresCatalog::CreateSchema(CatalogTransaction tran
 }
 
 void PostgresCatalog::ScanSchemas(ClientContext &context, std::function<void(SchemaCatalogEntry &)> callback) {
-	callback(*main_schema);
+	auto &transaction = PostgresTransaction::Get(context, *this);
+	for(auto &entry : transaction.GetSchemas().GetEntries()) {
+		callback(entry.second->Cast<PostgresSchemaEntry>());
+	}
 }
 
 optional_ptr<SchemaCatalogEntry> PostgresCatalog::GetSchema(CatalogTransaction transaction, const string &schema_name,
                                                           OnEntryNotFound if_not_found,
                                                           QueryErrorContext error_context) {
-	if (schema_name == "public" || schema_name == DEFAULT_SCHEMA || schema_name == INVALID_SCHEMA) {
-		return main_schema.get();
+	if (schema_name == DEFAULT_SCHEMA) {
+		return GetSchema(transaction, "public", if_not_found, error_context);
 	}
-	if (if_not_found == OnEntryNotFound::RETURN_NULL) {
-		return nullptr;
+	auto &postgres_transaction = PostgresTransaction::Get(transaction.GetContext(), *this);
+	auto entry = postgres_transaction.GetSchemas().GetEntry(schema_name);
+	if (!entry && if_not_found != OnEntryNotFound::RETURN_NULL) {
+		throw BinderException("Schema with name \"%s\" not found", schema_name);
 	}
-	throw BinderException("Postgres databases only have a single schema - \"%s\"", DEFAULT_SCHEMA);
+	return reinterpret_cast<SchemaCatalogEntry *>(entry.get());
 }
 
 bool PostgresCatalog::InMemory() {

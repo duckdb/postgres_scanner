@@ -25,12 +25,12 @@ SELECT * FROM simple.test
 
 # insert into a non-existent table
 statement error
-INSERT INTO tst VALUES (84)
+INSERT INTO simple.tst VALUES (84)
 ----
 test
 
 statement error
-INSERT INTO tst VALUES (84)
+INSERT INTO simple.tst VALUES (84)
 ----
 test
 

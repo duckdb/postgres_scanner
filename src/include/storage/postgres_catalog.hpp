@@ -37,10 +37,6 @@ public:
 	                                           OnEntryNotFound if_not_found,
 	                                           QueryErrorContext error_context = QueryErrorContext()) override;
 
-	PostgresSchemaEntry &GetMainSchema() {
-		return *main_schema;
-	}
-
 	unique_ptr<PhysicalOperator> PlanInsert(ClientContext &context, LogicalInsert &op,
 	                                        unique_ptr<PhysicalOperator> plan) override;
 	unique_ptr<PhysicalOperator> PlanCreateTableAs(ClientContext &context, LogicalCreateTable &op,
@@ -60,9 +56,6 @@ public:
 
 private:
 	void DropSchema(ClientContext &context, DropInfo &info) override;
-
-private:
-	unique_ptr<PostgresSchemaEntry> main_schema;
 };
 
 } // namespace duckdb

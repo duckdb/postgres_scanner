@@ -1,0 +1,30 @@
+# name: test/storage/attach_if_not_exists.test
+# description:
+# group: [postgres_storage]
+
+require postgres_scanner
+
+statement ok
+ATTACH 'dbname=postgresscanner' AS s (TYPE POSTGRES)
+
+# create a table
+statement ok
+DROP TABLE IF EXISTS s.test_tbl
+
+statement ok
+CREATE TABLE s.test_tbl(i INT, j INT)
+
+# detach and reload the postgres connection
+statement ok
+DETACH s
+
+statement ok
+ATTACH 'dbname=postgresscanner' AS s (TYPE POSTGRES)
+
+# CREATE TABLE IF NOT EXISTS
+statement ok
+CREATE TABLE IF NOT EXISTS s.test_tbl(k INT)
+
+# followed by querying the old schema
+statement ok
+SELECT i, j FROM s.test_tbl

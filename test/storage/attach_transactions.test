@@ -1,0 +1,149 @@
+# name: test/sql/storage/attach_transactions.test
+# description:
+# group: [postgres_storage]
+
+require postgres_scanner
+
+statement ok
+ATTACH 'dbname=postgresscanner' AS s (TYPE POSTGRES)
+
+statement ok
+DROP TABLE IF EXISTS s.test
+
+# roll back create table
+statement ok
+BEGIN
+
+statement ok
+CREATE TABLE s.test(i INTEGER);
+
+statement ok
+ROLLBACK
+
+statement error
+SELECT * FROM s.test
+----
+Table with name test does not exist
+
+statement ok
+CREATE TABLE s.test(i INTEGER);
+
+# roll back insert
+statement ok
+BEGIN
+
+statement ok
+INSERT INTO s.test VALUES (42)
+
+# FIXME - if a transaction is not read-only we cannot use the parallel scans
+mode skip
+
+query I
+SELECT * FROM s.test
+----
+42
+
+statement ok
+ROLLBACK
+
+query I
+SELECT * FROM s.test
+----
+
+# commit insert
+statement ok
+BEGIN
+
+statement ok
+INSERT INTO s.test VALUES (1), (2), (3)
+
+statement ok
+COMMIT
+
+query I
+SELECT * FROM s.test
+----
+1
+2
+3
+
+# rollback delete
+statement ok
+BEGIN
+
+statement ok
+DELETE FROM s.test WHERE i=2
+
+query I
+SELECT * FROM s.test
+----
+1
+3
+
+statement ok
+ROLLBACK
+
+query I
+SELECT * FROM s.test
+----
+1
+2
+3
+
+# rollback update
+statement ok
+BEGIN
+
+statement ok
+UPDATE s.test SET i=i+100
+
+query I
+SELECT * FROM s.test
+----
+101
+102
+103
+
+statement ok
+ROLLBACK
+
+query I
+SELECT * FROM s.test
+----
+1
+2
+3
+
+# rollback alter table
+statement ok
+BEGIN
+
+statement ok
+ALTER TABLE s.test ADD COLUMN b INTEGER
+
+query II
+SELECT * FROM s.test
+----
+1	NULL
+2	NULL
+3	NULL
+
+statement ok
+UPDATE s.test SET b=i+100 WHERE i!=2
+
+query II
+SELECT * FROM s.test
+----
+1	101
+2	NULL
+3	103
+
+statement ok
+ROLLBACK
+
+query I
+SELECT * FROM s.test
+----
+1
+2
+3

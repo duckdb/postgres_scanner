@@ -2,8 +2,8 @@
 #include "storage/postgres_table_entry.hpp"
 #include "storage/postgres_transaction.hpp"
 #include "duckdb/storage/statistics/base_statistics.hpp"
-#include "postgres_scanner.hpp"
 #include "duckdb/storage/table_storage_info.hpp"
+#include "postgres_scanner.hpp"
 
 namespace duckdb {
 

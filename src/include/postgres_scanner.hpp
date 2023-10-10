@@ -45,6 +45,7 @@ struct PostgresBindData : public FunctionData {
 
 	string snapshot;
 	bool in_recovery;
+	bool requires_materialization = false;
 
 	PostgresConnection connection;
 	optional_ptr<PostgresTransaction> transaction;

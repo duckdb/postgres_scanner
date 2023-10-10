@@ -121,6 +121,7 @@ unique_ptr<PhysicalOperator> PostgresCatalog::PlanDelete(ClientContext &context,
 		throw BinderException("RETURNING clause not yet supported for deletion of a Postgres table");
 	}
 	auto &bound_ref = op.expressions[0]->Cast<BoundReferenceExpression>();
+	PostgresCatalog::MaterializePostgresScans(*plan);
 
 	auto insert = make_uniq<PostgresDelete>(op, op.table, bound_ref.index);
 	insert->children.push_back(std::move(plan));

@@ -14,6 +14,8 @@ namespace duckdb {
 
 static constexpr uint32_t POSTGRES_TID_MAX = 4294967295;
 
+struct PostgresGlobalState;
+
 struct PostgresLocalState : public LocalTableFunctionState {
 	bool done = false;
 	bool exec = false;
@@ -22,15 +24,20 @@ struct PostgresLocalState : public LocalTableFunctionState {
 	TableFilterSet *filters;
 	string col_names;
 	PostgresConnection connection;
+
+	void ScanChunk(ClientContext &context, const PostgresBindData &bind_data, PostgresGlobalState &gstate, DataChunk &output);
 };
 
 struct PostgresGlobalState : public GlobalTableFunctionState {
-	explicit PostgresGlobalState(idx_t max_threads) : page_idx(0), max_threads(max_threads) {
+	explicit PostgresGlobalState(idx_t max_threads)
+	    : page_idx(0), max_threads(max_threads) {
 	}
 
 	mutex lock;
 	idx_t page_idx;
 	idx_t max_threads;
+	unique_ptr<ColumnDataCollection> collection;
+	ColumnDataScanState scan_state;
 
 	idx_t MaxThreads() const override {
 		return max_threads;
@@ -468,15 +475,47 @@ static idx_t PostgresMaxThreads(ClientContext &context, const FunctionData *bind
 
 	// FIXME - minor cleanup, should not need to remove const-ness here
 	auto bind_data = (PostgresBindData *)bind_data_p;
+	if (bind_data->requires_materialization) {
+		return 1;
+	}
 	if (bind_data->transaction && !bind_data->transaction->IsReadOnly()) {
 		return 1;
 	}
 	return MaxValue<idx_t>(bind_data->pages_approx / bind_data->pages_per_task, 1);
 }
 
+static unique_ptr<LocalTableFunctionState> GetLocalState(ClientContext &context, TableFunctionInitInput &input, PostgresGlobalState &gstate);
+
 static unique_ptr<GlobalTableFunctionState> PostgresInitGlobalState(ClientContext &context,
                                                                     TableFunctionInitInput &input) {
-	return make_uniq<PostgresGlobalState>(PostgresMaxThreads(context, input.bind_data.get()));
+	auto &bind_data = input.bind_data->Cast<PostgresBindData>();
+	auto result = make_uniq<PostgresGlobalState>(PostgresMaxThreads(context, input.bind_data.get()));
+	if (bind_data.requires_materialization) {
+		// if requires_materialization is enabled we scan and materialize the table in its entirety up-front
+		vector<LogicalType> types;
+		for(auto column_id : input.column_ids) {
+			types.push_back(column_id == COLUMN_IDENTIFIER_ROW_ID ? LogicalType::BIGINT : bind_data.types[column_id]);
+		}
+		auto materialized = make_uniq<ColumnDataCollection>(Allocator::Get(context), types);
+		DataChunk scan_chunk;
+		scan_chunk.Initialize(Allocator::Get(context), types);
+
+		auto local_state = GetLocalState(context, input, *result);
+		auto &lstate = local_state->Cast<PostgresLocalState>();
+		ColumnDataAppendState append_state;
+		materialized->InitializeAppend(append_state);
+		while(true) {
+			scan_chunk.Reset();
+			lstate.ScanChunk(context, bind_data, *result, scan_chunk);
+			if (scan_chunk.size() == 0) {
+				break;
+			}
+			materialized->Append(append_state, scan_chunk);
+		}
+		result->collection = std::move(materialized);
+		result->collection->InitializeScan(result->scan_state);
+	}
+	return result;
 }
 
 static bool PostgresParallelStateNext(ClientContext &context, const FunctionData *bind_data_p,
@@ -485,7 +524,6 @@ static bool PostgresParallelStateNext(ClientContext &context, const FunctionData
 	auto bind_data = (const PostgresBindData *)bind_data_p;
 
 	lock_guard<mutex> parallel_lock(gstate.lock);
-
 	if (gstate.page_idx < bind_data->pages_approx) {
 		auto page_max = gstate.page_idx + bind_data->pages_per_task;
 		if (page_max >= bind_data->pages_approx) {
@@ -501,13 +539,13 @@ static bool PostgresParallelStateNext(ClientContext &context, const FunctionData
 	return false;
 }
 
-static unique_ptr<LocalTableFunctionState> PostgresInitLocalState(ExecutionContext &context,
-                                                                  TableFunctionInitInput &input,
-                                                                  GlobalTableFunctionState *global_state) {
+static unique_ptr<LocalTableFunctionState> GetLocalState(ClientContext &context, TableFunctionInitInput &input, PostgresGlobalState &gstate) {
 	auto &bind_data = (PostgresBindData &) *input.bind_data;
-	auto &gstate = global_state->Cast<PostgresGlobalState>();
 
 	auto local_state = make_uniq<PostgresLocalState>();
+	if (gstate.collection) {
+		return local_state;
+	}
 	local_state->column_ids = input.column_ids;
 
 	if (bind_data.transaction && !bind_data.transaction->IsReadOnly()) {
@@ -517,33 +555,32 @@ static unique_ptr<LocalTableFunctionState> PostgresInitLocalState(ExecutionConte
 		local_state->connection = PostgresScanConnect(bind_data.dsn, bind_data.in_recovery, bind_data.snapshot);
 	}
 	local_state->filters = input.filters.get();
-	if (bind_data.pages_approx == 0) {
-		PostgresInitInternal(context.client, &bind_data, *local_state, 0, POSTGRES_TID_MAX);
-	} else if (!PostgresParallelStateNext(context.client, input.bind_data.get(), *local_state, gstate)) {
+	if (bind_data.pages_approx == 0 || bind_data.requires_materialization) {
+		PostgresInitInternal(context, &bind_data, *local_state, 0, POSTGRES_TID_MAX);
+	} else if (!PostgresParallelStateNext(context, input.bind_data.get(), *local_state, gstate)) {
 		local_state->done = true;
 	}
 	return std::move(local_state);
 }
 
-static void PostgresScan(ClientContext &context, TableFunctionInput &data, DataChunk &output) {
-	auto &bind_data = data.bind_data->Cast<PostgresBindData>();
-	auto &local_state = data.local_state->Cast<PostgresLocalState>();
-	auto &gstate = data.global_state->Cast<PostgresGlobalState>();
+static unique_ptr<LocalTableFunctionState> PostgresInitLocalState(ExecutionContext &context,
+                                                                  TableFunctionInitInput &input,
+                                                                  GlobalTableFunctionState *global_state) {
+	auto &gstate = global_state->Cast<PostgresGlobalState>();
+	return GetLocalState(context.client, input, gstate);
+}
 
-	auto &con = local_state.connection;
+void PostgresLocalState::ScanChunk(ClientContext &context, const PostgresBindData &bind_data, PostgresGlobalState &gstate, DataChunk &output) {
 	idx_t output_offset = 0;
-	PostgresBinaryReader reader(con);
+	PostgresBinaryReader reader(connection);
+	if (!exec) {
+		connection.BeginCopyFrom(reader, sql);
+		exec = true;
+	}
 
 	while (true) {
-		if (local_state.done && !PostgresParallelStateNext(context, data.bind_data.get(), local_state, gstate)) {
+		if (done && !PostgresParallelStateNext(context, &bind_data, *this, gstate)) {
 			return;
-		}
-
-		if (!local_state.exec) {
-			con.BeginCopyFrom(reader, local_state.sql);
-			local_state.exec = true;
-			// the first tuple immediately follows the header in the first message, so
-			// we have to keep the buffer alive for now.
 		}
 
 		output.SetCardinality(output_offset);
@@ -557,14 +594,14 @@ static void PostgresScan(ClientContext &context, TableFunctionInput &data, DataC
 
 		auto tuple_count = reader.ReadInteger<int16_t>();
 		if (tuple_count == -1) { // done here, lets try to get more
-			local_state.done = true;
+			done = true;
 			continue;
 		}
 
-		D_ASSERT(tuple_count == local_state.column_ids.size());
+		D_ASSERT(tuple_count == column_ids.size());
 
 		for (idx_t output_idx = 0; output_idx < output.ColumnCount(); output_idx++) {
-			auto col_idx = local_state.column_ids[output_idx];
+			auto col_idx = column_ids[output_idx];
 			auto &out_vec = output.data[output_idx];
 			auto raw_len = reader.ReadInteger<int32_t>();
 			if (raw_len == -1) { // NULL
@@ -592,6 +629,18 @@ static void PostgresScan(ClientContext &context, TableFunctionInput &data, DataC
 	}
 }
 
+static void PostgresScan(ClientContext &context, TableFunctionInput &data, DataChunk &output) {
+	auto &bind_data = data.bind_data->Cast<PostgresBindData>();
+	auto &gstate = data.global_state->Cast<PostgresGlobalState>();
+
+	if (gstate.collection) {
+		gstate.collection->Scan(gstate.scan_state, output);
+		return;
+	}
+	auto &local_state = data.local_state->Cast<PostgresLocalState>();
+	local_state.ScanChunk(context, bind_data, gstate, output);
+}
+
 static string PostgresScanToString(const FunctionData *bind_data_p) {
 	D_ASSERT(bind_data_p);
 
@@ -600,9 +649,6 @@ static string PostgresScanToString(const FunctionData *bind_data_p) {
 }
 
 struct AttachFunctionData : public TableFunctionData {
-	AttachFunctionData() {
-	}
-
 	bool finished = false;
 	string source_schema = "public";
 	string sink_schema = "main";

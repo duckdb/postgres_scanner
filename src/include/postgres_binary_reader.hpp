@@ -106,10 +106,6 @@ struct PostgresBinaryReader {
 		Reset();
 	}
 
-	void BeginCopyOut(const string &sql) {
-
-	}
-
 	void Next() {
 		Reset();
 		char *out_buffer;

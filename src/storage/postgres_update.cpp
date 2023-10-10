@@ -183,6 +183,7 @@ unique_ptr<PhysicalOperator> PostgresCatalog::PlanUpdate(ClientContext &context,
 			throw BinderException("SET DEFAULT is not yet supported for updates of a Postgres table");
 		}
 	}
+	PostgresCatalog::MaterializePostgresScans(*plan);
 	auto insert = make_uniq<PostgresUpdate>(op, op.table, std::move(op.columns));
 	insert->children.push_back(std::move(plan));
 	return std::move(insert);

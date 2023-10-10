@@ -25,3 +25,13 @@ query I
 SELECT COUNT(*) FROM s.tbl
 ----
 200000
+
+query I
+INSERT INTO s.tbl FROM s.tbl
+----
+200000
+
+query I
+SELECT COUNT(*) FROM s.tbl
+----
+400000

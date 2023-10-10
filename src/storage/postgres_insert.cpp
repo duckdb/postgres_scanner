@@ -6,10 +6,11 @@
 #include "storage/postgres_table_entry.hpp"
 #include "duckdb/planner/parsed_data/bound_create_table_info.hpp"
 #include "duckdb/execution/operator/projection/physical_projection.hpp"
+#include "duckdb/execution/operator/scan/physical_table_scan.hpp"
 #include "duckdb/planner/expression/bound_cast_expression.hpp"
 #include "duckdb/planner/expression/bound_reference_expression.hpp"
 #include "postgres_connection.hpp"
-#include "postgres_stmt.hpp"
+#include "postgres_scanner.hpp"
 
 namespace duckdb {
 
@@ -165,6 +166,19 @@ unique_ptr<PhysicalOperator> AddCastToPostgresTypes(ClientContext &context, uniq
 	return plan;
 }
 
+void PostgresCatalog::MaterializePostgresScans(PhysicalOperator &op) {
+	if (op.type == PhysicalOperatorType::TABLE_SCAN) {
+		auto &table_scan = op.Cast<PhysicalTableScan>();
+		if (table_scan.function.name == "postgres_scan" || table_scan.function.name == "postgres_scan_pushdown") {
+			auto &bind_data = table_scan.bind_data->Cast<PostgresBindData>();
+			bind_data.requires_materialization = true;
+		}
+	}
+	for(auto &child : op.children) {
+		MaterializePostgresScans(*child);
+	}
+}
+
 unique_ptr<PhysicalOperator> PostgresCatalog::PlanInsert(ClientContext &context, LogicalInsert &op,
                                                        unique_ptr<PhysicalOperator> plan) {
 	if (op.return_chunk) {
@@ -173,6 +187,7 @@ unique_ptr<PhysicalOperator> PostgresCatalog::PlanInsert(ClientContext &context,
 	if (op.action_type != OnConflictAction::THROW) {
 		throw BinderException("ON CONFLICT clause not yet supported for insertion into Postgres table");
 	}
+	MaterializePostgresScans(*plan);
 
 	plan = AddCastToPostgresTypes(context, std::move(plan));
 

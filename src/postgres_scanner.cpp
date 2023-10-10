@@ -7,7 +7,7 @@
 #include "postgres_filter_pushdown.hpp"
 #include "postgres_scanner.hpp"
 #include "postgres_result.hpp"
-#include "postgres_conversion.hpp"
+#include "postgres_binary_reader.hpp"
 
 namespace duckdb {
 
@@ -268,240 +268,85 @@ static PGconn *PostgresScanConnect(string dsn, bool in_recovery, string snapshot
 	return conn;
 }
 
-#define NBASE      10000
-#define DEC_DIGITS 4 /* decimal digits per NBASE digit */
-
-/*
- * Interpretation of high bits.
- */
-
-#define NUMERIC_SIGN_MASK 0xC000
-#define NUMERIC_POS       0x0000
-#define NUMERIC_NEG       0x4000
-#define NUMERIC_SHORT     0x8000
-#define NUMERIC_SPECIAL   0xC000
-
-/*
- * Definitions for special values (NaN, positive infinity, negative infinity).
- *
- * The two bits after the NUMERIC_SPECIAL bits are 00 for NaN, 01 for positive
- * infinity, 11 for negative infinity.  (This makes the sign bit match where
- * it is in a short-format value, though we make no use of that at present.)
- * We could mask off the remaining bits before testing the active bits, but
- * currently those bits must be zeroes, so masking would just add cycles.
- */
-#define NUMERIC_EXT_SIGN_MASK 0xF000 /* high bits plus NaN/Inf flag bits */
-#define NUMERIC_NAN           0xC000
-#define NUMERIC_PINF          0xD000
-#define NUMERIC_NINF          0xF000
-#define NUMERIC_INF_SIGN_MASK 0x2000
-
-#define NUMERIC_EXT_FLAGBITS(n) ((n)->choice.n_header & NUMERIC_EXT_SIGN_MASK)
-#define NUMERIC_IS_NAN(n)       ((n)->choice.n_header == NUMERIC_NAN)
-#define NUMERIC_IS_PINF(n)      ((n)->choice.n_header == NUMERIC_PINF)
-#define NUMERIC_IS_NINF(n)      ((n)->choice.n_header == NUMERIC_NINF)
-#define NUMERIC_IS_INF(n)       (((n)->choice.n_header & ~NUMERIC_INF_SIGN_MASK) == NUMERIC_PINF)
-
-/*
- * Short format definitions.
- */
-
-#define NUMERIC_DSCALE_MASK            0x3FFF
-#define NUMERIC_SHORT_SIGN_MASK        0x2000
-#define NUMERIC_SHORT_DSCALE_MASK      0x1F80
-#define NUMERIC_SHORT_DSCALE_SHIFT     7
-#define NUMERIC_SHORT_DSCALE_MAX       (NUMERIC_SHORT_DSCALE_MASK >> NUMERIC_SHORT_DSCALE_SHIFT)
-#define NUMERIC_SHORT_WEIGHT_SIGN_MASK 0x0040
-#define NUMERIC_SHORT_WEIGHT_MASK      0x003F
-#define NUMERIC_SHORT_WEIGHT_MAX       NUMERIC_SHORT_WEIGHT_MASK
-#define NUMERIC_SHORT_WEIGHT_MIN       (-(NUMERIC_SHORT_WEIGHT_MASK + 1))
-
-#define NUMERIC_SIGN(is_short, header1)                                                                                \
-	(is_short ? ((header1 & NUMERIC_SHORT_SIGN_MASK) ? NUMERIC_NEG : NUMERIC_POS) : (header1 & NUMERIC_SIGN_MASK))
-#define NUMERIC_DSCALE(is_short, header1)                                                                              \
-	(is_short ? (header1 & NUMERIC_SHORT_DSCALE_MASK) >> NUMERIC_SHORT_DSCALE_SHIFT : (header1 & NUMERIC_DSCALE_MASK))
-#define NUMERIC_WEIGHT(is_short, header1, header2)                                                                     \
-	(is_short ? ((header1 & NUMERIC_SHORT_WEIGHT_SIGN_MASK ? ~NUMERIC_SHORT_WEIGHT_MASK : 0) |                         \
-	             (header1 & NUMERIC_SHORT_WEIGHT_MASK))                                                                \
-	          : (header2))
-
-// copied from cast_helpers.cpp because windows linking issues
-static const int64_t POWERS_OF_TEN[] {1,
-                                      10,
-                                      100,
-                                      1000,
-                                      10000,
-                                      100000,
-                                      1000000,
-                                      10000000,
-                                      100000000,
-                                      1000000000,
-                                      10000000000,
-                                      100000000000,
-                                      1000000000000,
-                                      10000000000000,
-                                      100000000000000,
-                                      1000000000000000,
-                                      10000000000000000,
-                                      100000000000000000,
-                                      1000000000000000000};
-
-struct PostgresDecimalConfig {
-	uint16_t scale;
-	uint16_t ndigits;
-	int16_t weight;
-	bool is_negative;
-};
-
-static PostgresDecimalConfig ReadDecimalConfig(const_data_ptr_t &value_ptr) {
-	PostgresDecimalConfig config;
-	config.ndigits = PostgresConversion::LoadInteger<uint16_t>(value_ptr);
-	config.weight = PostgresConversion::LoadInteger<int16_t>(value_ptr);
-	auto sign = PostgresConversion::LoadInteger<uint16_t>(value_ptr);
-
-	if (!(sign == NUMERIC_POS || sign == NUMERIC_NAN || sign == NUMERIC_PINF || sign == NUMERIC_NINF ||
-	      sign == NUMERIC_NEG)) {
-		throw NotImplementedException("Postgres numeric NA/Inf");
-	}
-	config.is_negative = sign == NUMERIC_NEG;
-	config.scale = PostgresConversion::LoadInteger<uint16_t>(value_ptr);
-
-	return config;
-};
-
-template <class T>
-static T ReadDecimal(PostgresDecimalConfig &config, const_data_ptr_t value_ptr) {
-	// this is wild
-	auto scale_POWER = POWERS_OF_TEN[config.scale];
-
-	if (config.ndigits == 0) {
-		return 0;
-	}
-	T integral_part = 0, fractional_part = 0;
-
-	if (config.weight >= 0) {
-		D_ASSERT(config.weight <= config.ndigits);
-		integral_part = PostgresConversion::LoadInteger<uint16_t>(value_ptr);
-		for (auto i = 1; i <= config.weight; i++) {
-			integral_part *= NBASE;
-			if (i < config.ndigits) {
-				integral_part += PostgresConversion::LoadInteger<uint16_t>(value_ptr);
-			}
-		}
-		integral_part *= scale_POWER;
-	}
-
-	if (config.ndigits > config.weight + 1) {
-		fractional_part = PostgresConversion::LoadInteger<uint16_t>(value_ptr);
-		for (auto i = config.weight + 2; i < config.ndigits; i++) {
-			fractional_part *= NBASE;
-			if (i < config.ndigits) {
-				fractional_part += PostgresConversion::LoadInteger<uint16_t>(value_ptr);
-			}
-		}
-
-		// we need to find out how large the fractional part is in terms of powers
-		// of ten this depends on how many times we multiplied with NBASE
-		// if that is different from scale, we need to divide the extra part away
-		// again
-		// similarly, if trailing zeroes have been suppressed, we have not been multiplying t
-		// the fractional part with NBASE often enough. If so, add additional powers
-		auto fractional_power = (config.ndigits - config.weight - 1) * DEC_DIGITS;
-		auto fractional_power_correction = fractional_power - config.scale;
-		D_ASSERT(fractional_power_correction < 20);
-		if (fractional_power_correction >= 0) {
-			fractional_part /= POWERS_OF_TEN[fractional_power_correction];
-		} else {
-			fractional_part *= POWERS_OF_TEN[-fractional_power_correction];
-		}
-	}
-
-	// finally
-	auto base_res = (integral_part + fractional_part);
-	return (config.is_negative ? -base_res : base_res);
-}
-
 static void ProcessValue(const LogicalType &type, const PostgresTypeInfo *type_info, int atttypmod, int64_t typelem,
-                         const PostgresTypeInfo *elem_info, const_data_ptr_t value_ptr, idx_t value_len,
+                         const PostgresTypeInfo *elem_info, PostgresBinaryReader &reader, idx_t value_len,
                          Vector &out_vec, idx_t output_offset) {
-
 	switch (type.id()) {
 	case LogicalTypeId::SMALLINT:
 		D_ASSERT(value_len == sizeof(int16_t));
-		FlatVector::GetData<int16_t>(out_vec)[output_offset] = PostgresConversion::LoadInteger<int16_t>(value_ptr);
+		FlatVector::GetData<int16_t>(out_vec)[output_offset] = reader.ReadInteger<int16_t>();
 		break;
 
 	case LogicalTypeId::INTEGER:
 		D_ASSERT(value_len == sizeof(int32_t));
-		FlatVector::GetData<int32_t>(out_vec)[output_offset] = PostgresConversion::LoadInteger<int32_t>(value_ptr);
+		FlatVector::GetData<int32_t>(out_vec)[output_offset] = reader.ReadInteger<int32_t>();
 		break;
 
 	case LogicalTypeId::UINTEGER:
 		D_ASSERT(value_len == sizeof(uint32_t));
-		FlatVector::GetData<uint32_t>(out_vec)[output_offset] = PostgresConversion::LoadInteger<uint32_t>(value_ptr);
+		FlatVector::GetData<uint32_t>(out_vec)[output_offset] = reader.ReadInteger<uint32_t>();
 		break;
 
 	case LogicalTypeId::BIGINT:
 		D_ASSERT(value_len == sizeof(int64_t));
-		FlatVector::GetData<int64_t>(out_vec)[output_offset] = PostgresConversion::LoadInteger<int64_t>(value_ptr);
+		FlatVector::GetData<int64_t>(out_vec)[output_offset] = reader.ReadInteger<int64_t>();
 		break;
 
 	case LogicalTypeId::FLOAT: {
 		D_ASSERT(value_len == sizeof(float));
-		FlatVector::GetData<float>(out_vec)[output_offset] = PostgresConversion::LoadFloat(value_ptr);
+		FlatVector::GetData<float>(out_vec)[output_offset] = reader.ReadFloat();
 		break;
 	}
 
 	case LogicalTypeId::DOUBLE: {
 		// this was an unbounded decimal, read params from value and cast to double
 		if (type_info->typname == "numeric") {
-			auto config = ReadDecimalConfig(value_ptr);
-			auto val = ReadDecimal<int64_t>(config, value_ptr);
+			auto config = reader.ReadDecimalConfig();
+			auto val = reader.ReadDecimal<int64_t>(config);
 			FlatVector::GetData<double>(out_vec)[output_offset] = (double)val / POWERS_OF_TEN[config.scale];
 			break;
 		}
 		D_ASSERT(value_len == sizeof(double));
-		FlatVector::GetData<double>(out_vec)[output_offset] = PostgresConversion::LoadDouble(value_ptr);
+		FlatVector::GetData<double>(out_vec)[output_offset] = reader.ReadDouble();
 		break;
 	}
 
 	case LogicalTypeId::BLOB:
 	case LogicalTypeId::VARCHAR: {
 		if (type_info->typname == "jsonb") {
-			auto version = Load<uint8_t>(value_ptr);
-			value_ptr++;
+			auto version = reader.ReadInteger<uint8_t>();
 			value_len--;
 			if (version != 1) {
 				throw NotImplementedException("JSONB version number mismatch, expected 1, got %d", version);
 			}
 		}
 		FlatVector::GetData<string_t>(out_vec)[output_offset] =
-		    StringVector::AddStringOrBlob(out_vec, (char *)value_ptr, value_len);
+		    StringVector::AddStringOrBlob(out_vec, reader.ReadString(value_len), value_len);
 		break;
 	}
 	case LogicalTypeId::BOOLEAN:
 		D_ASSERT(value_len == sizeof(bool));
-		FlatVector::GetData<bool>(out_vec)[output_offset] = *value_ptr > 0;
+		FlatVector::GetData<bool>(out_vec)[output_offset] = reader.ReadBoolean();
 		break;
 	case LogicalTypeId::DECIMAL: {
 		if (value_len < sizeof(uint16_t) * 4) {
 			throw InvalidInputException("Need at least 8 bytes to read a Postgres decimal. Got %d", value_len);
 		}
-		auto decimal_config = ReadDecimalConfig(value_ptr);
+		auto decimal_config = reader.ReadDecimalConfig();
 		D_ASSERT(decimal_config.scale == DecimalType::GetScale(type));
 
 		switch (type.InternalType()) {
 		case PhysicalType::INT16:
-			FlatVector::GetData<int16_t>(out_vec)[output_offset] = ReadDecimal<int16_t>(decimal_config, value_ptr);
+			FlatVector::GetData<int16_t>(out_vec)[output_offset] = reader.ReadDecimal<int16_t>(decimal_config);
 			break;
 		case PhysicalType::INT32:
-			FlatVector::GetData<int32_t>(out_vec)[output_offset] = ReadDecimal<int32_t>(decimal_config, value_ptr);
+			FlatVector::GetData<int32_t>(out_vec)[output_offset] = reader.ReadDecimal<int32_t>(decimal_config);
 			break;
 		case PhysicalType::INT64:
-			FlatVector::GetData<int64_t>(out_vec)[output_offset] = ReadDecimal<int64_t>(decimal_config, value_ptr);
+			FlatVector::GetData<int64_t>(out_vec)[output_offset] = reader.ReadDecimal<int64_t>(decimal_config);
 			break;
 		case PhysicalType::INT128:
-			FlatVector::GetData<hugeint_t>(out_vec)[output_offset] = ReadDecimal<hugeint_t>(decimal_config, value_ptr);
+			FlatVector::GetData<hugeint_t>(out_vec)[output_offset] = reader.ReadDecimal<hugeint_t>(decimal_config);
 			break;
 		default:
 			throw InvalidInputException("Unsupported decimal storage type");
@@ -512,37 +357,32 @@ static void ProcessValue(const LogicalType &type, const PostgresTypeInfo *type_i
 	case LogicalTypeId::DATE: {
 		D_ASSERT(value_len == sizeof(int32_t));
 		auto out_ptr = FlatVector::GetData<date_t>(out_vec);
-		out_ptr[output_offset] = PostgresConversion::LoadDate(value_ptr);
+		out_ptr[output_offset] = reader.ReadDate();
 		break;
 	}
-
 	case LogicalTypeId::TIME: {
 		D_ASSERT(value_len == sizeof(int64_t));
 		D_ASSERT(atttypmod == -1);
 
-		FlatVector::GetData<dtime_t>(out_vec)[output_offset].micros = PostgresConversion::LoadInteger<uint64_t>(value_ptr);
+		FlatVector::GetData<dtime_t>(out_vec)[output_offset] = reader.ReadTime();
 		break;
 	}
-
 	case LogicalTypeId::TIME_TZ: {
 		D_ASSERT(value_len == sizeof(int64_t) + sizeof(int32_t));
 		D_ASSERT(atttypmod == -1);
 
-		auto usec = PostgresConversion::LoadInteger<uint64_t>(value_ptr);
-		auto tzoffset = PostgresConversion::LoadInteger<int32_t>(value_ptr);
-		FlatVector::GetData<dtime_tz_t>(out_vec)[output_offset] = dtime_tz_t(dtime_t(usec), -tzoffset);
+		FlatVector::GetData<dtime_tz_t>(out_vec)[output_offset] = reader.ReadTimeTZ();
 		break;
 	}
-
 	case LogicalTypeId::TIMESTAMP_TZ:
 	case LogicalTypeId::TIMESTAMP: {
 		D_ASSERT(value_len == sizeof(int64_t));
 		D_ASSERT(atttypmod == -1);
-		FlatVector::GetData<timestamp_t>(out_vec)[output_offset] = PostgresConversion::LoadTimestamp(value_ptr);
+		FlatVector::GetData<timestamp_t>(out_vec)[output_offset] = reader.ReadTimestamp();
 		break;
 	}
 	case LogicalTypeId::ENUM: {
-		auto enum_val = string((const char *)value_ptr, value_len);
+		auto enum_val = string(reader.ReadString(value_len), value_len);
 		auto offset = EnumType::GetPos(type, enum_val);
 		if (offset < 0) {
 			throw IOException("Could not map ENUM value %s", enum_val);
@@ -570,17 +410,16 @@ static void ProcessValue(const LogicalType &type, const PostgresTypeInfo *type_i
 		if (atttypmod != -1) {
 			throw IOException("Interval with unsupported typmod %d", atttypmod);
 		}
-		FlatVector::GetData<interval_t>(out_vec)[output_offset] = PostgresConversion::LoadInterval(value_ptr);
+		FlatVector::GetData<interval_t>(out_vec)[output_offset] = reader.ReadInterval();
 		break;
 	}
 
 	case LogicalTypeId::UUID: {
 		D_ASSERT(value_len == 2 * sizeof(int64_t));
 		D_ASSERT(atttypmod == -1);
-		FlatVector::GetData<hugeint_t>(out_vec)[output_offset] = PostgresConversion::LoadUUID(value_ptr);
+		FlatVector::GetData<hugeint_t>(out_vec)[output_offset] = reader.ReadUUID();
 		break;
 	}
-
 	case LogicalTypeId::LIST: {
 		D_ASSERT(elem_info);
 		auto &list_entry = FlatVector::GetData<list_entry_t>(out_vec)[output_offset];
@@ -592,18 +431,18 @@ static void ProcessValue(const LogicalType &type, const PostgresTypeInfo *type_i
 			break;
 		}
 		D_ASSERT(value_len >= 3 * sizeof(uint32_t));
-		auto flag_one = PostgresConversion::LoadInteger<uint32_t>(value_ptr);
-		auto flag_two = PostgresConversion::LoadInteger<uint32_t>(value_ptr);
+		auto flag_one = reader.ReadInteger<uint32_t>();
+		auto flag_two = reader.ReadInteger<uint32_t>();
+		auto value_oid = reader.ReadInteger<uint32_t>();
 		if (flag_one == 0) {
 			list_entry.offset = child_offset;
 			list_entry.length = 0;
 			return;
 		}
 		// D_ASSERT(flag_two == 1); // TODO what is this?!
-		auto value_oid = PostgresConversion::LoadInteger<uint32_t>(value_ptr);
 		D_ASSERT(value_oid == typelem);
-		auto array_length = PostgresConversion::LoadInteger<uint32_t>(value_ptr);
-		auto array_dim = PostgresConversion::LoadInteger<uint32_t>(value_ptr);
+		auto array_length = reader.ReadInteger<uint32_t>();
+		auto array_dim = reader.ReadInteger<uint32_t>();
 		if (array_dim != 1) {
 			throw NotImplementedException("Only one-dimensional Postgres arrays are supported %u %u ", array_length,
 			                              array_dim);
@@ -613,15 +452,14 @@ static void ProcessValue(const LogicalType &type, const PostgresTypeInfo *type_i
 		ListVector::Reserve(out_vec, child_offset + array_length);
 		for (idx_t child_idx = 0; child_idx < array_length; child_idx++) {
 			// handle NULLs again (TODO: unify this with scan)
-			auto ele_len = PostgresConversion::LoadInteger<int32_t>(value_ptr);
+			auto ele_len = reader.ReadInteger<int32_t>();
 			if (ele_len == -1) { // NULL
 				FlatVector::Validity(child_vec).Set(child_offset + child_idx, false);
 				continue;
 			}
 
-			ProcessValue(ListType::GetChildType(type), elem_info, atttypmod, 0, nullptr, value_ptr, ele_len, child_vec,
+			ProcessValue(ListType::GetChildType(type), elem_info, atttypmod, 0, nullptr, reader, ele_len, child_vec,
 			             child_offset + child_idx);
-			value_ptr += ele_len;
 		}
 		ListVector::SetListSize(out_vec, child_offset + array_length);
 
@@ -629,75 +467,10 @@ static void ProcessValue(const LogicalType &type, const PostgresTypeInfo *type_i
 		list_entry.length = array_length;
 		break;
 	}
-
 	default:
 		throw InternalException("Unsupported Type %s", type.ToString());
 	}
 }
-
-struct PostgresBinaryBuffer {
-
-	PostgresBinaryBuffer(PGconn *conn_p) : conn(conn_p) {
-		D_ASSERT(conn);
-	}
-	void Next() {
-		Reset();
-		len = PQgetCopyData(conn, &buffer, 0);
-
-		// len -2 is error
-		// len -1 is supposed to signal end but does not actually happen in practise
-		// we expect at least 2 bytes in each message for the tuple count
-		if (!buffer || len < sizeof(int16_t)) {
-			throw IOException("Unable to read binary COPY data from Postgres: %s", string(PQerrorMessage(conn)));
-		}
-		buffer_ptr = buffer;
-	}
-	void Reset() {
-		if (buffer) {
-			PQfreemem(buffer);
-		}
-		buffer = nullptr;
-		buffer_ptr = nullptr;
-		len = 0;
-	}
-	bool Ready() {
-		return buffer_ptr != nullptr;
-	}
-	~PostgresBinaryBuffer() {
-		Reset();
-	}
-
-	void CheckHeader() {
-		auto magic_len = 11;
-		auto flags_len = 8;
-		auto header_len = magic_len + flags_len;
-
-		if (len < header_len) {
-			throw IOException("Unable to read binary COPY data from Postgres, invalid header");
-		}
-		if (!memcmp(buffer_ptr, "PGCOPY\\n\\377\\r\\n\\0", magic_len)) {
-			throw IOException("Expected Postgres binary COPY header, got something else");
-		}
-		buffer_ptr += header_len;
-		// as far as i can tell the "Flags field" and the "Header
-		// extension area length" do not contain anything interesting
-	}
-
-	template <typename T>
-	const T Read() {
-		T ret;
-		D_ASSERT(len > 0);
-		D_ASSERT(buffer);
-		D_ASSERT(buffer_ptr);
-		memcpy(&ret, buffer_ptr, sizeof(ret));
-		buffer_ptr += sizeof(T);
-		return ret;
-	}
-
-	char *buffer = nullptr, *buffer_ptr = nullptr;
-	int len = 0;
-	PGconn *conn = nullptr;
-};
 
 static idx_t PostgresMaxThreads(ClientContext &context, const FunctionData *bind_data_p) {
 	D_ASSERT(bind_data_p);
@@ -755,7 +528,7 @@ static void PostgresScan(ClientContext &context, TableFunctionInput &data, DataC
 	auto &gstate = data.global_state->Cast<PostgresGlobalState>();
 
 	idx_t output_offset = 0;
-	PostgresBinaryBuffer buf(local_state.conn);
+	PostgresBinaryReader reader(local_state.conn);
 
 	while (true) {
 		if (local_state.done && !PostgresParallelStateNext(context, data.bind_data.get(), local_state, gstate)) {
@@ -765,8 +538,8 @@ static void PostgresScan(ClientContext &context, TableFunctionInput &data, DataC
 		if (!local_state.exec) {
 			PGQuery(local_state.conn, local_state.sql, PGRES_COPY_OUT);
 			local_state.exec = true;
-			buf.Next();
-			buf.CheckHeader();
+			reader.Next();
+			reader.CheckHeader();
 			// the first tuple immediately follows the header in the first message, so
 			// we have to keep the buffer alive for now.
 		}
@@ -776,11 +549,11 @@ static void PostgresScan(ClientContext &context, TableFunctionInput &data, DataC
 			return;
 		}
 
-		if (!buf.Ready()) {
-			buf.Next();
+		if (!reader.Ready()) {
+			reader.Next();
 		}
 
-		auto tuple_count = (int16_t)ntohs(buf.Read<uint16_t>());
+		auto tuple_count = reader.ReadInteger<int16_t>();
 		if (tuple_count == -1) { // done here, lets try to get more
 			local_state.done = true;
 			continue;
@@ -791,7 +564,7 @@ static void PostgresScan(ClientContext &context, TableFunctionInput &data, DataC
 		for (idx_t output_idx = 0; output_idx < output.ColumnCount(); output_idx++) {
 			auto col_idx = local_state.column_ids[output_idx];
 			auto &out_vec = output.data[output_idx];
-			auto raw_len = (int32_t)ntohl(buf.Read<uint32_t>());
+			auto raw_len = reader.ReadInteger<int32_t>();
 			if (raw_len == -1) { // NULL
 				FlatVector::Validity(out_vec).Set(output_offset, false);
 				continue;
@@ -801,20 +574,18 @@ static void PostgresScan(ClientContext &context, TableFunctionInput &data, DataC
 				// ctid in postgres are a composite type of (page_index, tuple_in_page)
 				// the page index is a 4-byte integer, the tuple_in_page a 2-byte integer
 				D_ASSERT(raw_len == 6);
-				auto value_ptr = (const_data_ptr_t)buf.buffer_ptr;
-				int64_t page_index = PostgresConversion::LoadInteger<int32_t>(value_ptr);
-				int64_t row_in_page = PostgresConversion::LoadInteger<int16_t>(value_ptr);
+				int64_t page_index = reader.ReadInteger<int32_t>();
+				int64_t row_in_page = reader.ReadInteger<int16_t>();
 				FlatVector::GetData<int64_t>(out_vec)[output_offset] = (page_index << 16LL) + row_in_page;
 			} else {
 				ProcessValue(bind_data.types[col_idx], &bind_data.columns[col_idx].type_info,
 							 bind_data.columns[col_idx].atttypmod, bind_data.columns[col_idx].typelem,
-							 &bind_data.columns[col_idx].elem_info, (data_ptr_t)buf.buffer_ptr, raw_len, out_vec,
+							 &bind_data.columns[col_idx].elem_info, reader, raw_len, out_vec,
 							 output_offset);
 			}
-			buf.buffer_ptr += raw_len;
 		}
 
-		buf.Reset();
+		reader.Reset();
 		output_offset++;
 	}
 }

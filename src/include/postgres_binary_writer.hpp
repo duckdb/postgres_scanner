@@ -38,7 +38,7 @@ public:
 
 public:
 	void WriteHeader() {
-		stream.WriteData(const_data_ptr_cast("PGCOPY\n\377\r\n\0"), 11);
+		stream.WriteData(const_data_ptr_cast(PostgresConversion::COPY_HEADER), PostgresConversion::COPY_HEADER_LENGTH);
 		WriteRawInteger<int32_t>(0);
 		WriteRawInteger<int32_t>(0);
 	}

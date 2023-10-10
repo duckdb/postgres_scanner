@@ -29,6 +29,7 @@ public:
 
 protected:
 	virtual void LoadEntries() = 0;
+	void ClearEntries();
 
 protected:
 	Catalog &catalog;

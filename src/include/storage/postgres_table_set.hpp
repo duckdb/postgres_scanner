@@ -25,8 +25,16 @@ public:
 
 	static unique_ptr<CreateTableInfo> GetTableInfo(PostgresResult &result, const string &table_name);
 
+	void AlterTable(ClientContext &context, AlterTableInfo &info);
+
 protected:
 	void LoadEntries() override;
+
+	void AlterTable(RenameTableInfo &info);
+	void AlterTable(RenameColumnInfo &info);
+	void AlterTable(AddColumnInfo &info);
+	void AlterTable(RemoveColumnInfo &info);
+
 
 protected:
 	PostgresSchemaEntry &schema;

@@ -45,6 +45,9 @@ optional_ptr<CatalogEntry> PostgresCatalogSet::CreateEntry(unique_ptr<CatalogEnt
 	return result;
 }
 
-
+void PostgresCatalogSet::ClearEntries() {
+	entries.clear();
+	is_loaded = false;
+}
 
 }

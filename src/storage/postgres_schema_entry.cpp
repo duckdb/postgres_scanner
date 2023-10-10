@@ -156,77 +156,12 @@ optional_ptr<CatalogEntry> PostgresSchemaEntry::CreateType(CatalogTransaction tr
 	throw BinderException("Postgres databases do not support creating types");
 }
 
-void PostgresSchemaEntry::AlterTable(PostgresTransaction &postgres_transaction, RenameTableInfo &info) {
-	string sql = "ALTER TABLE ";
-	sql += KeywordHelper::WriteOptionallyQuoted(info.name);
-	sql += " RENAME TO ";
-	sql += KeywordHelper::WriteOptionallyQuoted(info.new_table_name);
-	postgres_transaction.GetConnection().Execute(sql);
-}
-
-void PostgresSchemaEntry::AlterTable(PostgresTransaction &postgres_transaction, RenameColumnInfo &info) {
-	string sql = "ALTER TABLE ";
-	sql += KeywordHelper::WriteOptionallyQuoted(info.name);
-	sql += " RENAME COLUMN  ";
-	sql += KeywordHelper::WriteOptionallyQuoted(info.old_name);
-	sql += " TO ";
-	sql += KeywordHelper::WriteOptionallyQuoted(info.new_name);
-	postgres_transaction.GetConnection().Execute(sql);
-}
-
-void PostgresSchemaEntry::AlterTable(PostgresTransaction &postgres_transaction, AddColumnInfo &info) {
-	if (info.if_column_not_exists) {
-		if (postgres_transaction.GetConnection().ColumnExists(info.name, info.new_column.GetName())) {
-			return;
-		}
-	}
-	string sql = "ALTER TABLE ";
-	sql += KeywordHelper::WriteOptionallyQuoted(info.name);
-	sql += " ADD COLUMN  ";
-	sql += KeywordHelper::WriteOptionallyQuoted(info.new_column.Name());
-	sql += " ";
-	sql += info.new_column.Type().ToString();
-	postgres_transaction.GetConnection().Execute(sql);
-}
-
-void PostgresSchemaEntry::AlterTable(PostgresTransaction &postgres_transaction, RemoveColumnInfo &info) {
-	if (info.if_column_exists) {
-		if (!postgres_transaction.GetConnection().ColumnExists(info.name, info.removed_column)) {
-			return;
-		}
-	}
-	string sql = "ALTER TABLE ";
-	sql += KeywordHelper::WriteOptionallyQuoted(info.name);
-	sql += " DROP COLUMN  ";
-	sql += KeywordHelper::WriteOptionallyQuoted(info.removed_column);
-	postgres_transaction.GetConnection().Execute(sql);
-}
-
 void PostgresSchemaEntry::Alter(ClientContext &context, AlterInfo &info) {
-	throw InternalException("FIXME: Alter Table");
-//	if (info.type != AlterType::ALTER_TABLE) {
-//		throw BinderException("Only altering tables is supported for now");
-//	}
-//	auto &alter = info.Cast<AlterTableInfo>();
-//	auto &transaction = PostgresTransaction::Get(context, catalog);
-//	switch (alter.alter_table_type) {
-//	case AlterTableType::RENAME_TABLE:
-//		AlterTable(transaction, alter.Cast<RenameTableInfo>());
-//		break;
-//	case AlterTableType::RENAME_COLUMN:
-//		AlterTable(transaction, alter.Cast<RenameColumnInfo>());
-//		break;
-//	case AlterTableType::ADD_COLUMN:
-//		AlterTable(transaction, alter.Cast<AddColumnInfo>());
-//		break;
-//	case AlterTableType::REMOVE_COLUMN:
-//		AlterTable(transaction, alter.Cast<RemoveColumnInfo>());
-//		break;
-//	default:
-//		throw BinderException("Unsupported ALTER TABLE type - Postgres tables only support RENAME TABLE, RENAME COLUMN, "
-//		                      "ADD COLUMN and DROP COLUMN");
-//	}
-//	transaction.ClearTableEntry(info.name);
+	if (info.type != AlterType::ALTER_TABLE) {
+		throw BinderException("Only altering tables is supported for now");
+	}
+	auto &alter = info.Cast<AlterTableInfo>();
+	tables.AlterTable(context, alter);
 }
 
 bool CatalogTypeIsSupported(CatalogType type) {
@@ -237,7 +172,6 @@ bool CatalogTypeIsSupported(CatalogType type) {
 	default:
 		return false;
 	}
-
 }
 
 void PostgresSchemaEntry::Scan(ClientContext &context, CatalogType type,

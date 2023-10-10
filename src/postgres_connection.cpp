@@ -110,10 +110,6 @@ void PostgresConnection::GetViewInfo(const string &view_name, string &sql) {
 	throw InternalException("GetViewInfo(");
 }
 
-bool PostgresConnection::ColumnExists(const string &table_name, const string &column_name) {
-	throw InternalException("ColumnExists");
-}
-
 bool PostgresConnection::GetMaxRowId(const string &table_name, idx_t &max_row_id) {
 	throw InternalException("GetMaxRowId");
 }

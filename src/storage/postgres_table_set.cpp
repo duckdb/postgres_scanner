@@ -204,4 +204,68 @@ optional_ptr<CatalogEntry> PostgresTableSet::CreateTable(BoundCreateTableInfo &i
 	return CreateEntry(std::move(tbl_entry));
 }
 
+void PostgresTableSet::AlterTable(RenameTableInfo &info) {
+	string sql = "ALTER TABLE ";
+	sql += KeywordHelper::WriteOptionallyQuoted(info.name);
+	sql += " RENAME TO ";
+	sql += KeywordHelper::WriteOptionallyQuoted(info.new_table_name);
+	transaction.GetConnection().Execute(sql);
+}
+
+void PostgresTableSet::AlterTable(RenameColumnInfo &info) {
+	string sql = "ALTER TABLE ";
+	sql += KeywordHelper::WriteOptionallyQuoted(info.name);
+	sql += " RENAME COLUMN  ";
+	sql += KeywordHelper::WriteOptionallyQuoted(info.old_name);
+	sql += " TO ";
+	sql += KeywordHelper::WriteOptionallyQuoted(info.new_name);
+
+	transaction.GetConnection().Execute(sql);
+}
+
+void PostgresTableSet::AlterTable(AddColumnInfo &info) {
+	string sql = "ALTER TABLE ";
+	sql += KeywordHelper::WriteOptionallyQuoted(info.name);
+	sql += " ADD COLUMN  ";
+	if (info.if_column_not_exists) {
+		sql += "IF NOT EXISTS ";
+	}
+	sql += KeywordHelper::WriteOptionallyQuoted(info.new_column.Name());
+	sql += " ";
+	sql += info.new_column.Type().ToString();
+	transaction.GetConnection().Execute(sql);
+}
+
+void PostgresTableSet::AlterTable(RemoveColumnInfo &info) {
+	string sql = "ALTER TABLE ";
+	sql += KeywordHelper::WriteOptionallyQuoted(info.name);
+	sql += " DROP COLUMN  ";
+	if (info.if_column_exists) {
+		sql += "IF EXISTS ";
+	}
+	sql += KeywordHelper::WriteOptionallyQuoted(info.removed_column);
+	transaction.GetConnection().Execute(sql);
+}
+
+void PostgresTableSet::AlterTable(ClientContext &context, AlterTableInfo &alter) {
+	switch (alter.alter_table_type) {
+	case AlterTableType::RENAME_TABLE:
+		AlterTable(alter.Cast<RenameTableInfo>());
+		break;
+	case AlterTableType::RENAME_COLUMN:
+		AlterTable(alter.Cast<RenameColumnInfo>());
+		break;
+	case AlterTableType::ADD_COLUMN:
+		AlterTable(alter.Cast<AddColumnInfo>());
+		break;
+	case AlterTableType::REMOVE_COLUMN:
+		AlterTable(alter.Cast<RemoveColumnInfo>());
+		break;
+	default:
+		throw BinderException("Unsupported ALTER TABLE type - Postgres tables only support RENAME TABLE, RENAME COLUMN, "
+		                      "ADD COLUMN and DROP COLUMN");
+	}
+	ClearEntries();
+}
+
 }

@@ -596,7 +596,7 @@ static void ProcessValue(const LogicalType &type, const PostgresTypeInfo *type_i
 
 		auto usec = PostgresConversion::LoadInteger<uint64_t>(value_ptr);
 		auto tzoffset = PostgresConversion::LoadInteger<int32_t>(value_ptr);
-		FlatVector::GetData<dtime_t>(out_vec)[output_offset].micros = usec + tzoffset * Interval::MICROS_PER_SEC;
+		FlatVector::GetData<dtime_tz_t>(out_vec)[output_offset] = dtime_tz_t(dtime_t(usec), -tzoffset);
 		break;
 	}
 

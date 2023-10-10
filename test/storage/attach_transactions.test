@@ -35,9 +35,6 @@ BEGIN
 statement ok
 INSERT INTO s.test VALUES (42)
 
-# FIXME - if a transaction is not read-only we cannot use the parallel scans
-mode skip
-
 query I
 SELECT * FROM s.test
 ----
@@ -113,6 +110,9 @@ SELECT * FROM s.test
 1
 2
 3
+
+# FIXME - alter table
+mode skip
 
 # rollback alter table
 statement ok

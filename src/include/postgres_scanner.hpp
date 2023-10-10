@@ -10,8 +10,10 @@
 
 #include "duckdb.hpp"
 #include "postgres_utils.hpp"
+#include "postgres_connection.hpp"
 
 namespace duckdb {
+class PostgresTransaction;
 
 struct PostgresTypeInfo {
 	string typname;
@@ -29,17 +31,6 @@ struct PostgresColumnInfo {
 };
 
 struct PostgresBindData : public FunctionData {
-	PostgresBindData() : owns_connection(true) {
-	}
-	PostgresBindData(PGconn *conn) : conn(conn), owns_connection(false) {
-	}
-	~PostgresBindData() {
-		if (owns_connection && conn) {
-			PQfinish(conn);
-			conn = nullptr;
-		}
-	}
-
 	string schema_name;
 	string table_name;
 	idx_t pages_approx = 0;
@@ -55,8 +46,8 @@ struct PostgresBindData : public FunctionData {
 	string snapshot;
 	bool in_recovery;
 
-	PGconn *conn = nullptr;
-	bool owns_connection;
+	PostgresConnection connection;
+	optional_ptr<PostgresTransaction> transaction;
 
 public:
 	unique_ptr<FunctionData> Copy() const override {

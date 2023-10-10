@@ -13,14 +13,28 @@
 
 namespace duckdb {
 class PostgresBinaryWriter;
+struct PostgresBinaryReader;
 class PostgresSchemaEntry;
 class PostgresStatement;
 class PostgresResult;
 struct IndexInfo;
 
+struct OwnedPostgresConnection {
+	explicit OwnedPostgresConnection(PGconn *conn = nullptr) : connection(conn) {}
+	~OwnedPostgresConnection() {
+		if (!connection) {
+			return;
+		}
+		PQfinish(connection);
+		connection = nullptr;
+	}
+
+	PGconn *connection;
+};
+
 class PostgresConnection {
 public:
-	PostgresConnection();
+	explicit PostgresConnection(shared_ptr<OwnedPostgresConnection> connection = nullptr);
 	~PostgresConnection();
 	// disable copy constructors
 	PostgresConnection(const PostgresConnection &other) = delete;
@@ -52,18 +66,27 @@ public:
 	void CopyChunk(DataChunk &chunk);
 	void FinishCopyTo();
 
+	void BeginCopyFrom(PostgresBinaryReader &reader, const string &query);
+
 	bool IsOpen();
 	void Close();
 
-	PGconn *GetConnection() {
+	shared_ptr<OwnedPostgresConnection> GetConnection() {
 		return connection;
 	}
 	string GetDSN() {
 		return dsn;
 	}
 
+	PGconn *GetConn() {
+		if (!connection || !connection->connection) {
+			throw InternalException("PostgresConnection::GetConn - no connection available");
+		}
+		return connection->connection;
+	}
+
 private:
-	PGconn *connection;
+	shared_ptr<OwnedPostgresConnection> connection;
 	string dsn;
 };
 

@@ -20,7 +20,7 @@ void PostgresConnection::BeginCopyTo(const string &schema_name, const string &ta
 		query += ") ";
 	}
 	query += "FROM STDIN (FORMAT binary)";
-	auto result = PQexec(connection, query.c_str());
+	auto result = PQexec(GetConn(), query.c_str());
 	if (!result || PQresultStatus(result) != PGRES_COPY_IN) {
 		throw std::runtime_error("Failed to prepare COPY \"" + query + "\": " + string(PQresultErrorMessage(result)));
 	}
@@ -32,10 +32,10 @@ void PostgresConnection::BeginCopyTo(const string &schema_name, const string &ta
 void PostgresConnection::CopyData(data_ptr_t buffer, idx_t size) {
 	int result;
 	do {
-		result = PQputCopyData(connection, (const char *) buffer, size);
+		result = PQputCopyData(GetConn(), (const char *) buffer, size);
 	} while(result == 0);
 	if (result == -1) {
-		throw InternalException("Error during PQputCopyData: %s", PQerrorMessage(connection));
+		throw InternalException("Error during PQputCopyData: %s", PQerrorMessage(GetConn()));
 	}
 }
 
@@ -48,12 +48,12 @@ void PostgresConnection::FinishCopyTo() {
 	writer.WriteFooter();
 	CopyData(writer);
 
-	auto result_code = PQputCopyEnd(connection, nullptr);
+	auto result_code = PQputCopyEnd(GetConn(), nullptr);
 	if (result_code != 1) {
-		throw InternalException("Error during PQputCopyEnd: %s", PQerrorMessage(connection));
+		throw InternalException("Error during PQputCopyEnd: %s", PQerrorMessage(GetConn()));
 	}
 	// fetch the query result to check for errors
-	auto result = PQgetResult(connection);
+	auto result = PQgetResult(GetConn());
 	if (!result || PQresultStatus(result) != PGRES_COMMAND_OK) {
 		throw std::runtime_error("Failed to copy data: " + string(PQresultErrorMessage(result)));
 	}

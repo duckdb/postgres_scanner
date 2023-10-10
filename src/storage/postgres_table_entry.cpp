@@ -22,11 +22,13 @@ TableFunction PostgresTableEntry::GetScanFunction(ClientContext &context, unique
 	auto &transaction = Transaction::Get(context, catalog).Cast<PostgresTransaction>();
 	auto &conn = transaction.GetConnection();
 
-	auto result = make_uniq<PostgresBindData>(conn.GetConnection());
+	auto result = make_uniq<PostgresBindData>();
 
 	result->schema_name = schema.name;
 	result->table_name = name;
 	result->dsn = conn.GetDSN();
+	result->transaction = &transaction;
+	result->connection = PostgresConnection(conn.GetConnection());
 
 	PostgresScanFunction::PrepareBind(context, *result);
 

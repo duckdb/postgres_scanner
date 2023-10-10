@@ -8,30 +8,24 @@
 #include "postgres_scanner.hpp"
 #include "postgres_result.hpp"
 #include "postgres_binary_reader.hpp"
+#include "storage/postgres_transaction.hpp"
 
 namespace duckdb {
 
 static constexpr uint32_t POSTGRES_TID_MAX = 4294967295;
 
 struct PostgresLocalState : public LocalTableFunctionState {
-	~PostgresLocalState() {
-		if (conn) {
-			PQfinish(conn);
-			conn = nullptr;
-		}
-	}
-
 	bool done = false;
 	bool exec = false;
 	string sql;
 	vector<column_t> column_ids;
 	TableFilterSet *filters;
 	string col_names;
-	PGconn *conn = nullptr;
+	PostgresConnection connection;
 };
 
 struct PostgresGlobalState : public GlobalTableFunctionState {
-	PostgresGlobalState(idx_t max_threads) : page_idx(0), max_threads(max_threads) {
+	explicit PostgresGlobalState(idx_t max_threads) : page_idx(0), max_threads(max_threads) {
 	}
 
 	mutex lock;
@@ -43,32 +37,19 @@ struct PostgresGlobalState : public GlobalTableFunctionState {
 	}
 };
 
-static unique_ptr<PostgresResult> PGQuery(PGconn *conn, string q, ExecStatusType response_code = PGRES_TUPLES_OK) {
-	auto res = make_uniq<PostgresResult>(PQexec(conn, q.c_str()));
-	if (!res->res || PQresultStatus(res->res) != response_code) {
-		throw IOException("Unable to query Postgres: %s %s", string(PQerrorMessage(conn)),
-		                  string(PQresultErrorMessage(res->res)));
-	}
-	return res;
-}
-
-static void PGExec(PGconn *conn, string q) {
-	PGQuery(conn, q, PGRES_COMMAND_OK);
-}
-
-static LogicalType DuckDBType2(PostgresTypeInfo *type_info, int atttypmod, PostgresTypeInfo *ele_info, PGconn *conn,
+static LogicalType DuckDBType2(PostgresTypeInfo *type_info, int atttypmod, PostgresTypeInfo *ele_info, PostgresConnection &con,
                                ClientContext &context) {
 	auto &pgtypename = type_info->typname;
 
 	// TODO better check, does the typtyp say something here?
 	// postgres array types start with an _
 	if (StringUtil::StartsWith(pgtypename, "_")) {
-		return LogicalType::LIST(DuckDBType2(ele_info, atttypmod, nullptr, conn, context));
+		return LogicalType::LIST(DuckDBType2(ele_info, atttypmod, nullptr, con, context));
 	}
 
 	if (type_info->typtype == "e") { // ENUM
-		auto res = PGQuery(
-		    conn, StringUtil::Format("SELECT unnest(enum_range(NULL::%s.%s))", type_info->nspname, type_info->typname));
+		auto res = con.Query(
+		    StringUtil::Format("SELECT unnest(enum_range(NULL::%s.%s))", type_info->nspname, type_info->typname));
 		Vector duckdb_levels(LogicalType::VARCHAR, res->Count());
 		for (idx_t row = 0; row < res->Count(); row++) {
 			duckdb_levels.SetValue(row, res->GetString(row, 0));
@@ -121,23 +102,24 @@ static LogicalType DuckDBType2(PostgresTypeInfo *type_info, int atttypmod, Postg
 	}
 }
 
-static LogicalType DuckDBType(PostgresColumnInfo &info, PGconn *conn, ClientContext &context) {
-	return DuckDBType2(&info.type_info, info.atttypmod, &info.elem_info, conn, context);
+static LogicalType DuckDBType(PostgresColumnInfo &info, PostgresConnection &con, ClientContext &context) {
+	return DuckDBType2(&info.type_info, info.atttypmod, &info.elem_info, con, context);
 }
 
 void PostgresScanFunction::PrepareBind(ClientContext &context, PostgresBindData &bind_data) {
 	// we create a transaction here, and get the snapshot id so the parallel
 	// reader threads can use the same snapshot
-	bind_data.in_recovery = (bool)PGQuery(bind_data.conn, "SELECT pg_is_in_recovery()")->GetBool(0, 0);
+	auto &con = bind_data.connection;
+	bind_data.in_recovery = con.Query("SELECT pg_is_in_recovery()")->GetBool(0, 0);
 	bind_data.snapshot = "";
 
 	if (!bind_data.in_recovery) {
-		bind_data.snapshot = PGQuery(bind_data.conn, "SELECT pg_export_snapshot()")->GetString(0, 0);
+		bind_data.snapshot = con.Query("SELECT pg_export_snapshot()")->GetString(0, 0);
 	}
 
 	// find the id of the table in question to simplify below queries and avoid
 	// complex joins (ha)
-	auto res = PGQuery(bind_data.conn, StringUtil::Format(R"(
+	auto res = con.Query(StringUtil::Format(R"(
 SELECT pg_class.oid, relpages
 FROM pg_class JOIN pg_namespace ON relnamespace = pg_namespace.oid
 WHERE nspname=%s AND relname=%s
@@ -153,7 +135,7 @@ WHERE nspname=%s AND relname=%s
 
 	// query the table schema so we can interpret the bits in the pages
 	// fun fact: this query also works in DuckDB ^^
-	res = PGQuery(bind_data.conn, StringUtil::Format(
+	res = con.Query(StringUtil::Format(
 	                                   R"(
 SELECT
     attname, atttypmod, pg_namespace.nspname,
@@ -190,7 +172,7 @@ ORDER BY attnum;
 		info.elem_info.typtype = res->GetString(row, 9);
 
 		bind_data.names.push_back(info.attname);
-		auto duckdb_type = DuckDBType(info, bind_data.conn, context);
+		auto duckdb_type = DuckDBType(info, bind_data.connection, context);
 		// we cast unsupported types to varchar on read
 		auto needs_cast = duckdb_type == LogicalType::INVALID;
 		bind_data.needs_cast.push_back(needs_cast);
@@ -213,9 +195,9 @@ static unique_ptr<FunctionData> PostgresBind(ClientContext &context, TableFuncti
 	bind_data->schema_name = input.inputs[1].GetValue<string>();
 	bind_data->table_name = input.inputs[2].GetValue<string>();
 
-	bind_data->conn = PostgresUtils::PGConnect(bind_data->dsn);
+	bind_data->connection = PostgresConnection::Open(bind_data->dsn);
 
-	PGExec(bind_data->conn, "BEGIN TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY");
+	bind_data->connection.Execute("BEGIN TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY");
 	PostgresScanFunction::PrepareBind(context, *bind_data);
 
 	return_types = bind_data->types;
@@ -268,11 +250,11 @@ COPY (SELECT %s FROM %s.%s %s) TO STDOUT (FORMAT binary);
 	lstate.done = false;
 }
 
-static PGconn *PostgresScanConnect(string dsn, bool in_recovery, string snapshot) {
-	auto conn = PostgresUtils::PGConnect(dsn);
-	PGExec(conn, "BEGIN TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY");
+static PostgresConnection PostgresScanConnect(string dsn, bool in_recovery, string snapshot) {
+	auto conn = PostgresConnection::Open(dsn);
+	conn.Execute("BEGIN TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY");
 	if (!in_recovery) {
-		PGExec(conn, StringUtil::Format("SET TRANSACTION SNAPSHOT '%s'", snapshot));
+		conn.Execute(StringUtil::Format("SET TRANSACTION SNAPSHOT '%s'", snapshot));
 	}
 	return conn;
 }
@@ -484,7 +466,11 @@ static void ProcessValue(const LogicalType &type, const PostgresTypeInfo *type_i
 static idx_t PostgresMaxThreads(ClientContext &context, const FunctionData *bind_data_p) {
 	D_ASSERT(bind_data_p);
 
-	auto bind_data = (const PostgresBindData *)bind_data_p;
+	// FIXME - minor cleanup, should not need to remove const-ness here
+	auto bind_data = (PostgresBindData *)bind_data_p;
+	if (bind_data->transaction && !bind_data->transaction->IsReadOnly()) {
+		return 1;
+	}
 	return MaxValue<idx_t>(bind_data->pages_approx / bind_data->pages_per_task, 1);
 }
 
@@ -518,12 +504,18 @@ static bool PostgresParallelStateNext(ClientContext &context, const FunctionData
 static unique_ptr<LocalTableFunctionState> PostgresInitLocalState(ExecutionContext &context,
                                                                   TableFunctionInitInput &input,
                                                                   GlobalTableFunctionState *global_state) {
-	auto &bind_data = input.bind_data->Cast<PostgresBindData>();
+	auto &bind_data = (PostgresBindData &) *input.bind_data;
 	auto &gstate = global_state->Cast<PostgresGlobalState>();
 
 	auto local_state = make_uniq<PostgresLocalState>();
 	local_state->column_ids = input.column_ids;
-	local_state->conn = PostgresScanConnect(bind_data.dsn, bind_data.in_recovery, bind_data.snapshot);
+
+	if (bind_data.transaction && !bind_data.transaction->IsReadOnly()) {
+		// if we have made other modifications in this transaction we have to use the main connection
+		local_state->connection = PostgresConnection(bind_data.transaction->GetConnection().GetConnection());
+	} else {
+		local_state->connection = PostgresScanConnect(bind_data.dsn, bind_data.in_recovery, bind_data.snapshot);
+	}
 	local_state->filters = input.filters.get();
 	if (bind_data.pages_approx == 0) {
 		PostgresInitInternal(context.client, &bind_data, *local_state, 0, POSTGRES_TID_MAX);
@@ -538,8 +530,9 @@ static void PostgresScan(ClientContext &context, TableFunctionInput &data, DataC
 	auto &local_state = data.local_state->Cast<PostgresLocalState>();
 	auto &gstate = data.global_state->Cast<PostgresGlobalState>();
 
+	auto &con = local_state.connection;
 	idx_t output_offset = 0;
-	PostgresBinaryReader reader(local_state.conn);
+	PostgresBinaryReader reader(con);
 
 	while (true) {
 		if (local_state.done && !PostgresParallelStateNext(context, data.bind_data.get(), local_state, gstate)) {
@@ -547,10 +540,8 @@ static void PostgresScan(ClientContext &context, TableFunctionInput &data, DataC
 		}
 
 		if (!local_state.exec) {
-			PGQuery(local_state.conn, local_state.sql, PGRES_COPY_OUT);
+			con.BeginCopyFrom(reader, local_state.sql);
 			local_state.exec = true;
-			reader.Next();
-			reader.CheckHeader();
 			// the first tuple immediately follows the header in the first message, so
 			// we have to keep the buffer alive for now.
 		}
@@ -651,9 +642,9 @@ static void AttachFunction(ClientContext &context, TableFunctionInput &data_p, D
 		return;
 	}
 
-	auto conn = PostgresUtils::PGConnect(data.dsn);
+	auto conn = PostgresConnection::Open(data.dsn);
 	auto dconn = Connection(context.db->GetDatabase(context));
-	auto res = PGQuery(conn, StringUtil::Format(
+	auto res = conn.Query(StringUtil::Format(
 	                             R"(
 SELECT relname
 FROM pg_class JOIN pg_namespace ON pg_class.relnamespace = pg_namespace.oid
@@ -674,7 +665,6 @@ ORDER BY relname;
 		    ->CreateView(data.sink_schema, table_name, data.overwrite, false);
 	}
 	res.reset();
-	PQfinish(conn);
 
 	data.finished = true;
 }

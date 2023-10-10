@@ -100,24 +100,27 @@ struct PostgresDecimalConfig {
 };
 
 struct PostgresBinaryReader {
-	explicit PostgresBinaryReader(PGconn *conn_p) : conn(conn_p) {
-		D_ASSERT(conn);
+	explicit PostgresBinaryReader(PostgresConnection &con_p) : con(con_p) {
 	}
 	~PostgresBinaryReader() {
 		Reset();
 	}
 
+	void BeginCopyOut(const string &sql) {
+
+	}
+
 	void Next() {
 		Reset();
 		char *out_buffer;
-		idx_t len = PQgetCopyData(conn, &out_buffer, 0);
+		idx_t len = PQgetCopyData(con.GetConn(), &out_buffer, 0);
 		buffer = data_ptr_cast(out_buffer);
 
 		// len -2 is error
 		// len -1 is supposed to signal end but does not actually happen in practise
 		// we expect at least 2 bytes in each message for the tuple count
 		if (!buffer || len < sizeof(int16_t)) {
-			throw IOException("Unable to read binary COPY data from Postgres: %s", string(PQerrorMessage(conn)));
+			throw IOException("Unable to read binary COPY data from Postgres: %s", string(PQerrorMessage(con.GetConn())));
 		}
 		buffer_ptr = buffer;
 		end = buffer + len;
@@ -314,7 +317,7 @@ private:
 	data_ptr_t buffer = nullptr;
 	data_ptr_t buffer_ptr = nullptr;
 	data_ptr_t end = nullptr;
-	PGconn *conn = nullptr;
+	PostgresConnection &con;
 };
 
 } // namespace duckdb

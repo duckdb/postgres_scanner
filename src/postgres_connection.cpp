@@ -7,7 +7,8 @@
 
 namespace duckdb {
 
-PostgresConnection::PostgresConnection() : connection(nullptr) {
+PostgresConnection::PostgresConnection(shared_ptr<OwnedPostgresConnection> connection_p)
+    : connection(std::move(connection_p)) {
 }
 
 PostgresConnection::~PostgresConnection() {
@@ -27,14 +28,14 @@ PostgresConnection &PostgresConnection::operator=(PostgresConnection &&other) no
 
 PostgresConnection PostgresConnection::Open(const string &connection_string) {
 	PostgresConnection result;
-	result.connection = PostgresUtils::PGConnect(connection_string);
+	result.connection = make_shared<OwnedPostgresConnection>(PostgresUtils::PGConnect(connection_string));
 	result.dsn = connection_string;
 	return result;
 }
 
 bool PostgresConnection::TryPrepare(const string &query, PostgresStatement &stmt, string &error) {
 	stmt.name = "";
-	auto result = PQprepare(connection, stmt.name.c_str(), query.c_str(), 0, nullptr);
+	auto result = PQprepare(GetConn(), stmt.name.c_str(), query.c_str(), 0, nullptr);
 	if (!result || PQresultStatus(result) != PGRES_COMMAND_OK) {
 		error = PQresultErrorMessage(result);
 		return false;
@@ -44,7 +45,7 @@ bool PostgresConnection::TryPrepare(const string &query, PostgresStatement &stmt
 
 PostgresStatement PostgresConnection::Prepare(const string &query) {
 	PostgresStatement stmt;
-	stmt.connection = connection;
+	stmt.connection = GetConn();
 	string error_msg;
 	if (!TryPrepare(query, stmt, error_msg)) {
 		string error = "Failed to prepare query \"" + query + "\": " + error_msg;
@@ -67,7 +68,7 @@ static bool ResultHasError(PGresult *result) {
 }
 
 unique_ptr<PostgresResult> PostgresConnection::TryQuery(const string &query) {
-	auto result = PQexec(connection, query.c_str());
+	auto result = PQexec(GetConn(), query.c_str());
 	if (ResultHasError(result)) {
 		return nullptr;
 	}
@@ -75,7 +76,7 @@ unique_ptr<PostgresResult> PostgresConnection::TryQuery(const string &query) {
 }
 
 unique_ptr<PostgresResult> PostgresConnection::Query(const string &query) {
-	auto result = PQexec(connection, query.c_str());
+	auto result = PQexec(GetConn(), query.c_str());
 	if (ResultHasError(result)) {
 		throw std::runtime_error("Failed to execute query \"" + query + "\": " + string(PQresultErrorMessage(result)));
 	}
@@ -87,14 +88,13 @@ void PostgresConnection::Execute(const string &query) {
 }
 
 bool PostgresConnection::IsOpen() {
-	return connection;
+	return connection.get();
 }
 
 void PostgresConnection::Close() {
 	if (!IsOpen()) {
 		return;
 	}
-	PQfinish(connection);
 	connection = nullptr;
 }
 

@@ -5,7 +5,9 @@ namespace duckdb {
 
 void PostgresConnection::BeginCopyTo(const string &schema_name, const string &table_name, const vector<string> &column_names) {
 	string query = "COPY ";
-	query += KeywordHelper::WriteQuoted(schema_name, '"') + ".";
+	if (!schema_name.empty()) {
+		query += KeywordHelper::WriteQuoted(schema_name, '"') + ".";
+	}
 	query += KeywordHelper::WriteQuoted(table_name, '"') + " ";
 	if (!column_names.empty()) {
 		query += "(";

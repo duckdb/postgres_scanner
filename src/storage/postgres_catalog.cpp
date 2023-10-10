@@ -67,11 +67,6 @@ DatabaseSize PostgresCatalog::GetDatabaseSize(ClientContext &context) {
 	throw InternalException("GetDatabaseSize");
 }
 
-unique_ptr<PhysicalOperator> PostgresCatalog::PlanUpdate(ClientContext &context, LogicalUpdate &op,
-										unique_ptr<PhysicalOperator> plan) {
-	throw InternalException("FIXME: PostgresCatalog::PlanUpdate");
-}
-
 unique_ptr<LogicalOperator> PostgresCatalog::BindCreateIndex(Binder &binder, CreateStatement &stmt, TableCatalogEntry &table,
 											unique_ptr<LogicalOperator> plan) {
 	throw InternalException("FIXME: PostgresCatalog::BindCreateIndex");

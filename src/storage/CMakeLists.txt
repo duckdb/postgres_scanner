@@ -4,12 +4,14 @@ add_library(
   postgres_catalog_set.cpp
   postgres_delete.cpp
   postgres_insert.cpp
+  postgres_update.cpp
   postgres_schema_entry.cpp
   postgres_schema_set.cpp
   postgres_table_entry.cpp
   postgres_table_set.cpp
   postgres_transaction.cpp
-  postgres_transaction_manager.cpp)
+  postgres_transaction_manager.cpp
+  postgres_update.cpp)
 set(ALL_OBJECT_FILES
     ${ALL_OBJECT_FILES} $<TARGET_OBJECTS:postgres_ext_storage>
     PARENT_SCOPE)

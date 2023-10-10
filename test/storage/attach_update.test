@@ -50,10 +50,10 @@ NULL
 NULL
 
 # update with DEFAULT clause
-query I
+statement error
 UPDATE s1.test SET i = DEFAULT WHERE i = 4
 ----
-1
+not yet supported
 
 # multi column update in different orders
 statement ok

@@ -110,12 +110,8 @@ void PostgresConnection::GetViewInfo(const string &view_name, string &sql) {
 	throw InternalException("GetViewInfo(");
 }
 
-bool PostgresConnection::GetMaxRowId(const string &table_name, idx_t &max_row_id) {
-	throw InternalException("GetMaxRowId");
-}
-
 vector<IndexInfo> PostgresConnection::GetIndexInfo(const string &table_name) {
-	throw InternalException("GetIndexInfo");
+	return vector<IndexInfo>();
 }
 
 } // namespace duckdb

@@ -34,6 +34,10 @@ void PostgresCatalogSet::DropEntry(DropInfo &info) {
 }
 
 void PostgresCatalogSet::Scan(const std::function<void(CatalogEntry &)> &callback) {
+	if (!is_loaded) {
+		LoadEntries();
+		is_loaded = true;
+	}
 	for(auto &entry : entries) {
 		callback(*entry.second);
 	}

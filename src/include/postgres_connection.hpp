@@ -54,9 +54,6 @@ public:
 	vector<string> GetEntries(string entry_type);
 	void GetViewInfo(const string &view_name, string &sql);
 	void GetIndexInfo(const string &index_name, string &sql, string &table_name);
-	//! Gets the max row id of a table, returns false if the table does not have a
-	//! rowid column
-	bool GetMaxRowId(const string &table_name, idx_t &row_id);
 	vector<IndexInfo> GetIndexInfo(const string &table_name);
 
 	void BeginCopyTo(const string &schema_name, const string &table_name, const vector<string> &column_names);

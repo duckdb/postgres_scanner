@@ -40,10 +40,7 @@ TableStorageInfo PostgresTableEntry::GetStorageInfo(ClientContext &context) {
 	auto &transaction = Transaction::Get(context, catalog).Cast<PostgresTransaction>();
 	auto &db = transaction.GetConnection();
 	TableStorageInfo result;
-	if (!db.GetMaxRowId(name, result.cardinality)) {
-		// probably
-		result.cardinality = 10000;
-	}
+	result.cardinality = 0;
 	result.index_info = db.GetIndexInfo(name);
 	return result;
 }

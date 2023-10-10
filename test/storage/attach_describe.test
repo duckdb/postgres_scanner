@@ -1,0 +1,41 @@
+# name: test/storage/attach_database_list.test
+# description:
+# group: [postgres_storage]
+
+require postgres_scanner
+
+statement ok
+ATTACH 'dbname=postgresscanner' AS s1 (TYPE POSTGRES)
+
+statement ok
+CREATE OR REPLACE TABLE s1.test(i BIGINT PRIMARY KEY, j BIGINT DEFAULT 42);
+
+query IIIIII
+DESCRIBE s1.test
+----
+i	BIGINT	YES	NULL	NULL	NULL
+j	BIGINT	YES	NULL	42	NULL
+
+query ITTTTT
+PRAGMA table_info('s1.test');
+----
+0	i	BIGINT	0	NULL	0
+1	j	BIGINT	0	42	0
+
+# more complex default
+statement ok
+CREATE OR REPLACE TABLE s1.test2(s VARCHAR DEFAULT 'hello, '||'world');
+
+query ITTTTT
+PRAGMA table_info('s1.test2');
+----
+0	s	VARCHAR	0	(CAST('hello, ' AS VARCHAR) || CAST('world' AS VARCHAR))	0
+
+# DEFAULT in INSERT
+statement ok
+INSERT INTO s1.test2 VALUES (DEFAULT);
+
+query I
+SELECT * FROM s1.test2
+----
+hello, world

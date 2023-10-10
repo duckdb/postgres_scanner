@@ -77,6 +77,18 @@ ORDER BY table_name, ordinal_position;
 	}
 }
 
+unique_ptr<CreateTableInfo> PostgresTableSet::GetTableInfo(PostgresResult &result, const string &table_name) {
+	auto rows = result.Count();
+	if (rows == 0) {
+		throw InvalidInputException("Table %s does not contain any columns.", table_name);
+	}
+	auto table_info = make_uniq<CreateTableInfo>();
+	for(idx_t row = 0; row < rows; row++) {
+		AddColumn(result, row, *table_info);
+	}
+	return table_info;
+}
+
 // FIXME - this is almost entirely copied from TableCatalogEntry::ColumnsToSQL - should be unified
 string PostgresColumnsToSQL(const ColumnList &columns, const vector<unique_ptr<Constraint>> &constraints) {
 	std::stringstream ss;

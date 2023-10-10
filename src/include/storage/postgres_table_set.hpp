@@ -12,6 +12,8 @@
 #include "storage/postgres_table_entry.hpp"
 
 namespace duckdb {
+struct CreateTableInfo;
+class PostgresResult;
 class PostgresSchemaEntry;
 
 class PostgresTableSet : public PostgresCatalogSet {

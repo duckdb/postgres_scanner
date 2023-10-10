@@ -1,0 +1,47 @@
+# name: test/storage/attach_defaults.test
+# description:
+# group: [postgres_storage]
+
+require postgres_scanner
+
+statement ok
+ATTACH 'dbname=postgresscanner' AS s1 (TYPE POSTGRES)
+
+statement ok
+CREATE OR REPLACE TABLE s1.test(i INTEGER DEFAULT 42, j INTEGER);
+
+statement ok
+INSERT INTO s1.test (i) VALUES (3)
+
+statement ok
+INSERT INTO s1.test (j) VALUES (84)
+
+query II
+SELECT * FROM s1.test
+----
+3	NULL
+42	84
+
+statement ok
+INSERT INTO s1.test (j, i) VALUES (1, 10)
+
+statement ok
+INSERT INTO s1.test (i, j) VALUES (100, 1000)
+
+query II
+SELECT * FROM s1.test
+----
+3	NULL
+42	84
+10	1
+100	1000
+
+statement error
+INSERT INTO s1.test (zzz) VALUES (3)
+----
+does not have a column with name "zzz"
+
+statement error
+INSERT INTO s1.test (j, j, j) VALUES (1, 2, 3)
+----
+Duplicate column name "j"

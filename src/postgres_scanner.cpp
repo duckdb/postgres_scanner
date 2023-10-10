@@ -307,7 +307,7 @@ static void PostgresInitInternal(ClientContext &context, const PostgresBindData 
 	if (lstate.filters && !lstate.filters->filters.empty()) {
 		vector<string> filter_entries;
 		for (auto &entry : lstate.filters->filters) {
-			auto column_name = KeywordHelper::WriteQuoted(bind_data->names[lstate.column_ids[entry.first]]);
+			auto column_name = KeywordHelper::WriteQuoted(bind_data->names[lstate.column_ids[entry.first]], '"');
 			auto &filter = *entry.second;
 			filter_entries.push_back(TransformFilter(column_name, filter));
 		}

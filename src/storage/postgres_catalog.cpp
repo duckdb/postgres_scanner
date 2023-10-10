@@ -61,7 +61,7 @@ bool PostgresCatalog::InMemory() {
 }
 
 string PostgresCatalog::GetDBPath() {
-	return string();
+	return path;
 }
 
 DatabaseSize PostgresCatalog::GetDatabaseSize(ClientContext &context) {

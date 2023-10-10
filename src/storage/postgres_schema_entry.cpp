@@ -245,6 +245,7 @@ optional_ptr<CatalogEntry> PostgresSchemaEntry::GetEntry(CatalogTransaction tran
 PostgresCatalogSet &PostgresSchemaEntry::GetCatalogSet(CatalogType type) {
 	switch (type) {
 	case CatalogType::TABLE_ENTRY:
+	case CatalogType::VIEW_ENTRY:
 		return tables;
 	default:
 		throw InternalException("Type not supported for GetCatalogSet");

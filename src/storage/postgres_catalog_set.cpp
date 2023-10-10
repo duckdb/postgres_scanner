@@ -21,7 +21,7 @@ optional_ptr<CatalogEntry> PostgresCatalogSet::GetEntry(const string &name) {
 void PostgresCatalogSet::DropEntry(DropInfo &info) {
 	entries.erase(info.name);
 	string drop_query = "DROP ";
-	drop_query += EntryName() + " ";
+	drop_query += CatalogTypeToString(info.type) + " ";
 	if (info.if_not_found == OnEntryNotFound::RETURN_NULL) {
 		drop_query += " IF EXISTS ";
 	}

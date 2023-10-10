@@ -29,7 +29,6 @@ public:
 
 protected:
 	virtual void LoadEntries() = 0;
-	virtual string EntryName() = 0;
 
 protected:
 	Catalog &catalog;

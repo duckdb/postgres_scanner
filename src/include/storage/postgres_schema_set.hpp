@@ -23,9 +23,6 @@ public:
 
 protected:
 	void LoadEntries() override;
-	string EntryName() override {
-		return "SCHEMA";
-	}
 };
 
 } // namespace duckdb

@@ -21,11 +21,10 @@ public:
 public:
 	optional_ptr<CatalogEntry> CreateTable(BoundCreateTableInfo &info);
 
+	static unique_ptr<CreateTableInfo> GetTableInfo(PostgresResult &result, const string &table_name);
+
 protected:
 	void LoadEntries() override;
-	string EntryName() override {
-		return "TABLE";
-	}
 
 protected:
 	PostgresSchemaEntry &schema;

@@ -151,17 +151,6 @@ struct PostgresBinaryReader {
 		// extension area length" do not contain anything interesting
 	}
 
-//	template <typename T>
-//	const T Read() {
-//		T ret;
-//		D_ASSERT(len > 0);
-//		D_ASSERT(buffer);
-//		D_ASSERT(buffer_ptr);
-//		memcpy(&ret, buffer_ptr, sizeof(ret));
-//		buffer_ptr += sizeof(T);
-//		return ret;
-//	}
-
 public:
 	template <class T>
 	inline T ReadIntegerUnchecked() {
@@ -251,7 +240,7 @@ public:
 		auto sign = ReadInteger<uint16_t>();
 
 		if (!(sign == NUMERIC_POS || sign == NUMERIC_NAN || sign == NUMERIC_PINF || sign == NUMERIC_NINF ||
-			  sign == NUMERIC_NEG)) {
+		      sign == NUMERIC_NEG)) {
 			throw NotImplementedException("Postgres numeric NA/Inf");
 		}
 		config.is_negative = sign == NUMERIC_NEG;

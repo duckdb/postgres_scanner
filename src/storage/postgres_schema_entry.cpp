@@ -90,9 +90,6 @@ optional_ptr<CatalogEntry> PostgresSchemaEntry::CreateIndex(ClientContext &conte
 string GetCreateViewSQL(CreateViewInfo &info) {
 	string sql;
 	sql = "CREATE VIEW ";
-	if (info.on_conflict == OnCreateConflict::IGNORE_ON_CONFLICT) {
-		sql += "IF NOT EXISTS ";
-	}
 	sql += KeywordHelper::WriteOptionallyQuoted(info.view_name);
 	sql += " ";
 	if (!info.aliases.empty()) {
@@ -115,9 +112,16 @@ optional_ptr<CatalogEntry> PostgresSchemaEntry::CreateView(CatalogTransaction tr
 	if (info.sql.empty()) {
 		throw BinderException("Cannot create view in Postgres that originated from an empty SQL statement");
 	}
-	if (info.on_conflict == OnCreateConflict::REPLACE_ON_CONFLICT) {
-		// CREATE OR REPLACE - drop any existing entries first (if any)
-		TryDropEntry(transaction.GetContext(), CatalogType::VIEW_ENTRY, info.view_name);
+	if (info.on_conflict == OnCreateConflict::REPLACE_ON_CONFLICT ||
+	    info.on_conflict == OnCreateConflict::IGNORE_ON_CONFLICT) {
+		auto current_entry = GetEntry(transaction, CatalogType::VIEW_ENTRY, info.view_name);
+		if (current_entry) {
+			if (info.on_conflict == OnCreateConflict::IGNORE_ON_CONFLICT) {
+				return current_entry;
+			}
+			// CREATE OR REPLACE - drop any existing entries first (if any)
+			TryDropEntry(transaction.GetContext(), CatalogType::VIEW_ENTRY, info.view_name);
+		}
 	}
 	auto &postgres_transaction = GetPostgresTransaction(transaction);
 	postgres_transaction.GetConnection().Execute(GetCreateViewSQL(info));
@@ -225,11 +229,25 @@ void PostgresSchemaEntry::Alter(ClientContext &context, AlterInfo &info) {
 //	transaction.ClearTableEntry(info.name);
 }
 
+bool CatalogTypeIsSupported(CatalogType type) {
+	switch (type) {
+	case CatalogType::TABLE_ENTRY:
+	case CatalogType::VIEW_ENTRY:
+		return true;
+	default:
+		return false;
+	}
+
+}
+
 void PostgresSchemaEntry::Scan(ClientContext &context, CatalogType type,
                              const std::function<void(CatalogEntry &)> &callback) {
 	Scan(type, callback);
 }
 void PostgresSchemaEntry::Scan(CatalogType type, const std::function<void(CatalogEntry &)> &callback) {
+	if (!CatalogTypeIsSupported(type)) {
+		return;
+	}
 	GetCatalogSet(type).Scan(callback);
 }
 
@@ -239,6 +257,9 @@ void PostgresSchemaEntry::DropEntry(ClientContext &context, DropInfo &info) {
 
 optional_ptr<CatalogEntry> PostgresSchemaEntry::GetEntry(CatalogTransaction transaction, CatalogType type,
                                                        const string &name) {
+	if (!CatalogTypeIsSupported(type)) {
+		return nullptr;
+	}
 	return GetCatalogSet(type).GetEntry(name);
 }
 

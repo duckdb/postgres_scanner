@@ -138,7 +138,7 @@ void PostgresScanFunction::PrepareBind(ClientContext &context, PostgresBindData 
 	// find the id of the table in question to simplify below queries and avoid
 	// complex joins (ha)
 	auto res = PGQuery(bind_data.conn, StringUtil::Format(R"(
-SELECT pg_class.oid, GREATEST(relpages, 1)
+SELECT pg_class.oid, relpages
 FROM pg_class JOIN pg_namespace ON relnamespace = pg_namespace.oid
 WHERE nspname=%s AND relname=%s
 )", KeywordHelper::WriteQuoted(bind_data.schema_name), KeywordHelper::WriteQuoted(bind_data.table_name)));
@@ -248,12 +248,21 @@ static void PostgresInitInternal(ClientContext &context, const PostgresBindData 
 
 	string filter_string= PostgresFilterPushdown::TransformFilters(lstate.column_ids, lstate.filters, bind_data->names);
 
+	string filter;
+	if (bind_data->pages_approx > 0) {
+		filter = StringUtil::Format("WHERE ctid BETWEEN '(%d,0)'::tid AND '(%d,0)'::tid", task_min, task_max);
+	}
+	if (!filter_string.empty()) {
+		if (filter.empty()) {
+			filter += "WHERE ";
+		}
+		filter += filter_string;
+	}
 	lstate.sql = StringUtil::Format(
 	    R"(
-COPY (SELECT %s FROM %s.%s WHERE ctid BETWEEN '(%d,0)'::tid AND '(%d,0)'::tid %s) TO STDOUT (FORMAT binary);
+COPY (SELECT %s FROM %s.%s %s) TO STDOUT (FORMAT binary);
 )",
-
-	    col_names, KeywordHelper::WriteQuoted(bind_data->schema_name, '"'), KeywordHelper::WriteQuoted(bind_data->table_name, '"'), task_min, task_max, filter_string);
+	    col_names, KeywordHelper::WriteQuoted(bind_data->schema_name, '"'), KeywordHelper::WriteQuoted(bind_data->table_name, '"'), filter);
 
 	lstate.exec = false;
 	lstate.done = false;
@@ -476,7 +485,7 @@ static idx_t PostgresMaxThreads(ClientContext &context, const FunctionData *bind
 	D_ASSERT(bind_data_p);
 
 	auto bind_data = (const PostgresBindData *)bind_data_p;
-	return bind_data->pages_approx / bind_data->pages_per_task;
+	return MaxValue<idx_t>(bind_data->pages_approx / bind_data->pages_per_task, 1);
 }
 
 static unique_ptr<GlobalTableFunctionState> PostgresInitGlobalState(ClientContext &context,
@@ -516,7 +525,9 @@ static unique_ptr<LocalTableFunctionState> PostgresInitLocalState(ExecutionConte
 	local_state->column_ids = input.column_ids;
 	local_state->conn = PostgresScanConnect(bind_data.dsn, bind_data.in_recovery, bind_data.snapshot);
 	local_state->filters = input.filters.get();
-	if (!PostgresParallelStateNext(context.client, input.bind_data.get(), *local_state, gstate)) {
+	if (bind_data.pages_approx == 0) {
+		PostgresInitInternal(context.client, &bind_data, *local_state, 0, POSTGRES_TID_MAX);
+	} else if (!PostgresParallelStateNext(context.client, input.bind_data.get(), *local_state, gstate)) {
 		local_state->done = true;
 	}
 	return std::move(local_state);

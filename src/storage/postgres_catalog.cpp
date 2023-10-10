@@ -21,6 +21,7 @@ optional_ptr<CatalogEntry> PostgresCatalog::CreateSchema(CatalogTransaction tran
 	auto &postgres_transaction = PostgresTransaction::Get(transaction.GetContext(), *this);
 	if (info.on_conflict == OnCreateConflict::REPLACE_ON_CONFLICT) {
 		DropInfo try_drop;
+		try_drop.type = CatalogType::SCHEMA_ENTRY;
 		try_drop.name = info.schema;
 		try_drop.if_not_found = OnEntryNotFound::RETURN_NULL;
 		try_drop.cascade = false;

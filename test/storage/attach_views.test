@@ -1,0 +1,68 @@
+# name: test/sql/storage/attach_views.test
+# description:
+# group: [postgres_storage]
+
+require postgres_scanner
+
+statement ok
+ATTACH 'dbname=postgresscanner' AS s (TYPE POSTGRES)
+
+statement ok
+USE s;
+
+statement ok
+DROP VIEW IF EXISTS v1
+
+statement ok
+CREATE VIEW v1 AS SELECT 42;
+
+query I
+SELECT * FROM v1
+----
+42
+
+statement error
+CREATE VIEW v1 AS SELECT 84;
+----
+already exists
+
+statement ok
+CREATE VIEW IF NOT EXISTS v1 AS SELECT 84;
+
+statement ok
+CREATE OR REPLACE VIEW v1 AS SELECT 84;
+
+query I
+SELECT * FROM v1
+----
+84
+
+statement ok
+DROP VIEW v1
+
+statement error
+SELECT * FROM v1
+----
+Table with name v1 does not exist
+
+statement error
+DROP VIEW v1
+----
+View with name v1 does not exist
+
+statement ok
+CREATE VIEW v1(a) AS SELECT 99;
+
+query I
+SELECT a FROM v1
+----
+99
+
+# special names
+statement ok
+CREATE OR REPLACE VIEW "table "" table '' table"("column "" column '' column") AS SELECT 3
+
+query I
+SELECT "column "" column '' column" FROM "table "" table '' table"
+----
+3

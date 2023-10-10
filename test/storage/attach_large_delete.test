@@ -1,0 +1,37 @@
+# name: test/storage/attach_large_delete.test
+# description:
+# group: [postgres_storage]
+
+require postgres_scanner
+
+statement ok
+ATTACH 'dbname=postgresscanner' AS s (TYPE POSTGRES);
+
+statement ok
+DROP TABLE IF EXISTS s.large_delete;
+
+statement ok
+CREATE TABLE s.large_delete(i INTEGER);
+
+statement ok
+INSERT INTO s.large_delete SELECT * FROM generate_series(0,999999);
+
+query I
+SELECT COUNT(*) FROM s.large_delete;
+----
+1000000
+
+query I
+DELETE FROM s.large_delete WHERE i%2=0;
+----
+500000
+
+query I
+SELECT COUNT(*) FROM s.large_delete;
+----
+500000
+
+query I
+SELECT SUM(i) FROM s.large_delete;
+----
+250000000000

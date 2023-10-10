@@ -16,7 +16,8 @@ namespace duckdb {
 
 class PostgresFilterPushdown {
 public:
-	static string TransformFilters(const vector<column_t> &column_ids, optional_ptr<TableFilterSet> filters, const vector<string> &names);
+	static string TransformFilters(const vector<column_t> &column_ids, optional_ptr<TableFilterSet> filters,
+	                               const vector<string> &names);
 
 private:
 	static string TransformFilter(string &column_name, TableFilter &filter);

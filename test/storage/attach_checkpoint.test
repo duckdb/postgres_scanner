@@ -1,0 +1,12 @@
+# name: test/storage/attach_checkpoint.test
+# description:
+# group: [postgres_storage]
+
+require postgres_scanner
+
+statement ok
+ATTACH 'dbname=postgresscanner' AS s (TYPE POSTGRES)
+
+statement ok
+CHECKPOINT s
+

@@ -37,6 +37,11 @@ SELECT * FROM v1
 ----
 84
 
+statement error
+DROP TABLE v1
+----
+not a table
+
 statement ok
 DROP VIEW v1
 

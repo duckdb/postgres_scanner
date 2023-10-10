@@ -16,6 +16,11 @@ CREATE TABLE simple.test(i INTEGER);
 statement ok
 SELECT * FROM simple.test;
 
+statement error
+DROP VIEW simple.test
+----
+not a view
+
 statement ok
 DROP TABLE simple.test
 

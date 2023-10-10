@@ -10,6 +10,7 @@
 
 #include "duckdb/catalog/catalog_entry/schema_catalog_entry.hpp"
 #include "storage/postgres_table_set.hpp"
+#include "storage/postgres_index_set.hpp"
 
 namespace duckdb {
 class PostgresTransaction;
@@ -51,6 +52,7 @@ private:
 
 private:
 	PostgresTableSet tables;
+	PostgresIndexSet indexes;
 };
 
 } // namespace duckdb

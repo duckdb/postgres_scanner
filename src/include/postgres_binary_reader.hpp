@@ -116,7 +116,8 @@ struct PostgresBinaryReader {
 		// len -1 is supposed to signal end but does not actually happen in practise
 		// we expect at least 2 bytes in each message for the tuple count
 		if (!buffer || len < sizeof(int16_t)) {
-			throw IOException("Unable to read binary COPY data from Postgres: %s", string(PQerrorMessage(con.GetConn())));
+			throw IOException("Unable to read binary COPY data from Postgres: %s",
+			                  string(PQerrorMessage(con.GetConn())));
 		}
 		buffer_ptr = buffer;
 		end = buffer + len;

@@ -14,7 +14,7 @@
 namespace duckdb {
 
 PostgresSchemaEntry::PostgresSchemaEntry(PostgresTransaction &transaction, Catalog &catalog, string name) :
-    SchemaCatalogEntry(catalog, std::move(name), true), tables(*this, transaction) {
+    SchemaCatalogEntry(catalog, std::move(name), true), tables(*this, transaction), indexes(*this, transaction) {
 }
 
 PostgresTransaction &GetPostgresTransaction(CatalogTransaction transaction) {
@@ -166,6 +166,7 @@ void PostgresSchemaEntry::Alter(ClientContext &context, AlterInfo &info) {
 
 bool CatalogTypeIsSupported(CatalogType type) {
 	switch (type) {
+	case CatalogType::INDEX_ENTRY:
 	case CatalogType::TABLE_ENTRY:
 	case CatalogType::VIEW_ENTRY:
 		return true;
@@ -202,6 +203,8 @@ PostgresCatalogSet &PostgresSchemaEntry::GetCatalogSet(CatalogType type) {
 	case CatalogType::TABLE_ENTRY:
 	case CatalogType::VIEW_ENTRY:
 		return tables;
+	case CatalogType::INDEX_ENTRY:
+		return indexes;
 	default:
 		throw InternalException("Type not supported for GetCatalogSet");
 	}

@@ -68,10 +68,4 @@ DatabaseSize PostgresCatalog::GetDatabaseSize(ClientContext &context) {
 	throw InternalException("GetDatabaseSize");
 }
 
-unique_ptr<LogicalOperator> PostgresCatalog::BindCreateIndex(Binder &binder, CreateStatement &stmt, TableCatalogEntry &table,
-											unique_ptr<LogicalOperator> plan) {
-	throw InternalException("FIXME: PostgresCatalog::BindCreateIndex");
-}
-
-
 } // namespace duckdb

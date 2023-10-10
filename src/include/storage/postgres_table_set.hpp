@@ -35,7 +35,6 @@ protected:
 	void AlterTable(AddColumnInfo &info);
 	void AlterTable(RemoveColumnInfo &info);
 
-
 protected:
 	PostgresSchemaEntry &schema;
 };

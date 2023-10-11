@@ -72,6 +72,11 @@ void PostgresConnection::CopyChunk(DataChunk &chunk) {
 				continue;
 			}
 			switch(col.GetType().id()) {
+			case LogicalTypeId::BOOLEAN: {
+				auto data = FlatVector::GetData<bool>(col)[r];
+				writer.WriteBoolean(data);
+				break;
+			}
 			case LogicalTypeId::SMALLINT: {
 				auto data = FlatVector::GetData<int16_t>(col)[r];
 				writer.WriteInteger<int16_t>(data);
@@ -87,6 +92,11 @@ void PostgresConnection::CopyChunk(DataChunk &chunk) {
 				writer.WriteInteger<int64_t>(data);
 				break;
 			}
+			case LogicalTypeId::DATE: {
+				auto data = FlatVector::GetData<date_t>(col)[r];
+				writer.WriteDate(data);
+				break;
+			}
 			case LogicalTypeId::FLOAT: {
 				auto data = FlatVector::GetData<float>(col)[r];
 				writer.WriteFloat(data);
@@ -97,6 +107,7 @@ void PostgresConnection::CopyChunk(DataChunk &chunk) {
 				writer.WriteDouble(data);
 				break;
 			}
+			case LogicalTypeId::BLOB:
 			case LogicalTypeId::VARCHAR: {
 				auto data = FlatVector::GetData<string_t>(col)[r];
 				writer.WriteVarchar(data);

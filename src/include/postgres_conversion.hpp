@@ -18,6 +18,10 @@
 #endif
 
 #define POSTGRES_EPOCH_JDATE 2451545 /* == date2j(2000, 1, 1) */
+#define DUCKDB_EPOCH_DATE 2440588
+#define POSTGRES_MIN_DATE -2440589
+#define POSTGRES_MAX_DATE 2145042906
+
 
 namespace duckdb {
 

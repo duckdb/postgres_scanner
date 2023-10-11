@@ -19,7 +19,9 @@ class PostgresBinaryWriter {
 public:
 	template <class T>
 	T GetInteger(T val) {
-		if (sizeof(T) == sizeof(uint16_t)) {
+		if (sizeof(T) == sizeof(uint8_t)) {
+			return val;
+		} else if (sizeof(T) == sizeof(uint16_t)) {
 			return htons(val);
 		} else if (sizeof(T) == sizeof(uint32_t)) {
 			return htonl(val);
@@ -49,7 +51,7 @@ public:
 
 	void BeginRow(idx_t column_count) {
 		// field count
-		WriteRawInteger<int16_t>(column_count);
+		WriteRawInteger<int16_t>(int16_t(column_count));
 	}
 
 	void FinishRow() {
@@ -65,6 +67,10 @@ public:
 		WriteRawInteger<T>(value);
 	}
 
+	void WriteBoolean(bool value) {
+		WriteInteger<uint8_t>(value ? 1 : 0);
+	}
+
 	void WriteFloat(float value) {
 		uint32_t i = *reinterpret_cast<uint32_t *>(&value);
 		WriteInteger<uint32_t>(i);
@@ -73,6 +79,14 @@ public:
 	void WriteDouble(double value) {
 		uint64_t i = *reinterpret_cast<uint64_t *>(&value);
 		WriteInteger<uint64_t>(i);
+	}
+
+	void WriteDate(date_t value) {
+		if (value.days <= POSTGRES_MIN_DATE || value.days >= POSTGRES_MAX_DATE) {
+			throw InvalidInputException("DATE \"%s\" is out of range for Postgres' DATE field", Date::ToString(value));
+		}
+		int32_t pg_date = value.days + DUCKDB_EPOCH_DATE - POSTGRES_EPOCH_JDATE;
+		WriteInteger<int32_t>(pg_date);
 	}
 
 	void WriteVarchar(string_t value) {

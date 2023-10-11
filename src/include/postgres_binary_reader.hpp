@@ -195,7 +195,7 @@ public:
 
 	inline date_t ReadDate() {
 		auto jd = ReadInteger<uint32_t>();
-		return date_t(jd + POSTGRES_EPOCH_JDATE - 2440588); // magic!
+		return date_t(jd + POSTGRES_EPOCH_JDATE - DUCKDB_EPOCH_DATE); // magic!
 	}
 
 	inline dtime_t ReadTime() {
@@ -212,7 +212,7 @@ public:
 		auto usec = ReadInteger<uint64_t>();
 		auto time = usec % Interval::MICROS_PER_DAY;
 		// adjust date
-		auto date = (usec / Interval::MICROS_PER_DAY) + POSTGRES_EPOCH_JDATE - 2440588;
+		auto date = (usec / Interval::MICROS_PER_DAY) + POSTGRES_EPOCH_JDATE - DUCKDB_EPOCH_DATE;
 		// glue it back together
 		return timestamp_t(date * Interval::MICROS_PER_DAY + time);
 	}

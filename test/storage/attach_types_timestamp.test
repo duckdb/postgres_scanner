@@ -57,3 +57,81 @@ NULL
 294247-01-10 04:00:54.775806
 infinity
 -infinity
+
+# timestamptz
+statement ok
+CREATE OR REPLACE TABLE timestamptz(t TIMESTAMPTZ);
+
+statement ok
+INSERT INTO timestamptz VALUES (TIMESTAMPTZ '2000-01-01 00:00:00');
+
+statement ok
+INSERT INTO timestamptz VALUES (NULL);
+
+statement ok
+INSERT INTO timestamptz VALUES (TIMESTAMPTZ '1980-01-01 23:59:59.123456');
+
+query I
+SELECT * FROM timestamptz
+----
+2000-01-01 00:00:00+00
+NULL
+1980-01-01 23:59:59.123456+00
+
+# timestamp_ms
+statement ok
+CREATE OR REPLACE TABLE timestamp_tbl(t TIMESTAMP_MS);
+
+statement ok
+INSERT INTO timestamp_tbl VALUES ('2000-01-01 00:00:00'::TIMESTAMP_MS);
+
+statement ok
+INSERT INTO timestamp_tbl VALUES (NULL);
+
+statement ok
+INSERT INTO timestamp_tbl VALUES ('1980-01-01 23:59:59.123456'::TIMESTAMP_MS);
+
+query I
+SELECT * FROM timestamp_tbl
+----
+2000-01-01 00:00:00
+NULL
+1980-01-01 23:59:59.123
+
+statement ok
+CREATE OR REPLACE TABLE timestamp_tbl(t TIMESTAMP_S);
+
+statement ok
+INSERT INTO timestamp_tbl VALUES ('2000-01-01 00:00:00'::TIMESTAMP_S);
+
+statement ok
+INSERT INTO timestamp_tbl VALUES (NULL);
+
+statement ok
+INSERT INTO timestamp_tbl VALUES ('1980-01-01 23:59:59.123456'::TIMESTAMP_S);
+
+query I
+SELECT * FROM timestamp_tbl
+----
+2000-01-01 00:00:00
+NULL
+1980-01-01 23:59:59
+
+statement ok
+CREATE OR REPLACE TABLE timestamp_tbl(t TIMESTAMP_NS);
+
+statement ok
+INSERT INTO timestamp_tbl VALUES ('2000-01-01 00:00:00'::TIMESTAMP_NS);
+
+statement ok
+INSERT INTO timestamp_tbl VALUES (NULL);
+
+statement ok
+INSERT INTO timestamp_tbl VALUES ('1980-01-01 23:59:59.123456'::TIMESTAMP_NS);
+
+query I
+SELECT * FROM timestamp_tbl
+----
+2000-01-01 00:00:00
+NULL
+1980-01-01 23:59:59.123456

@@ -117,7 +117,8 @@ void PostgresConnection::CopyChunk(DataChunk &chunk) {
 				writer.WriteTimeTZ(data);
 				break;
 			}
-			case LogicalTypeId::TIMESTAMP: {
+			case LogicalTypeId::TIMESTAMP:
+			case LogicalTypeId::TIMESTAMP_TZ: {
 				auto data = FlatVector::GetData<timestamp_t>(col)[r];
 				writer.WriteTimestamp(data);
 				break;

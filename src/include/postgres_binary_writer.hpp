@@ -120,6 +120,13 @@ public:
 		WriteInteger<uint64_t>(DuckDBTimestampToPostgres(value));
 	}
 
+	void WriteInterval(interval_t value) {
+		WriteRawInteger<int32_t>(sizeof(uint64_t) + sizeof(uint32_t) + sizeof(uint32_t));
+		WriteRawInteger<uint64_t>(value.micros);
+		WriteRawInteger<uint32_t>(value.days);
+		WriteRawInteger<uint32_t>(value.months);
+	}
+
 	void WriteVarchar(string_t value) {
 		WriteRawInteger<int32_t>(value.GetSize());
 		stream.WriteData(const_data_ptr_cast(value.GetData()), value.GetSize());

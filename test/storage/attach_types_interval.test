@@ -1,0 +1,38 @@
+# name: test/storage/attach_types_interval.test
+# description:
+# group: [postgres_storage]
+
+require postgres_scanner
+
+statement ok
+ATTACH 'dbname=postgresscanner' AS s (TYPE POSTGRES)
+
+statement ok
+USE s;
+
+statement ok
+CREATE OR REPLACE TABLE intervals(i INTERVAL);
+
+statement ok
+INSERT INTO intervals VALUES (INTERVAL '30 days');
+
+statement ok
+INSERT INTO intervals VALUES (NULL);
+
+statement ok
+INSERT INTO intervals VALUES (INTERVAL '00:30:15');
+
+statement ok
+INSERT INTO intervals VALUES (INTERVAL '2 months 2 days 00:15:00');
+
+statement ok
+INSERT INTO intervals VALUES (INTERVAL '-2 days');
+
+query I
+SELECT * FROM intervals
+----
+30 days
+NULL
+00:30:15
+2 months 2 days 00:15:00
+-2 days

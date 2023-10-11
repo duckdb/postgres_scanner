@@ -123,6 +123,11 @@ void PostgresConnection::CopyChunk(DataChunk &chunk) {
 				writer.WriteTimestamp(data);
 				break;
 			}
+			case LogicalTypeId::INTERVAL:{
+				auto data = FlatVector::GetData<interval_t>(col)[r];
+				writer.WriteInterval(data);
+				break;
+			}
 			case LogicalTypeId::BLOB:
 			case LogicalTypeId::VARCHAR: {
 				auto data = FlatVector::GetData<string_t>(col)[r];

@@ -89,6 +89,16 @@ public:
 		WriteInteger<int32_t>(pg_date);
 	}
 
+	void WriteTime(dtime_t value) {
+		WriteInteger<uint64_t>(value.micros);
+	}
+
+	void WriteTimeTZ(dtime_tz_t value) {
+		WriteRawInteger<int32_t>(sizeof(uint64_t) + sizeof(int32_t));
+		WriteRawInteger<uint64_t>(value.time().micros);
+		WriteRawInteger<int32_t>(-value.offset());
+	}
+
 	void WriteVarchar(string_t value) {
 		WriteRawInteger<int32_t>(value.GetSize());
 		stream.WriteData(const_data_ptr_cast(value.GetData()), value.GetSize());

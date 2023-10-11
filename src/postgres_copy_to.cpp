@@ -92,11 +92,6 @@ void PostgresConnection::CopyChunk(DataChunk &chunk) {
 				writer.WriteInteger<int64_t>(data);
 				break;
 			}
-			case LogicalTypeId::DATE: {
-				auto data = FlatVector::GetData<date_t>(col)[r];
-				writer.WriteDate(data);
-				break;
-			}
 			case LogicalTypeId::FLOAT: {
 				auto data = FlatVector::GetData<float>(col)[r];
 				writer.WriteFloat(data);
@@ -105,6 +100,21 @@ void PostgresConnection::CopyChunk(DataChunk &chunk) {
 			case LogicalTypeId::DOUBLE: {
 				auto data = FlatVector::GetData<double>(col)[r];
 				writer.WriteDouble(data);
+				break;
+			}
+			case LogicalTypeId::DATE: {
+				auto data = FlatVector::GetData<date_t>(col)[r];
+				writer.WriteDate(data);
+				break;
+			}
+			case LogicalTypeId::TIME: {
+				auto data = FlatVector::GetData<dtime_t>(col)[r];
+				writer.WriteTime(data);
+				break;
+			}
+			case LogicalTypeId::TIME_TZ: {
+				auto data = FlatVector::GetData<dtime_tz_t>(col)[r];
+				writer.WriteTimeTZ(data);
 				break;
 			}
 			case LogicalTypeId::BLOB:

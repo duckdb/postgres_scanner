@@ -1,0 +1,53 @@
+# name: test/storage/attach_types_time.test
+# description:
+# group: [postgres_storage]
+
+require postgres_scanner
+
+statement ok
+ATTACH 'dbname=postgresscanner' AS s (TYPE POSTGRES)
+
+statement ok
+USE s;
+
+statement ok
+CREATE OR REPLACE TABLE times(t TIME);
+
+statement ok
+INSERT INTO times VALUES (TIME '00:00:00');
+
+statement ok
+INSERT INTO times VALUES (NULL);
+
+statement ok
+INSERT INTO times VALUES (TIME '23:59:59');
+
+query I
+SELECT * FROM times
+----
+00:00:00
+NULL
+23:59:59
+
+statement ok
+CREATE OR REPLACE TABLE timestz(t TIMETZ);
+
+statement ok
+INSERT INTO timestz VALUES (TIMETZ '00:00:00+00');
+
+statement ok
+INSERT INTO timestz VALUES (NULL);
+
+statement ok
+INSERT INTO timestz VALUES (TIMETZ '23:59:59+00');
+
+statement ok
+INSERT INTO timestz VALUES (TIMETZ '23:59:59+06');
+
+query I
+SELECT * FROM timestz
+----
+00:00:00+00
+NULL
+23:59:59+00
+23:59:59+06

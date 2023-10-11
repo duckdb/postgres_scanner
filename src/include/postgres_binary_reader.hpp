@@ -210,6 +210,12 @@ public:
 
 	inline timestamp_t ReadTimestamp() {
 		auto usec = ReadInteger<uint64_t>();
+		if (usec == POSTGRES_INFINITY) {
+			return timestamp_t::infinity();
+		}
+		if (usec == POSTGRES_NINFINITY) {
+			return timestamp_t::ninfinity();
+		}
 		auto time = usec % Interval::MICROS_PER_DAY;
 		// adjust date
 		auto date = (usec / Interval::MICROS_PER_DAY) + POSTGRES_EPOCH_JDATE - DUCKDB_EPOCH_DATE;

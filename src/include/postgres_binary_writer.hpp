@@ -127,6 +127,12 @@ public:
 		WriteRawInteger<uint32_t>(value.months);
 	}
 
+	void WriteUUID(hugeint_t value) {
+		WriteRawInteger<int32_t>(sizeof(uint64_t) * 2);
+		WriteRawInteger<uint64_t>(value.upper ^ uint64_t(1) << 63);
+		WriteRawInteger<uint64_t>(value.lower);
+	}
+
 	void WriteVarchar(string_t value) {
 		WriteRawInteger<int32_t>(value.GetSize());
 		stream.WriteData(const_data_ptr_cast(value.GetData()), value.GetSize());

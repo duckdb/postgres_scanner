@@ -102,15 +102,22 @@ LogicalType PostgresUtils::ToPostgresType(const LogicalType &input) {
 	case LogicalTypeId::TIME_TZ:
 	case LogicalTypeId::TIMESTAMP:
 	case LogicalTypeId::TIMESTAMP_TZ:
+	case LogicalTypeId::UUID:
 	case LogicalTypeId::VARCHAR:
 		return input;
+	case LogicalTypeId::TIMESTAMP_SEC:
+	case LogicalTypeId::TIMESTAMP_MS:
+	case LogicalTypeId::TIMESTAMP_NS:
+		return LogicalType::TIMESTAMP;
 	case LogicalTypeId::TINYINT:
 		return LogicalType::SMALLINT;
-		return LogicalType::INTEGER;
 	case LogicalTypeId::UTINYINT:
 	case LogicalTypeId::USMALLINT:
 	case LogicalTypeId::UINTEGER:
 		return LogicalType::BIGINT;
+	case LogicalTypeId::UBIGINT:
+	case LogicalTypeId::HUGEINT:
+		return LogicalType::DOUBLE;
 	default:
 		return LogicalType::VARCHAR;
 	}

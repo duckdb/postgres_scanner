@@ -128,6 +128,11 @@ void PostgresConnection::CopyChunk(DataChunk &chunk) {
 				writer.WriteInterval(data);
 				break;
 			}
+			case LogicalTypeId::UUID: {
+				auto data = FlatVector::GetData<hugeint_t>(col)[r];
+				writer.WriteUUID(data);
+				break;
+			}
 			case LogicalTypeId::BLOB:
 			case LogicalTypeId::VARCHAR: {
 				auto data = FlatVector::GetData<string_t>(col)[r];

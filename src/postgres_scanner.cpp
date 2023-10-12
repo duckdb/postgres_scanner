@@ -301,7 +301,7 @@ static void ProcessValue(const LogicalType &type, const PostgresTypeInfo *type_i
 		if (type_info->typname == "numeric") {
 			auto config = reader.ReadDecimalConfig();
 			auto val = reader.ReadDecimal<int64_t>(config);
-			FlatVector::GetData<double>(out_vec)[output_offset] = (double)val / POWERS_OF_TEN[config.scale];
+			FlatVector::GetData<double>(out_vec)[output_offset] = (double)val / DecimalConversionInteger::GetPowerOfTen(config.scale);
 			break;
 		}
 		D_ASSERT(value_len == sizeof(double));
@@ -344,7 +344,7 @@ static void ProcessValue(const LogicalType &type, const PostgresTypeInfo *type_i
 			FlatVector::GetData<int64_t>(out_vec)[output_offset] = reader.ReadDecimal<int64_t>(decimal_config);
 			break;
 		case PhysicalType::INT128:
-			FlatVector::GetData<hugeint_t>(out_vec)[output_offset] = reader.ReadDecimal<hugeint_t>(decimal_config);
+			FlatVector::GetData<hugeint_t>(out_vec)[output_offset] = reader.ReadDecimal<hugeint_t, DecimalConversionHugeint>(decimal_config);
 			break;
 		default:
 			throw InvalidInputException("Unsupported decimal storage type");

@@ -97,6 +97,7 @@ LogicalType PostgresUtils::ToPostgresType(const LogicalType &input) {
 	case LogicalTypeId::DOUBLE:
 	case LogicalTypeId::BLOB:
 	case LogicalTypeId::DATE:
+	case LogicalTypeId::DECIMAL:
 	case LogicalTypeId::INTERVAL:
 	case LogicalTypeId::TIME:
 	case LogicalTypeId::TIME_TZ:

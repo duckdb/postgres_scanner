@@ -102,6 +102,26 @@ void PostgresConnection::CopyChunk(DataChunk &chunk) {
 				writer.WriteDouble(data);
 				break;
 			}
+			case LogicalTypeId::DECIMAL: {
+				auto scale = DecimalType::GetScale(col.GetType());
+				switch (col.GetType().InternalType()) {
+				case PhysicalType::INT16:
+					writer.WriteDecimal<int16_t>(FlatVector::GetData<int16_t>(col)[r], scale);
+					break;
+				case PhysicalType::INT32:
+					writer.WriteDecimal<int32_t>(FlatVector::GetData<int32_t>(col)[r], scale);
+					break;
+				case PhysicalType::INT64:
+					writer.WriteDecimal<int64_t>(FlatVector::GetData<int64_t>(col)[r], scale);
+					break;
+				case PhysicalType::INT128:
+					writer.WriteDecimal<hugeint_t, DecimalConversionHugeint>(FlatVector::GetData<hugeint_t>(col)[r], scale);
+					break;
+				default:
+					throw InternalException("Unsupported type for decimal");
+				}
+				break;
+			}
 			case LogicalTypeId::DATE: {
 				auto data = FlatVector::GetData<date_t>(col)[r];
 				writer.WriteDate(data);

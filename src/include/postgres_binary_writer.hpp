@@ -83,7 +83,8 @@ public:
 
 	int32_t DuckDBDateToPostgres(int32_t value) {
 		if (value <= POSTGRES_MIN_DATE || value >= POSTGRES_MAX_DATE) {
-			throw InvalidInputException("DATE \"%s\" is out of range for Postgres' DATE field", Date::ToString(date_t(value)));
+			throw InvalidInputException("DATE \"%s\" is out of range for Postgres' DATE field",
+			                            Date::ToString(date_t(value)));
 		}
 		return value + DUCKDB_EPOCH_DATE - POSTGRES_EPOCH_JDATE;
 	}
@@ -131,6 +132,68 @@ public:
 		WriteRawInteger<int32_t>(sizeof(uint64_t) * 2);
 		WriteRawInteger<uint64_t>(value.upper ^ uint64_t(1) << 63);
 		WriteRawInteger<uint64_t>(value.lower);
+	}
+
+	template <class T, class OP = DecimalConversionInteger>
+	void WriteDecimal(T value, uint16_t scale) {
+		constexpr idx_t MAX_DIGITS = sizeof(T) * 4;
+		uint16_t sign;
+		if (value < 0) {
+			value = -value;
+			sign = NUMERIC_NEG;
+		} else {
+			sign = NUMERIC_POS;
+		}
+		// divide the decimal into the integer part (before the decimal point) and fractional part (after the point)
+		T integer_part;
+		T fractional_part;
+		if (scale == 0) {
+			integer_part = value;
+			fractional_part = 0;
+		} else {
+			integer_part = value / OP::GetPowerOfTen(scale);
+			fractional_part = value % OP::GetPowerOfTen(scale);
+		}
+		uint16_t integral_digits[MAX_DIGITS];
+		uint16_t fractional_digits[MAX_DIGITS];
+		int32_t integral_ndigits = 0;
+		// split the integral part into parts of up to NBASE (4 digits => 0..9999)
+		while (integer_part > 0) {
+			integral_digits[integral_ndigits++] = uint16_t(integer_part % T(NBASE));
+			integer_part /= T(NBASE);
+		}
+		// split the fractional part into parts of up to NBASE (4 digits => 0..9999)
+		// count the amount of digits required for the fractional part
+		// note that while it is technically possible to leave out zeros here this adds even more complications
+		// so we just always write digits for the full "scale", even if not strictly required
+		int32_t fractional_ndigits = (scale + DEC_DIGITS - 1) / DEC_DIGITS;
+		// fractional digits are LEFT aligned (for some unknown reason)
+		// that means if we write ".12" with a scale of 2 we actually need to write "1200", instead of "12"
+		// this means we need to "correct" the number 12 by multiplying by 100 in this case
+		// this correction factor is the "number of digits to the next full number"
+		int32_t correction = fractional_ndigits * DEC_DIGITS - scale;
+		fractional_part *= OP::GetPowerOfTen(correction);
+		for (idx_t i = 0; i < fractional_ndigits; i++) {
+			fractional_digits[i] = uint16_t(fractional_part % NBASE);
+			fractional_part /= NBASE;
+		}
+
+		int32_t ndigits = integral_ndigits + fractional_ndigits;
+		int32_t weight = integral_ndigits - 1;
+		// size
+		WriteRawInteger<int32_t>(int32_t(sizeof(uint16_t)) * (4 + ndigits));
+		// header
+		WriteRawInteger<uint16_t>(ndigits);
+		WriteRawInteger<int16_t>(weight);
+		WriteRawInteger<uint16_t>(sign);
+		WriteRawInteger<uint16_t>(scale);
+		// wriet the integer and fractional values (in reverse order)
+		for (idx_t i = integral_ndigits; i > 0; i--) {
+			WriteRawInteger<uint16_t>(integral_digits[i - 1]);
+		}
+		for (idx_t i = fractional_ndigits; i > 0; i--) {
+			WriteRawInteger<uint16_t>(fractional_digits[i - 1]);
+		}
 	}
 
 	void WriteVarchar(string_t value) {

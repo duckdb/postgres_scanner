@@ -83,6 +83,19 @@
 
 namespace duckdb {
 
+struct PostgresDecimalConfig {
+	uint16_t scale;
+	uint16_t ndigits;
+	int16_t weight;
+	bool is_negative;
+};
+
+struct PostgresConversion {
+	static constexpr const char *COPY_HEADER = "PGCOPY\n\377\r\n\0";
+	static constexpr const idx_t COPY_HEADER_LENGTH = 11;
+};
+
+
 // copied from cast_helpers.cpp because windows linking issues
 struct DecimalConversionInteger {
 	static int64_t GetPowerOfTen(idx_t index) {
@@ -109,6 +122,11 @@ struct DecimalConversionInteger {
 			throw InternalException("DecimalConversionInteger::GetPowerOfTen - Out of range");
 		}
 		return POWERS_OF_TEN[index];
+	}
+
+	template<class T>
+	static T Finalize(const PostgresDecimalConfig &config, T result) {
+		return result;
 	}
 };
 
@@ -159,18 +177,20 @@ struct DecimalConversionHugeint {
 		}
 		return POWERS_OF_TEN[index];
 	}
+
+	static hugeint_t Finalize(const PostgresDecimalConfig &config, hugeint_t result) {
+		return result;
+	}
 };
 
-struct PostgresDecimalConfig {
-	uint16_t scale;
-	uint16_t ndigits;
-	int16_t weight;
-	bool is_negative;
-};
+struct DecimalConversionDouble {
+	static double GetPowerOfTen(idx_t index) {
+		return pow(10, double(index));
+	}
 
-struct PostgresConversion {
-	static constexpr const char *COPY_HEADER = "PGCOPY\n\377\r\n\0";
-	static constexpr const idx_t COPY_HEADER_LENGTH = 11;
+	static double Finalize(const PostgresDecimalConfig &config, double result) {
+		return result / GetPowerOfTen(config.scale);
+	}
 };
 
 } // namespace duckdb

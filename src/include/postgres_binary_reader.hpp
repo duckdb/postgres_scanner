@@ -180,8 +180,9 @@ public:
 	}
 
 	template <class T, class OP = DecimalConversionInteger>
-	T ReadDecimal(PostgresDecimalConfig &config) {
+	T ReadDecimal() {
 		// this is wild
+		auto config = ReadDecimalConfig();
 		auto scale_POWER = OP::GetPowerOfTen(config.scale);
 
 		if (config.ndigits == 0) {
@@ -227,7 +228,7 @@ public:
 		}
 
 		// finally
-		auto base_res = (integral_part + fractional_part);
+		auto base_res = OP::Finalize(config, integral_part + fractional_part);
 		return (config.is_negative ? -base_res : base_res);
 	}
 

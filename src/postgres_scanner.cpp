@@ -299,9 +299,7 @@ static void ProcessValue(const LogicalType &type, const PostgresTypeInfo *type_i
 	case LogicalTypeId::DOUBLE: {
 		// this was an unbounded decimal, read params from value and cast to double
 		if (type_info->typname == "numeric") {
-			auto config = reader.ReadDecimalConfig();
-			auto val = reader.ReadDecimal<int64_t>(config);
-			FlatVector::GetData<double>(out_vec)[output_offset] = (double)val / DecimalConversionInteger::GetPowerOfTen(config.scale);
+			FlatVector::GetData<double>(out_vec)[output_offset] = reader.ReadDecimal<double, DecimalConversionDouble>();
 			break;
 		}
 		D_ASSERT(value_len == sizeof(double));
@@ -330,21 +328,18 @@ static void ProcessValue(const LogicalType &type, const PostgresTypeInfo *type_i
 		if (value_len < sizeof(uint16_t) * 4) {
 			throw InvalidInputException("Need at least 8 bytes to read a Postgres decimal. Got %d", value_len);
 		}
-		auto decimal_config = reader.ReadDecimalConfig();
-		D_ASSERT(decimal_config.scale == DecimalType::GetScale(type));
-
 		switch (type.InternalType()) {
 		case PhysicalType::INT16:
-			FlatVector::GetData<int16_t>(out_vec)[output_offset] = reader.ReadDecimal<int16_t>(decimal_config);
+			FlatVector::GetData<int16_t>(out_vec)[output_offset] = reader.ReadDecimal<int16_t>();
 			break;
 		case PhysicalType::INT32:
-			FlatVector::GetData<int32_t>(out_vec)[output_offset] = reader.ReadDecimal<int32_t>(decimal_config);
+			FlatVector::GetData<int32_t>(out_vec)[output_offset] = reader.ReadDecimal<int32_t>();
 			break;
 		case PhysicalType::INT64:
-			FlatVector::GetData<int64_t>(out_vec)[output_offset] = reader.ReadDecimal<int64_t>(decimal_config);
+			FlatVector::GetData<int64_t>(out_vec)[output_offset] = reader.ReadDecimal<int64_t>();
 			break;
 		case PhysicalType::INT128:
-			FlatVector::GetData<hugeint_t>(out_vec)[output_offset] = reader.ReadDecimal<hugeint_t, DecimalConversionHugeint>(decimal_config);
+			FlatVector::GetData<hugeint_t>(out_vec)[output_offset] = reader.ReadDecimal<hugeint_t, DecimalConversionHugeint>();
 			break;
 		default:
 			throw InvalidInputException("Unsupported decimal storage type");

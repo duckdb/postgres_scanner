@@ -419,7 +419,7 @@ static void ProcessValue(const LogicalType &type, const PostgresTypeInfo *type_i
 		auto child_offset = ListVector::GetListSize(out_vec);
 
 		if (value_len < 1) {
-			list_entry.offset = ListVector::GetListSize(out_vec);
+			list_entry.offset = child_offset;
 			list_entry.length = 0;
 			break;
 		}

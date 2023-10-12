@@ -25,6 +25,8 @@ string PostgresUtils::TypeToString(const LogicalType &input) {
 		return "FLOAT";
 	case LogicalTypeId::BLOB:
 		return "BYTEA";
+	case LogicalTypeId::LIST:
+		return PostgresUtils::TypeToString(ListType::GetChildType(input)) + "[]";
 	default:
 		return input.ToString();
 	}
@@ -106,6 +108,8 @@ LogicalType PostgresUtils::ToPostgresType(const LogicalType &input) {
 	case LogicalTypeId::UUID:
 	case LogicalTypeId::VARCHAR:
 		return input;
+	case LogicalTypeId::LIST:
+		return LogicalType::LIST(ToPostgresType(ListType::GetChildType(input)));
 	case LogicalTypeId::TIMESTAMP_SEC:
 	case LogicalTypeId::TIMESTAMP_MS:
 	case LogicalTypeId::TIMESTAMP_NS:
@@ -121,6 +125,63 @@ LogicalType PostgresUtils::ToPostgresType(const LogicalType &input) {
 		return LogicalType::DOUBLE;
 	default:
 		return LogicalType::VARCHAR;
+	}
+}
+
+// taken from pg_type_d.h
+#define BOOLOID 16
+#define BYTEAOID 17
+#define INT8OID 20
+#define INT2OID 21
+#define INT4OID 23
+#define FLOAT4OID 700
+#define FLOAT8OID 701
+#define VARCHAROID 1043
+#define DATEOID 1082
+#define TIMEOID 1083
+#define TIMESTAMPOID 1114
+#define TIMESTAMPTZOID 1184
+#define INTERVALOID 1186
+#define TIMETZOID 1266
+#define BITOID 1560
+#define UUIDOID 2950
+
+uint32_t PostgresUtils::ToPostgresOid(const LogicalType &input) {
+	switch(input.id()) {
+	case LogicalTypeId::BOOLEAN:
+		return BOOLOID;
+	case LogicalTypeId::SMALLINT:
+		return INT2OID;
+	case LogicalTypeId::INTEGER:
+		return INT4OID;
+	case LogicalTypeId::BIGINT:
+		return INT8OID;
+	case LogicalTypeId::FLOAT:
+		return FLOAT4OID;
+	case LogicalTypeId::DOUBLE:
+		return FLOAT8OID;
+	case LogicalTypeId::VARCHAR:
+		return VARCHAROID;
+	case LogicalTypeId::BLOB:
+		return BYTEAOID;
+	case LogicalTypeId::DATE:
+		return DATEOID;
+	case LogicalTypeId::TIME:
+		return TIMEOID;
+	case LogicalTypeId::TIMESTAMP:
+		return TIMESTAMPOID;
+	case LogicalTypeId::INTERVAL:
+		return INTERVALOID;
+	case LogicalTypeId::TIME_TZ:
+		return TIMETZOID;
+	case LogicalTypeId::TIMESTAMP_TZ:
+		return TIMESTAMPTZOID;
+	case LogicalTypeId::BIT:
+		return BITOID;
+	case LogicalTypeId::UUID:
+		return UUIDOID;
+	default:
+		throw NotImplementedException("Unsupported type for Postgres array copy: %s", input.ToString());
 	}
 }
 

@@ -201,6 +201,138 @@ public:
 		stream.WriteData(const_data_ptr_cast(value.GetData()), value.GetSize());
 	}
 
+
+	void WriteValue(Vector &col, idx_t r) {
+		if (FlatVector::IsNull(col, r)) {
+			WriteNull();
+			return;
+		}
+		switch(col.GetType().id()) {
+		case LogicalTypeId::BOOLEAN: {
+			auto data = FlatVector::GetData<bool>(col)[r];
+			WriteBoolean(data);
+			break;
+		}
+		case LogicalTypeId::SMALLINT: {
+			auto data = FlatVector::GetData<int16_t>(col)[r];
+			WriteInteger<int16_t>(data);
+			break;
+		}
+		case LogicalTypeId::INTEGER: {
+			auto data = FlatVector::GetData<int32_t>(col)[r];
+			WriteInteger<int32_t>(data);
+			break;
+		}
+		case LogicalTypeId::BIGINT: {
+			auto data = FlatVector::GetData<int64_t>(col)[r];
+			WriteInteger<int64_t>(data);
+			break;
+		}
+		case LogicalTypeId::FLOAT: {
+			auto data = FlatVector::GetData<float>(col)[r];
+			WriteFloat(data);
+			break;
+		}
+		case LogicalTypeId::DOUBLE: {
+			auto data = FlatVector::GetData<double>(col)[r];
+			WriteDouble(data);
+			break;
+		}
+		case LogicalTypeId::DECIMAL: {
+			auto scale = DecimalType::GetScale(col.GetType());
+			switch (col.GetType().InternalType()) {
+			case PhysicalType::INT16:
+				WriteDecimal<int16_t>(FlatVector::GetData<int16_t>(col)[r], scale);
+				break;
+			case PhysicalType::INT32:
+				WriteDecimal<int32_t>(FlatVector::GetData<int32_t>(col)[r], scale);
+				break;
+			case PhysicalType::INT64:
+				WriteDecimal<int64_t>(FlatVector::GetData<int64_t>(col)[r], scale);
+				break;
+			case PhysicalType::INT128:
+				WriteDecimal<hugeint_t, DecimalConversionHugeint>(FlatVector::GetData<hugeint_t>(col)[r], scale);
+				break;
+			default:
+				throw InternalException("Unsupported type for decimal");
+			}
+			break;
+		}
+		case LogicalTypeId::DATE: {
+			auto data = FlatVector::GetData<date_t>(col)[r];
+			WriteDate(data);
+			break;
+		}
+		case LogicalTypeId::TIME: {
+			auto data = FlatVector::GetData<dtime_t>(col)[r];
+			WriteTime(data);
+			break;
+		}
+		case LogicalTypeId::TIME_TZ: {
+			auto data = FlatVector::GetData<dtime_tz_t>(col)[r];
+			WriteTimeTZ(data);
+			break;
+		}
+		case LogicalTypeId::TIMESTAMP:
+		case LogicalTypeId::TIMESTAMP_TZ: {
+			auto data = FlatVector::GetData<timestamp_t>(col)[r];
+			WriteTimestamp(data);
+			break;
+		}
+		case LogicalTypeId::INTERVAL:{
+			auto data = FlatVector::GetData<interval_t>(col)[r];
+			WriteInterval(data);
+			break;
+		}
+		case LogicalTypeId::UUID: {
+			auto data = FlatVector::GetData<hugeint_t>(col)[r];
+			WriteUUID(data);
+			break;
+		}
+		case LogicalTypeId::BLOB:
+		case LogicalTypeId::VARCHAR: {
+			auto data = FlatVector::GetData<string_t>(col)[r];
+			WriteVarchar(data);
+			break;
+		}
+		case LogicalTypeId::LIST: {
+			auto list_entry = FlatVector::GetData<list_entry_t>(col)[r];
+			auto value_oid = PostgresUtils::ToPostgresOid(ListType::GetChildType(col.GetType()));
+			if (list_entry.length == 0) {
+				// empty list
+				WriteRawInteger<int32_t>(sizeof(uint32_t) * 3);
+				WriteRawInteger<uint32_t>(0);
+				WriteRawInteger<uint32_t>(0);
+				WriteRawInteger<uint32_t>(value_oid);
+				return;
+			}
+			// list header
+			// record the location of the field size in the stream
+			auto start_position = stream.GetPosition();
+			WriteRawInteger<int32_t>(0);  // data size (nop for now)
+			WriteRawInteger<uint32_t>(1); // flag one
+			WriteRawInteger<uint32_t>(0); // flag two
+			WriteRawInteger<uint32_t>(value_oid); // value_oid
+			WriteRawInteger<uint32_t>(list_entry.length); // array length
+			WriteRawInteger<uint32_t>(1); // array dim
+
+			// now recursively write the child values
+			auto &child_vector = ListVector::GetEntry(col);
+			for(idx_t child_idx = 0; child_idx < list_entry.length; child_idx++) {
+				WriteValue(child_vector, list_entry.offset + child_idx);
+			}
+			auto end_position = stream.GetPosition();
+			// after writing all list elements update the field size
+			auto field_size = int32_t(end_position - start_position - sizeof(int32_t));
+			Store<int32_t>(GetInteger(field_size), stream.GetData() + start_position);
+			break;
+		}
+		default:
+			throw InternalException("Unsupported type for Postgres insert");
+		}
+
+	}
+
 public:
 	MemoryStream stream;
 };

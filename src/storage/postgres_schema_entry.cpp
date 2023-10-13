@@ -14,7 +14,8 @@
 namespace duckdb {
 
 PostgresSchemaEntry::PostgresSchemaEntry(PostgresTransaction &transaction, Catalog &catalog, string name) :
-    SchemaCatalogEntry(catalog, std::move(name), true), tables(*this, transaction), indexes(*this, transaction) {
+    SchemaCatalogEntry(catalog, std::move(name), true), tables(*this, transaction), indexes(*this, transaction),
+	types(*this, transaction) {
 }
 
 PostgresTransaction &GetPostgresTransaction(CatalogTransaction transaction) {
@@ -128,6 +129,16 @@ optional_ptr<CatalogEntry> PostgresSchemaEntry::CreateView(CatalogTransaction tr
 	return GetEntry(transaction, CatalogType::VIEW_ENTRY, info.view_name);
 }
 
+optional_ptr<CatalogEntry> PostgresSchemaEntry::CreateType(CatalogTransaction transaction, CreateTypeInfo &info) {
+	auto &postgres_transaction = GetPostgresTransaction(transaction);
+	auto type_name = info.name;
+	if (info.on_conflict == OnCreateConflict::REPLACE_ON_CONFLICT) {
+		// CREATE OR REPLACE - drop any existing entries first (if any)
+		TryDropEntry(transaction.GetContext(), CatalogType::TYPE_ENTRY, info.name);
+	}
+	return types.CreateType(info);
+}
+
 optional_ptr<CatalogEntry> PostgresSchemaEntry::CreateSequence(CatalogTransaction transaction, CreateSequenceInfo &info) {
 	throw BinderException("Postgres databases do not support creating sequences");
 }
@@ -152,10 +163,6 @@ optional_ptr<CatalogEntry> PostgresSchemaEntry::CreateCollation(CatalogTransacti
 	throw BinderException("Postgres databases do not support creating collations");
 }
 
-optional_ptr<CatalogEntry> PostgresSchemaEntry::CreateType(CatalogTransaction transaction, CreateTypeInfo &info) {
-	throw BinderException("Postgres databases do not support creating types");
-}
-
 void PostgresSchemaEntry::Alter(ClientContext &context, AlterInfo &info) {
 	if (info.type != AlterType::ALTER_TABLE) {
 		throw BinderException("Only altering tables is supported for now");
@@ -168,6 +175,7 @@ bool CatalogTypeIsSupported(CatalogType type) {
 	switch (type) {
 	case CatalogType::INDEX_ENTRY:
 	case CatalogType::TABLE_ENTRY:
+	case CatalogType::TYPE_ENTRY:
 	case CatalogType::VIEW_ENTRY:
 		return true;
 	default:
@@ -205,6 +213,8 @@ PostgresCatalogSet &PostgresSchemaEntry::GetCatalogSet(CatalogType type) {
 		return tables;
 	case CatalogType::INDEX_ENTRY:
 		return indexes;
+	case CatalogType::TYPE_ENTRY:
+		return types;
 	default:
 		throw InternalException("Type not supported for GetCatalogSet");
 	}

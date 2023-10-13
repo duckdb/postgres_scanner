@@ -375,6 +375,9 @@ static void ProcessValue(const LogicalType &type, const PostgresTypeInfo *type_i
 		break;
 	}
 	case LogicalTypeId::ENUM: {
+		if (out_vec.GetType().id() != LogicalTypeId::ENUM) {
+			throw InternalException("eek");
+		}
 		auto enum_val = string(reader.ReadString(value_len), value_len);
 		auto offset = EnumType::GetPos(type, enum_val);
 		if (offset < 0) {

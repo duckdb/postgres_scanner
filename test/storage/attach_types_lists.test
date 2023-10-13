@@ -1,4 +1,4 @@
-# name: test/storage/attach_types_date.test
+# name: test/storage/attach_types_list.test
 # description:
 # group: [postgres_storage]
 

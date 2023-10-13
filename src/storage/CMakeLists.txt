@@ -13,6 +13,7 @@ add_library(
   postgres_table_set.cpp
   postgres_transaction.cpp
   postgres_transaction_manager.cpp
+  postgres_type_set.cpp
   postgres_update.cpp)
 set(ALL_OBJECT_FILES
     ${ALL_OBJECT_FILES} $<TARGET_OBJECTS:postgres_ext_storage>

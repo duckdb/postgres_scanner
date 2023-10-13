@@ -90,6 +90,9 @@ LogicalType PostgresUtils::TypeToLogicalType(const PostgresTypeData &type_info) 
 }
 
 LogicalType PostgresUtils::ToPostgresType(const LogicalType &input) {
+	if (input.HasAlias()) {
+		return input;
+	}
 	switch (input.id()) {
 	case LogicalTypeId::BOOLEAN:
 	case LogicalTypeId::SMALLINT:

@@ -88,3 +88,9 @@ VALUES ('{2019-11-26, 2021-03-01, NULL}','{14:42:43, 12:45:01, NULL}','{14:42:43
 
 insert into pg_enumarraytypes (enum_col)
 VALUES ('{}'), ('{foo}'), ('{foo, bar}'), ('{foo, bar, baz}'), ('{foo, bar, baz, NULL}'), (NULL); 
+
+
+CREATE TABLE pg_macaddr (
+	macaddr_col macaddr
+);
+insert into pg_macaddr values ('08:00:2b:01:02:03');

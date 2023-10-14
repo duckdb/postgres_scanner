@@ -86,6 +86,10 @@ INSERT INTO daterange VALUES
     (1108, '[2010-01-01 14:30, 2010-01-01 15:30)');
 
 
+CREATE TABLE daterange_array (room int, during tsrange[]);
+INSERT INTO daterange_array VALUES
+    (1108, array['[2010-01-01 14:30, 2010-01-01 15:30)'::tsrange]);
+
 
 
     CREATE DOMAIN my_type_v30 AS VARCHAR(30) NOT NULL;

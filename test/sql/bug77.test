@@ -4,8 +4,17 @@
 
 require postgres_scanner
 
+
 statement ok
 CALL postgres_attach('dbname=postgresscanner');
+
+statement ok
+ATTACH 'dbname=postgresscanner' AS s (TYPE POSTGRES)
+
+statement ok
+USE s;
+
+loop i 0 2
 
 query III
 SELECT id, my_ints,e FROM duckdb_arr_test;
@@ -13,3 +22,8 @@ SELECT id, my_ints,e FROM duckdb_arr_test;
 123	[11, 22, 33]	42
 234	[]	42
 456	[44, 55, 66]	42
+
+statement ok
+USE memory
+
+endloop

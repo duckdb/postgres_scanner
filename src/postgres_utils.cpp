@@ -92,6 +92,7 @@ LogicalType PostgresUtils::TypeToLogicalType(const PostgresTypeData &type_info, 
 		return LogicalType::UUID;
 	} else {
 		// unsupported so fallback to varchar
+		postgres_type.info = PostgresTypeAnnotation::CAST_TO_VARCHAR;
 		return LogicalType::VARCHAR;
 	}
 }

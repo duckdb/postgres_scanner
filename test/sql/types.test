@@ -10,6 +10,14 @@ pragma enable_verification
 statement ok
 CALL postgres_attach('dbname=postgresscanner');
 
+statement ok
+ATTACH 'dbname=postgresscanner' AS s (TYPE POSTGRES)
+
+statement ok
+USE s;
+
+loop i 0 2
+
 query IIIIIIII
 select * from pg_numtypes;
 ----
@@ -39,3 +47,8 @@ ferari	testarosa	red
 aston martin	db2	blue
 bentley	mulsanne	gray
 ford	T	black
+
+statement ok
+USE memory
+
+endloop

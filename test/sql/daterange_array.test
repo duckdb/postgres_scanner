@@ -1,4 +1,4 @@
-# name: test/sql/bug69.test
+# name: test/sql/daterange_array.test
 # description:
 # group: [postgres_scanner]
 
@@ -15,18 +15,10 @@ USE s;
 
 loop i 0 2
 
-query I
-SELECT * FROM fail;
+query II
+SELECT * from daterange_array;
 ----
-42.8875000
-42.0000000
-42.1000000
-42.1200000
-42.1230000
-42.1234000
-42.1234500
-42.1234560
-42.1234567
+1108	[["2010-01-01 14:30:00","2010-01-01 15:30:00")]
 
 statement ok
 USE memory

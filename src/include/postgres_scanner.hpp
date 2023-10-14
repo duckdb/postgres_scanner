@@ -38,7 +38,6 @@ struct PostgresBindData : public FunctionData {
 	vector<PostgresType> postgres_types;
 	vector<string> names;
 	vector<LogicalType> types;
-	vector<bool> needs_cast;
 
 	idx_t pages_per_task = 1000;
 	string dsn;
@@ -68,7 +67,7 @@ class PostgresScanFunction : public TableFunction {
 public:
 	PostgresScanFunction();
 
-	static void PrepareBind(ClientContext &context, PostgresBindData &bind);
+	static int64_t PrepareBind(ClientContext &context, PostgresBindData &bind);
 };
 
 class PostgresScanFunctionFilterPushdown : public TableFunction {

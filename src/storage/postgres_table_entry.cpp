@@ -10,7 +10,7 @@ namespace duckdb {
 PostgresType PostgresTypeFromType(const LogicalType &type) {
 	PostgresType result;
 	if (type.id() == LogicalTypeId::LIST) {
-		result.children.push_back(PostgresTypeFromType(type));
+		result.children.push_back(PostgresTypeFromType(ListType::GetChildType(type)));
 	}
 	return result;
 }
@@ -20,7 +20,6 @@ PostgresTableEntry::PostgresTableEntry(Catalog &catalog, SchemaCatalogEntry &sch
 	for(auto &col : columns.Logical()) {
 		postgres_types.push_back(PostgresTypeFromType(col.GetType()));
 	}
-
 }
 
 PostgresTableEntry::PostgresTableEntry(Catalog &catalog, SchemaCatalogEntry &schema, PostgresTableInfo &info)
@@ -48,6 +47,11 @@ TableFunction PostgresTableEntry::GetScanFunction(ClientContext &context, unique
 	result->connection = PostgresConnection(conn.GetConnection());
 
 	PostgresScanFunction::PrepareBind(context, *result);
+	for(auto &col : columns.Logical()) {
+		result->types.push_back(col.GetType());
+		result->names.push_back(col.GetName());
+	}
+	result->postgres_types = postgres_types;
 
 	bind_data = std::move(result);
 	return PostgresScanFunction();

@@ -1,7 +1,7 @@
 //===----------------------------------------------------------------------===//
 //                         DuckDB
 //
-// postgres_conversion.hpp
+// postgres_binary_writer.hpp
 //
 //
 //===----------------------------------------------------------------------===//
@@ -81,7 +81,7 @@ public:
 		WriteInteger<uint64_t>(i);
 	}
 
-	int32_t DuckDBDateToPostgres(int32_t value) {
+	static int32_t DuckDBDateToPostgres(int32_t value) {
 		if (value <= POSTGRES_MIN_DATE || value >= POSTGRES_MAX_DATE) {
 			throw InvalidInputException("DATE \"%s\" is out of range for Postgres' DATE field",
 			                            Date::ToString(date_t(value)));
@@ -103,7 +103,7 @@ public:
 		WriteRawInteger<int32_t>(-value.offset());
 	}
 
-	uint64_t DuckDBTimestampToPostgres(timestamp_t value) {
+	static uint64_t DuckDBTimestampToPostgres(timestamp_t value) {
 		if (value == timestamp_t::infinity()) {
 			return POSTGRES_INFINITY;
 		}

@@ -95,6 +95,14 @@ CREATE TABLE pg_macaddr (
 );
 insert into pg_macaddr values ('08:00:2b:01:02:03');
 
+CREATE TABLE pg_complex_types_mix (
+	id int,
+	macaddr_col macaddr[],
+	str varchar,
+	str_list varchar[],
+	b bytea
+);
+
 CREATE TABLE pg_giant_numeric (
 	n NUMERIC
 );

@@ -34,6 +34,8 @@ public:
 	}
 
 	PostgresTableEntry *table;
+	PostgresCopyFormat format;
+	DataChunk varchar_chunk;
 	idx_t insert_count;
 };
 
@@ -73,10 +75,11 @@ unique_ptr<GlobalSinkState> PostgresInsert::GetGlobalSinkState(ClientContext &co
 		insert_table = &table.get_mutable()->Cast<PostgresTableEntry>();
 	}
 	auto &transaction = PostgresTransaction::Get(context, insert_table->catalog);
-	auto result = make_uniq<PostgresInsertGlobalState>(context, insert_table);
 	auto &connection = transaction.GetConnection();
 	auto insert_columns = GetInsertColumns(*this, *insert_table);
-	connection.BeginCopyTo(insert_table->schema.name, insert_table->name, insert_columns);
+	auto result = make_uniq<PostgresInsertGlobalState>(context, insert_table);
+	result->format = PostgresCopyFormat::TEXT;
+	connection.BeginCopyTo(result->format, insert_table->schema.name, insert_table->name, insert_columns);
 	return std::move(result);
 }
 
@@ -87,7 +90,7 @@ SinkResultType PostgresInsert::Sink(ExecutionContext &context, DataChunk &chunk,
 	auto &gstate = sink_state->Cast<PostgresInsertGlobalState>();
 	auto &transaction = PostgresTransaction::Get(context.client, gstate.table->catalog);
 	auto &connection = transaction.GetConnection();
-	connection.CopyChunk(chunk);
+	connection.CopyChunk(context.client, gstate.format, chunk, gstate.varchar_chunk);
 	gstate.insert_count += chunk.size();
 	return SinkResultType::NEED_MORE_INPUT;
 }
@@ -100,7 +103,7 @@ SinkFinalizeType PostgresInsert::Finalize(Pipeline &pipeline, Event &event, Clie
 	auto &gstate = sink_state->Cast<PostgresInsertGlobalState>();
 	auto &transaction = PostgresTransaction::Get(context, gstate.table->catalog);
 	auto &connection = transaction.GetConnection();
-	connection.FinishCopyTo();
+	connection.FinishCopyTo(gstate.format);
 	return SinkFinalizeType::READY;
 }
 

@@ -13,6 +13,7 @@
 
 namespace duckdb {
 class PostgresBinaryWriter;
+class PostgresTextWriter;
 struct PostgresBinaryReader;
 class PostgresSchemaEntry;
 class PostgresStatement;
@@ -31,6 +32,11 @@ struct OwnedPostgresConnection {
 	}
 
 	PGconn *connection;
+};
+
+enum class PostgresCopyFormat {
+	BINARY = 0,
+	TEXT = 1
 };
 
 class PostgresConnection {
@@ -57,11 +63,12 @@ public:
 	void GetIndexInfo(const string &index_name, string &sql, string &table_name);
 	vector<IndexInfo> GetIndexInfo(const string &table_name);
 
-	void BeginCopyTo(const string &schema_name, const string &table_name, const vector<string> &column_names);
+	void BeginCopyTo(PostgresCopyFormat format, const string &schema_name, const string &table_name, const vector<string> &column_names);
 	void CopyData(data_ptr_t buffer, idx_t size);
 	void CopyData(PostgresBinaryWriter &writer);
-	void CopyChunk(DataChunk &chunk);
-	void FinishCopyTo();
+	void CopyData(PostgresTextWriter &writer);
+	void CopyChunk(ClientContext &context, PostgresCopyFormat format, DataChunk &chunk, DataChunk &varchar_chunk);
+	void FinishCopyTo(PostgresCopyFormat format);
 
 	void BeginCopyFrom(PostgresBinaryReader &reader, const string &query);
 

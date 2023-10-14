@@ -208,7 +208,6 @@ public:
 		T integral_part = 0, fractional_part = 0;
 
 		if (config.weight >= 0) {
-			D_ASSERT(config.weight <= config.ndigits);
 			integral_part = ReadInteger<uint16_t>();
 			for (auto i = 1; i <= config.weight; i++) {
 				integral_part *= NBASE;

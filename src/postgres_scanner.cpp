@@ -566,14 +566,13 @@ static unique_ptr<LocalTableFunctionState> PostgresInitLocalState(ExecutionConte
 void PostgresLocalState::ScanChunk(ClientContext &context, const PostgresBindData &bind_data, PostgresGlobalState &gstate, DataChunk &output) {
 	idx_t output_offset = 0;
 	PostgresBinaryReader reader(connection);
-	if (!exec) {
-		connection.BeginCopyFrom(reader, sql);
-		exec = true;
-	}
-
 	while (true) {
 		if (done && !PostgresParallelStateNext(context, &bind_data, *this, gstate)) {
 			return;
+		}
+		if (!exec) {
+			connection.BeginCopyFrom(reader, sql);
+			exec = true;
 		}
 
 		output.SetCardinality(output_offset);
@@ -581,12 +580,18 @@ void PostgresLocalState::ScanChunk(ClientContext &context, const PostgresBindDat
 			return;
 		}
 
-		if (!reader.Ready()) {
-			reader.Next();
+		while (!reader.Ready()) {
+			if (!reader.Next()) {
+				// finished this batch
+				reader.CheckResult();
+				done = true;
+				continue;
+			}
 		}
 
 		auto tuple_count = reader.ReadInteger<int16_t>();
-		if (tuple_count == -1) { // done here, lets try to get more
+		if (tuple_count <= 0) { // done here, lets try to get more
+			reader.Reset();
 			done = true;
 			continue;
 		}
@@ -614,7 +619,6 @@ void PostgresLocalState::ScanChunk(ClientContext &context, const PostgresBindDat
 							 output_offset);
 			}
 		}
-
 		reader.Reset();
 		output_offset++;
 	}

@@ -21,21 +21,34 @@ struct PostgresBinaryReader {
 		Reset();
 	}
 
-	void Next() {
+	bool Next() {
 		Reset();
 		char *out_buffer;
-		idx_t len = PQgetCopyData(con.GetConn(), &out_buffer, 0);
-		buffer = data_ptr_cast(out_buffer);
+		int len = PQgetCopyData(con.GetConn(), &out_buffer, 0);
+		auto new_buffer = data_ptr_cast(out_buffer);
+
+		// len -1 signals end
+		if (len == -1) {
+			return false;
+		}
 
 		// len -2 is error
-		// len -1 is supposed to signal end but does not actually happen in practise
 		// we expect at least 2 bytes in each message for the tuple count
-		if (!buffer || len < sizeof(int16_t)) {
+		if (!new_buffer || len < sizeof(int16_t)) {
 			throw IOException("Unable to read binary COPY data from Postgres: %s",
 			                  string(PQerrorMessage(con.GetConn())));
 		}
+		buffer = new_buffer;
 		buffer_ptr = buffer;
 		end = buffer + len;
+		return true;
+	}
+
+	void CheckResult() {
+		auto result = PQgetResult(con.GetConn());
+		if (!result || PQresultStatus(result) != PGRES_COMMAND_OK) {
+			throw std::runtime_error("Failed to execute COPY: " + string(PQresultErrorMessage(result)));
+		}
 	}
 
 	void Reset() {
@@ -83,6 +96,10 @@ public:
 		}
 		buffer_ptr += sizeof(T);
 		return val;
+	}
+
+	bool OutOfBuffer() {
+		return buffer_ptr >= end;
 	}
 
 	template <class T>

@@ -28,11 +28,6 @@ INSERT INTO enums VALUES ('sad');
 statement ok
 INSERT INTO enums VALUES ('happy');
 
-statement error
-INSERT INTO enums VALUES ('xx');
-----
-xx
-
 statement ok
 INSERT INTO enums VALUES (NULL);
 

@@ -113,6 +113,20 @@ static LogicalType DuckDBType(PostgresColumnInfo &info, PostgresConnection &con,
 	return DuckDBType2(&info.type_info, info.atttypmod, &info.elem_info, con, context);
 }
 
+static PostgresType GetPostgresType(const string &name, const string &elem_name, const LogicalType &duckdb_type) {
+	PostgresType type;
+	if (name == "numeric" && duckdb_type.id() == LogicalTypeId::DOUBLE) {
+		type.info = PostgresTypeAnnotation::NUMERIC_AS_DOUBLE;
+	} else if (name == "jsonb") {
+		type.info = PostgresTypeAnnotation::JSONB;
+	}
+	if (duckdb_type.id() == LogicalTypeId::LIST) {
+		PostgresType child_type = GetPostgresType(elem_name, string(), ListType::GetChildType(duckdb_type));
+		type.children.push_back(child_type);
+	}
+	return type;
+}
+
 void PostgresScanFunction::PrepareBind(ClientContext &context, PostgresBindData &bind_data) {
 	// we create a transaction here, and get the snapshot id so the parallel
 	// reader threads can use the same snapshot
@@ -180,6 +194,8 @@ ORDER BY attnum;
 
 		bind_data.names.push_back(info.attname);
 		auto duckdb_type = DuckDBType(info, bind_data.connection, context);
+		PostgresType type = GetPostgresType(info.type_info.typname, info.elem_info.typname, duckdb_type);
+
 		// we cast unsupported types to varchar on read
 		auto needs_cast = duckdb_type == LogicalType::INVALID;
 		bind_data.needs_cast.push_back(needs_cast);
@@ -188,8 +204,7 @@ ORDER BY attnum;
 		} else {
 			bind_data.types.push_back(LogicalType::VARCHAR);
 		}
-
-		bind_data.columns.push_back(info);
+		bind_data.postgres_types.push_back(type);
 	}
 	res.reset();
 }
@@ -266,8 +281,7 @@ static PostgresConnection PostgresScanConnect(string dsn, bool in_recovery, stri
 	return conn;
 }
 
-static void ProcessValue(const LogicalType &type, const PostgresTypeInfo *type_info, int atttypmod, int64_t typelem,
-                         const PostgresTypeInfo *elem_info, PostgresBinaryReader &reader, idx_t value_len,
+static void ProcessValue(const LogicalType &type, const PostgresType &postgres_type, PostgresBinaryReader &reader, idx_t value_len,
                          Vector &out_vec, idx_t output_offset) {
 	switch (type.id()) {
 	case LogicalTypeId::SMALLINT:
@@ -298,7 +312,7 @@ static void ProcessValue(const LogicalType &type, const PostgresTypeInfo *type_i
 
 	case LogicalTypeId::DOUBLE: {
 		// this was an unbounded decimal, read params from value and cast to double
-		if (type_info->typname == "numeric") {
+		if (postgres_type.info == PostgresTypeAnnotation::NUMERIC_AS_DOUBLE) {
 			FlatVector::GetData<double>(out_vec)[output_offset] = reader.ReadDecimal<double, DecimalConversionDouble>();
 			break;
 		}
@@ -309,7 +323,7 @@ static void ProcessValue(const LogicalType &type, const PostgresTypeInfo *type_i
 
 	case LogicalTypeId::BLOB:
 	case LogicalTypeId::VARCHAR: {
-		if (type_info->typname == "jsonb") {
+		if (postgres_type.info == PostgresTypeAnnotation::JSONB) {
 			auto version = reader.ReadInteger<uint8_t>();
 			value_len--;
 			if (version != 1) {
@@ -355,29 +369,21 @@ static void ProcessValue(const LogicalType &type, const PostgresTypeInfo *type_i
 	}
 	case LogicalTypeId::TIME: {
 		D_ASSERT(value_len == sizeof(int64_t));
-		D_ASSERT(atttypmod == -1);
-
 		FlatVector::GetData<dtime_t>(out_vec)[output_offset] = reader.ReadTime();
 		break;
 	}
 	case LogicalTypeId::TIME_TZ: {
 		D_ASSERT(value_len == sizeof(int64_t) + sizeof(int32_t));
-		D_ASSERT(atttypmod == -1);
-
 		FlatVector::GetData<dtime_tz_t>(out_vec)[output_offset] = reader.ReadTimeTZ();
 		break;
 	}
 	case LogicalTypeId::TIMESTAMP_TZ:
 	case LogicalTypeId::TIMESTAMP: {
 		D_ASSERT(value_len == sizeof(int64_t));
-		D_ASSERT(atttypmod == -1);
 		FlatVector::GetData<timestamp_t>(out_vec)[output_offset] = reader.ReadTimestamp();
 		break;
 	}
 	case LogicalTypeId::ENUM: {
-		if (out_vec.GetType().id() != LogicalTypeId::ENUM) {
-			throw InternalException("eek");
-		}
 		auto enum_val = string(reader.ReadString(value_len), value_len);
 		auto offset = EnumType::GetPos(type, enum_val);
 		if (offset < 0) {
@@ -403,21 +409,16 @@ static void ProcessValue(const LogicalType &type, const PostgresTypeInfo *type_i
 		break;
 	}
 	case LogicalTypeId::INTERVAL: {
-		if (atttypmod != -1) {
-			throw IOException("Interval with unsupported typmod %d", atttypmod);
-		}
 		FlatVector::GetData<interval_t>(out_vec)[output_offset] = reader.ReadInterval();
 		break;
 	}
 
 	case LogicalTypeId::UUID: {
 		D_ASSERT(value_len == 2 * sizeof(int64_t));
-		D_ASSERT(atttypmod == -1);
 		FlatVector::GetData<hugeint_t>(out_vec)[output_offset] = reader.ReadUUID();
 		break;
 	}
 	case LogicalTypeId::LIST: {
-		D_ASSERT(elem_info);
 		auto &list_entry = FlatVector::GetData<list_entry_t>(out_vec)[output_offset];
 		auto child_offset = ListVector::GetListSize(out_vec);
 
@@ -436,7 +437,6 @@ static void ProcessValue(const LogicalType &type, const PostgresTypeInfo *type_i
 			return;
 		}
 		// D_ASSERT(flag_two == 1); // TODO what is this?!
-		D_ASSERT(value_oid == typelem);
 		auto array_length = reader.ReadInteger<uint32_t>();
 		auto array_dim = reader.ReadInteger<uint32_t>();
 		if (array_dim != 1) {
@@ -454,7 +454,7 @@ static void ProcessValue(const LogicalType &type, const PostgresTypeInfo *type_i
 				continue;
 			}
 
-			ProcessValue(ListType::GetChildType(type), elem_info, atttypmod, 0, nullptr, reader, ele_len, child_vec,
+			ProcessValue(ListType::GetChildType(type), postgres_type.children[0], reader, ele_len, child_vec,
 			             child_offset + child_idx);
 		}
 		ListVector::SetListSize(out_vec, child_offset + array_length);
@@ -615,9 +615,7 @@ void PostgresLocalState::ScanChunk(ClientContext &context, const PostgresBindDat
 				int64_t row_in_page = reader.ReadInteger<int16_t>();
 				FlatVector::GetData<int64_t>(out_vec)[output_offset] = (page_index << 16LL) + row_in_page;
 			} else {
-				ProcessValue(bind_data.types[col_idx], &bind_data.columns[col_idx].type_info,
-							 bind_data.columns[col_idx].atttypmod, bind_data.columns[col_idx].typelem,
-							 &bind_data.columns[col_idx].elem_info, reader, raw_len, out_vec,
+				ProcessValue(bind_data.types[col_idx], bind_data.postgres_types[col_idx], reader, raw_len, out_vec,
 							 output_offset);
 			}
 		}

@@ -11,25 +11,25 @@ statement ok
 USE s;
 
 statement ok
-CREATE OR REPLACE TABLE intervals(i INTERVAL);
+CREATE OR REPLACE TABLE attach_intervals(i INTERVAL);
 
 statement ok
-INSERT INTO intervals VALUES (INTERVAL '30 days');
+INSERT INTO attach_intervals VALUES (INTERVAL '30 days');
 
 statement ok
-INSERT INTO intervals VALUES (NULL);
+INSERT INTO attach_intervals VALUES (NULL);
 
 statement ok
-INSERT INTO intervals VALUES (INTERVAL '00:30:15');
+INSERT INTO attach_intervals VALUES (INTERVAL '00:30:15');
 
 statement ok
-INSERT INTO intervals VALUES (INTERVAL '2 months 2 days 00:15:00');
+INSERT INTO attach_intervals VALUES (INTERVAL '2 months 2 days 00:15:00');
 
 statement ok
-INSERT INTO intervals VALUES (INTERVAL '-2 days');
+INSERT INTO attach_intervals VALUES (INTERVAL '-2 days');
 
 query I
-SELECT * FROM intervals
+SELECT * FROM attach_intervals
 ----
 30 days
 NULL

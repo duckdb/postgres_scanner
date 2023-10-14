@@ -35,7 +35,7 @@ struct PostgresBindData : public FunctionData {
 	string table_name;
 	idx_t pages_approx = 0;
 
-	vector<PostgresColumnInfo> columns;
+	vector<PostgresType> postgres_types;
 	vector<string> names;
 	vector<LogicalType> types;
 	vector<bool> needs_cast;

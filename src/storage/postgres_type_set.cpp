@@ -27,9 +27,7 @@ LogicalType PostgresTypeSet::GetEnumType(const string &type_name) {
 	for (idx_t row = 0; row < res->Count(); row++) {
 		duckdb_levels.SetValue(row, res->GetString(row, 0));
 	}
-	auto type = LogicalType::ENUM(duckdb_levels, res->Count());
-	type.SetAlias(type_name);
-	return type;
+	return LogicalType::ENUM(duckdb_levels, res->Count());
 }
 
 void PostgresTypeSet::LoadEntries() {

@@ -17,7 +17,7 @@ namespace duckdb {
 PostgresTableSet::PostgresTableSet(PostgresSchemaEntry &schema, PostgresTransaction &transaction) :
     PostgresCatalogSet(schema.ParentCatalog(), transaction), schema(schema) {}
 
-static void AddColumn(PostgresResult &result, idx_t row, CreateTableInfo &table_info, idx_t column_offset = 0) {
+static void AddColumn(PostgresResult &result, idx_t row, PostgresTableInfo &table_info, idx_t column_offset = 0) {
 	PostgresTypeData type_info;
 	idx_t column_index = column_offset;
 	auto column_name = result.GetString(row, column_index);
@@ -27,7 +27,9 @@ static void AddColumn(PostgresResult &result, idx_t row, CreateTableInfo &table_
 	type_info.precision = result.IsNull(row, column_index + 4) ? -1 : result.GetInt64(row, column_index + 4);
 	type_info.scale = result.IsNull(row, column_index + 5) ? -1 : result.GetInt64(row, column_index + 5);
 
-	auto column_type = PostgresUtils::TypeToLogicalType(type_info);
+	PostgresType postgres_type;
+	auto column_type = PostgresUtils::TypeToLogicalType(type_info, postgres_type);
+	table_info.postgres_types.push_back(std::move(postgres_type));
 
 	ColumnDefinition column(std::move(column_name), std::move(column_type));
 	if (!default_value.empty()) {
@@ -37,9 +39,10 @@ static void AddColumn(PostgresResult &result, idx_t row, CreateTableInfo &table_
 		}
 		column.SetDefaultValue(std::move(expressions[0]));
 	}
-	table_info.columns.AddColumn(std::move(column));
+	auto &create_info = *table_info.create_info;
+	create_info.columns.AddColumn(std::move(column));
 	if (is_nullable != "YES") {
-		table_info.constraints.push_back(make_uniq<NotNullConstraint>(LogicalIndex(row)));
+		create_info.constraints.push_back(make_uniq<NotNullConstraint>(LogicalIndex(row)));
 	}
 }
 
@@ -55,15 +58,16 @@ ORDER BY table_name, ordinal_position;
 	auto result = conn.Query(query);
 	auto rows = result->Count();
 
-	vector<unique_ptr<CreateTableInfo>> tables;
-	unique_ptr<CreateTableInfo> info;
+	vector<unique_ptr<PostgresTableInfo>> tables;
+	unique_ptr<PostgresTableInfo> info;
+
 	for(idx_t row = 0; row < rows; row++) {
 		auto table_name = result->GetString(row, 0);
-		if (!info || info->table != table_name) {
+		if (!info || info->GetTableName() != table_name) {
 			if (info) {
 				tables.push_back(std::move(info));
 			}
-			info = make_uniq<CreateTableInfo>(schema, table_name);
+			info = make_uniq<PostgresTableInfo>(schema, table_name);
 		}
 		AddColumn(*result, row, *info, 1);
 	}
@@ -71,18 +75,18 @@ ORDER BY table_name, ordinal_position;
 		tables.push_back(std::move(info));
 	}
 	for(auto &tbl_info : tables) {
-		auto table_name = tbl_info->table;
+		auto table_name = tbl_info->GetTableName();
 		auto table_entry = make_uniq<PostgresTableEntry>(catalog, schema, *tbl_info);
 		entries.insert(make_pair(table_name, std::move(table_entry)));
 	}
 }
 
-unique_ptr<CreateTableInfo> PostgresTableSet::GetTableInfo(PostgresResult &result, const string &table_name) {
+unique_ptr<PostgresTableInfo> PostgresTableSet::GetTableInfo(PostgresResult &result, const string &table_name) {
 	auto rows = result.Count();
 	if (rows == 0) {
 		throw InvalidInputException("Table %s does not contain any columns.", table_name);
 	}
-	auto table_info = make_uniq<CreateTableInfo>();
+	auto table_info = make_uniq<PostgresTableInfo>();
 	for(idx_t row = 0; row < rows; row++) {
 		AddColumn(result, row, *table_info);
 	}

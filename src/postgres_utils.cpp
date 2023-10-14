@@ -32,12 +32,15 @@ string PostgresUtils::TypeToString(const LogicalType &input) {
 	}
 }
 
-LogicalType PostgresUtils::TypeToLogicalType(const PostgresTypeData &type_info) {
+LogicalType PostgresUtils::TypeToLogicalType(const PostgresTypeData &type_info, PostgresType &postgres_type) {
 	auto &pgtypename = type_info.type_name;
 	if (StringUtil::StartsWith(pgtypename, "_")) {
 		PostgresTypeData child_type_info;
 		child_type_info.type_name = pgtypename.substr(1);
-		return LogicalType::LIST(TypeToLogicalType(child_type_info));
+		PostgresType child_postgres_type;
+		auto child_type = TypeToLogicalType(child_type_info, child_postgres_type);
+		postgres_type.children.push_back(std::move(child_postgres_type));
+		return LogicalType::LIST(child_type);
 	}
 
 //	if (type_info->typtype == "e") { // ENUM
@@ -61,11 +64,15 @@ LogicalType PostgresUtils::TypeToLogicalType(const PostgresTypeData &type_info) 
 	} else if (pgtypename == "numeric") {
 		if (type_info.precision < 0 || type_info.scale < 0 || type_info.precision > 38) {
 			// fallback to double
+			postgres_type.info = PostgresTypeAnnotation::NUMERIC_AS_DOUBLE;
 			return LogicalType::DOUBLE;
 		}
 		return LogicalType::DECIMAL(type_info.precision, type_info.scale);
 	} else if (pgtypename == "char" || pgtypename == "bpchar" || pgtypename == "varchar" || pgtypename == "text" ||
-	           pgtypename == "jsonb" || pgtypename == "json") {
+	           pgtypename == "json") {
+		return LogicalType::VARCHAR;
+	} else if (pgtypename == "jsonb") {
+		postgres_type.info = PostgresTypeAnnotation::JSONB;
 		return LogicalType::VARCHAR;
 	} else if (pgtypename == "date") {
 		return LogicalType::DATE;
@@ -90,9 +97,6 @@ LogicalType PostgresUtils::TypeToLogicalType(const PostgresTypeData &type_info) 
 }
 
 LogicalType PostgresUtils::ToPostgresType(const LogicalType &input) {
-	if (input.HasAlias()) {
-		return input;
-	}
 	switch (input.id()) {
 	case LogicalTypeId::BOOLEAN:
 	case LogicalTypeId::SMALLINT:

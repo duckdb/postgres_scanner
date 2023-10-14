@@ -23,7 +23,7 @@ public:
 public:
 	optional_ptr<CatalogEntry> CreateTable(BoundCreateTableInfo &info);
 
-	static unique_ptr<CreateTableInfo> GetTableInfo(PostgresResult &result, const string &table_name);
+	static unique_ptr<PostgresTableInfo> GetTableInfo(PostgresResult &result, const string &table_name);
 
 	void AlterTable(ClientContext &context, AlterTableInfo &info);
 

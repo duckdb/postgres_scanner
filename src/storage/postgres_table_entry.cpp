@@ -7,8 +7,25 @@
 
 namespace duckdb {
 
+PostgresType PostgresTypeFromType(const LogicalType &type) {
+	PostgresType result;
+	if (type.id() == LogicalTypeId::LIST) {
+		result.children.push_back(PostgresTypeFromType(type));
+	}
+	return result;
+}
+
 PostgresTableEntry::PostgresTableEntry(Catalog &catalog, SchemaCatalogEntry &schema, CreateTableInfo &info)
-    : TableCatalogEntry(catalog, schema, info) {
+	: TableCatalogEntry(catalog, schema, info) {
+	for(auto &col : columns.Logical()) {
+		postgres_types.push_back(PostgresTypeFromType(col.GetType()));
+	}
+
+}
+
+PostgresTableEntry::PostgresTableEntry(Catalog &catalog, SchemaCatalogEntry &schema, PostgresTableInfo &info)
+    : TableCatalogEntry(catalog, schema, *info.create_info), postgres_types(std::move(info.postgres_types)) {
+	D_ASSERT(postgres_types.size() == columns.LogicalColumnCount());
 }
 
 unique_ptr<BaseStatistics> PostgresTableEntry::GetStatistics(ClientContext &context, column_t column_id) {

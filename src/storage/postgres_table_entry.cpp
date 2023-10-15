@@ -66,21 +66,44 @@ TableStorageInfo PostgresTableEntry::GetStorageInfo(ClientContext &context) {
 	return result;
 }
 
-static bool CopyRequiresText(const PostgresType &type) {
-	if (type.info != PostgresTypeAnnotation::STANDARD) {
+static bool CopyRequiresText(const LogicalType &type, const PostgresType &pg_type) {
+	if (pg_type.info != PostgresTypeAnnotation::STANDARD) {
 		return true;
 	}
-	for(auto &child : type.children) {
-		if (CopyRequiresText(child)) {
+	switch(type.id()) {
+	case LogicalTypeId::LIST: {
+		D_ASSERT(pg_type.children.size() == 1);
+		auto &child_type = ListType::GetChildType(type);
+		if (!PostgresUtils::SupportedPostgresOid(child_type)) {
 			return true;
 		}
+		if (CopyRequiresText(child_type, pg_type.children[0])) {
+			return true;
+		}
+		return false;
 	}
-	return false;
+	case LogicalTypeId::STRUCT: {
+		auto &children = StructType::GetChildTypes(type);
+		D_ASSERT(children.size() == pg_type.children.size());
+		for(idx_t c = 0; c < pg_type.children.size(); c++) {
+			if (!PostgresUtils::SupportedPostgresOid(children[c].second)) {
+				return true;
+			}
+			if (CopyRequiresText(children[c].second, pg_type.children[c])) {
+				return true;
+			}
+		}
+		return false;
+	}
+	default:
+		return false;
+	}
 }
 
 PostgresCopyFormat PostgresTableEntry::GetCopyFormat(ClientContext &context) {
-	for(auto &pg_type : postgres_types) {
-		if (CopyRequiresText(pg_type)) {
+	D_ASSERT(postgres_types.size() == columns.LogicalColumnCount());
+	for(idx_t c = 0; c < postgres_types.size(); c++) {
+		if (CopyRequiresText(columns.GetColumn(LogicalIndex(c)).GetType(), postgres_types[c])) {
 			return PostgresCopyFormat::TEXT;
 		}
 	}

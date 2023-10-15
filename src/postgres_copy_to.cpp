@@ -86,14 +86,25 @@ void PostgresConnection::FinishCopyTo(PostgresCopyFormat format) {
 	}
 }
 
-void CastToPostgresVarchar(ClientContext &context, Vector &input, Vector &result, idx_t size);
+bool TypeRequiresQuotes(const LogicalType &input) {
+	switch(input.id()) {
+	case LogicalTypeId::STRUCT:
+	case LogicalTypeId::LIST:
+		return true;
+	default:
+		return false;
+	}
+}
 
-void CastListToPostgresArray(ClientContext &context, Vector &input, Vector &varchar_vector, idx_t size) {
+void CastToPostgresVarchar(ClientContext &context, Vector &input, Vector &result, idx_t size, idx_t depth = 1);
+
+void CastListToPostgresArray(ClientContext &context, Vector &input, Vector &varchar_vector, idx_t size, idx_t depth) {
 	// cast child list
 	auto &child_data = ListVector::GetEntry(input);
 	auto child_count = ListVector::GetListSize(input);
+	bool requires_quotes = TypeRequiresQuotes(child_data.GetType());
 	Vector child_varchar(LogicalType::VARCHAR, child_count);
-	CastToPostgresVarchar(context, child_data, child_varchar, child_count);
+	CastToPostgresVarchar(context, child_data, child_varchar, child_count, depth + 1);
 
 	// construct the list entries
 	auto child_entries = FlatVector::GetData<string_t>(child_varchar);
@@ -115,7 +126,13 @@ void CastListToPostgresArray(ClientContext &context, Vector &input, Vector &varc
 			if (FlatVector::IsNull(child_varchar, child_idx)) {
 				result += "NULL";
 			} else {
+				if (requires_quotes) {
+					result += StringUtil::Repeat("\\\"", depth);
+				}
 				result += child_entries[child_idx].GetString();
+				if (requires_quotes) {
+					result += StringUtil::Repeat("\\\"", depth);
+				}
 			}
 		}
 		result += "}";
@@ -123,14 +140,16 @@ void CastListToPostgresArray(ClientContext &context, Vector &input, Vector &varc
 	}
 }
 
-void CastStructToPostgres(ClientContext &context, Vector &input, Vector &varchar_vector, idx_t size) {
+void CastStructToPostgres(ClientContext &context, Vector &input, Vector &varchar_vector, idx_t size, idx_t depth) {
 	auto &child_vectors = StructVector::GetEntries(input);
 	// cast child data of structs
 	vector<Vector> child_varchar_vectors;
-		for(idx_t c = 0; c < child_vectors.size(); c++) {
+	vector<bool> child_requires_quotes;
+	for(idx_t c = 0; c < child_vectors.size(); c++) {
 		Vector child_varchar(LogicalType::VARCHAR, size);
-		CastToPostgresVarchar(context, *child_vectors[c], child_varchar, size);
+		CastToPostgresVarchar(context, *child_vectors[c], child_varchar, size, depth + 1);
 		child_varchar_vectors.push_back(std::move(child_varchar));
+		child_requires_quotes.push_back(TypeRequiresQuotes(child_vectors[c]->GetType()));
 	}
 
 	// construct the struct entries
@@ -149,7 +168,14 @@ void CastStructToPostgres(ClientContext &context, Vector &input, Vector &varchar
 			if (FlatVector::IsNull(child_varchar_vectors[c], r)) {
 				result += "NULL";
 			} else {
+				bool requires_quotes = child_requires_quotes[c];
+				if (requires_quotes) {
+					result += StringUtil::Repeat("\\\"", depth);
+				}
 				result += FlatVector::GetData<string_t>(child_varchar_vectors[c])[r].GetString();
+				if (requires_quotes) {
+					result += StringUtil::Repeat("\\\"", depth);
+				}
 			}
 		}
 		result += ")";
@@ -177,13 +203,13 @@ void CastBlobToPostgres(ClientContext &context, Vector &input, Vector &result, i
 	}
 }
 
-void CastToPostgresVarchar(ClientContext &context, Vector &input, Vector &result, idx_t size) {
+void CastToPostgresVarchar(ClientContext &context, Vector &input, Vector &result, idx_t size, idx_t depth) {
 	switch (input.GetType().id()) {
 	case LogicalTypeId::LIST:
-		CastListToPostgresArray(context, input, result, size);
+		CastListToPostgresArray(context, input, result, size, depth);
 		break;
 	case LogicalTypeId::STRUCT:
-		CastStructToPostgres(context, input, result, size);
+		CastStructToPostgres(context, input, result, size, depth);
 		break;
 	case LogicalTypeId::BLOB:
 		CastBlobToPostgres(context, input, result, size);

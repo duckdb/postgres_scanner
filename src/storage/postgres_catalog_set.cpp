@@ -8,8 +8,8 @@ PostgresCatalogSet::PostgresCatalogSet(Catalog &catalog, PostgresTransaction &tr
 
 optional_ptr<CatalogEntry> PostgresCatalogSet::GetEntry(const string &name) {
 	if (!is_loaded) {
-		LoadEntries();
 		is_loaded = true;
+		LoadEntries();
 	}
 	auto entry = entries.find(name);
 	if (entry == entries.end()) {
@@ -35,8 +35,8 @@ void PostgresCatalogSet::DropEntry(DropInfo &info) {
 
 void PostgresCatalogSet::Scan(const std::function<void(CatalogEntry &)> &callback) {
 	if (!is_loaded) {
-		LoadEntries();
 		is_loaded = true;
+		LoadEntries();
 	}
 	for(auto &entry : entries) {
 		callback(*entry.second);

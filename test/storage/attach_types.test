@@ -41,7 +41,10 @@ REPLACE(
 	CASE WHEN int IS NOT NULL THEN '2000-01-01 01:02:03' ELSE NULL END AS timestamp_tz,
 	CASE WHEN int IS NOT NULL THEN replace(varchar, chr(0), ' ') ELSE NULL END AS varchar,
 	CASE WHEN int IS NOT NULL THEN ['🦆🦆🦆🦆🦆🦆', 'goose', NULL] ELSE NULL END AS varchar_array,
-	CASE WHEN int IS NOT NULL THEN '00:00:00+15:00' ELSE NULL END AS time_tz
+	CASE WHEN int IS NOT NULL THEN '00:00:00+15:00' ELSE NULL END AS time_tz,
+	small_enum::VARCHAR AS small_enum,
+	medium_enum::VARCHAR AS medium_enum,
+	large_enum::VARCHAR AS large_enum,
 )
 FROM test_all_types();
 

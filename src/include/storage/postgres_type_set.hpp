@@ -15,6 +15,7 @@ namespace duckdb {
 struct CreateTableInfo;
 class PostgresResult;
 class PostgresSchemaEntry;
+struct PGTypeInfo;
 
 class PostgresTypeSet : public PostgresCatalogSet {
 public:
@@ -26,8 +27,10 @@ public:
 protected:
 	void LoadEntries() override;
 
-	LogicalType GetEnumType(const string &type_name);
-	LogicalType GetCompositeType(idx_t oid, PostgresType &postgres_type);
+	void LoadEnumTypes(vector<PGTypeInfo> &enum_info);
+	void CreateEnum(PostgresResult &result, idx_t start_row, idx_t end_row);
+	void LoadCompositeTypes(vector<PGTypeInfo> &composite_info);
+	void CreateCompositeType(PostgresResult &result, idx_t start_row, idx_t end_row, unordered_map<idx_t, string> &name_map);
 
 protected:
 	PostgresSchemaEntry &schema;

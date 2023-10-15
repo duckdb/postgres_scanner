@@ -103,6 +103,7 @@ CREATE TABLE pg_complex_types_mix (
 	b bytea
 );
 
+-- unbounded numerics
 CREATE TABLE pg_giant_numeric (
 	n NUMERIC
 );
@@ -122,8 +123,46 @@ CREATE TABLE pg_numeric_array_empty (
 	n NUMERIC[]
 );
 
+-- json
 CREATE TABLE pg_json (
 	regular_json JSON,
 	binary_json JSONB
 );
 INSERT INTO pg_json VALUES ('{"a": 42, "b": "string"}', '{"a": 42, "b": "string"}');
+
+-- composite type example
+CREATE TYPE inventory_item AS (
+    name            text,
+    supplier_id     integer,
+    price           numeric
+);
+CREATE TABLE on_hand (
+    item      inventory_item,
+    count     integer
+);
+INSERT INTO on_hand VALUES (ROW('fuzzy dice', 42, 1.99), 1000);
+
+-- complex composite types
+CREATE TYPE composite_with_arrays AS (
+    names            text[],
+    ids              integer[]
+);
+CREATE TYPE pg_mood AS ENUM ('sad', 'ok', 'happy');
+CREATE TYPE composite_with_enums AS (
+    current_mood            pg_mood,
+    past_moods              pg_mood[]
+);
+CREATE TABLE composite_with_arrays_tbl (
+    item      composite_with_arrays
+);
+INSERT INTO composite_with_arrays_tbl VALUES (ROW(array['Name 1', 'Name 2'], array[42, 84, 100, 120]));
+
+CREATE TABLE composite_with_enums_tbl (
+    item      composite_with_enums
+);
+INSERT INTO composite_with_enums_tbl VALUES (ROW('happy', ARRAY['ok', 'happy', 'sad', 'happy', 'ok']::pg_mood[]));
+
+CREATE TABLE array_of_composites_tbl (
+	items inventory_item[]
+);
+INSERT INTO array_of_composites_tbl VALUES (ARRAY[ROW('fuzzy dice', 42, 1.99), ROW('fuzzy mice', 84, 0.5)]::inventory_item[]);

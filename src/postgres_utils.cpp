@@ -204,6 +204,30 @@ LogicalType PostgresUtils::ToPostgresType(const LogicalType &input) {
 #define BITOID 1560
 #define UUIDOID 2950
 
+bool PostgresUtils::SupportedPostgresOid(const LogicalType &input) {
+	switch(input.id()) {
+	case LogicalTypeId::BOOLEAN:
+	case LogicalTypeId::SMALLINT:
+	case LogicalTypeId::INTEGER:
+	case LogicalTypeId::BIGINT:
+	case LogicalTypeId::FLOAT:
+	case LogicalTypeId::DOUBLE:
+	case LogicalTypeId::VARCHAR:
+	case LogicalTypeId::BLOB:
+	case LogicalTypeId::DATE:
+	case LogicalTypeId::TIME:
+	case LogicalTypeId::TIMESTAMP:
+	case LogicalTypeId::INTERVAL:
+	case LogicalTypeId::TIME_TZ:
+	case LogicalTypeId::TIMESTAMP_TZ:
+	case LogicalTypeId::BIT:
+	case LogicalTypeId::UUID:
+		return true;
+	default:
+		return false;
+	}
+}
+
 uint32_t PostgresUtils::ToPostgresOid(const LogicalType &input) {
 	switch(input.id()) {
 	case LogicalTypeId::BOOLEAN:

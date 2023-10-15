@@ -11,9 +11,6 @@ statement ok
 USE s;
 
 statement ok
-CREATE OR REPLACE TABLE enums(e MOOD);
-
-statement ok
 DROP TABLE IF EXISTS enums
 
 statement ok

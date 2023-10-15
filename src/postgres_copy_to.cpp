@@ -123,6 +123,40 @@ void CastListToPostgresArray(ClientContext &context, Vector &input, Vector &varc
 	}
 }
 
+void CastStructToPostgres(ClientContext &context, Vector &input, Vector &varchar_vector, idx_t size) {
+	auto &child_vectors = StructVector::GetEntries(input);
+	// cast child data of structs
+	vector<Vector> child_varchar_vectors;
+		for(idx_t c = 0; c < child_vectors.size(); c++) {
+		Vector child_varchar(LogicalType::VARCHAR, size);
+		CastToPostgresVarchar(context, *child_vectors[c], child_varchar, size);
+		child_varchar_vectors.push_back(std::move(child_varchar));
+	}
+
+	// construct the struct entries
+	auto result_entries = FlatVector::GetData<string_t>(varchar_vector);
+	for(idx_t r = 0; r < size; r++) {
+		if (FlatVector::IsNull(input, r)) {
+			FlatVector::SetNull(varchar_vector, r, true);
+			continue;
+		}
+		string result;
+		result = "(";
+		for(idx_t c = 0; c < child_varchar_vectors.size(); c++) {
+			if (c > 0) {
+				result += ",";
+			}
+			if (FlatVector::IsNull(child_varchar_vectors[c], r)) {
+				result += "NULL";
+			} else {
+				result += FlatVector::GetData<string_t>(child_varchar_vectors[c])[r].GetString();
+			}
+		}
+		result += ")";
+		result_entries[r] = StringVector::AddString(varchar_vector, result);
+	}
+}
+
 void CastBlobToPostgres(ClientContext &context, Vector &input, Vector &result, idx_t size) {
 	auto input_data = FlatVector::GetData<string_t>(input);
 	auto result_data = FlatVector::GetData<string_t>(result);
@@ -147,6 +181,9 @@ void CastToPostgresVarchar(ClientContext &context, Vector &input, Vector &result
 	switch (input.GetType().id()) {
 	case LogicalTypeId::LIST:
 		CastListToPostgresArray(context, input, result, size);
+		break;
+	case LogicalTypeId::STRUCT:
+		CastStructToPostgres(context, input, result, size);
 		break;
 	case LogicalTypeId::BLOB:
 		CastBlobToPostgres(context, input, result, size);

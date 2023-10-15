@@ -1,4 +1,6 @@
 #include "postgres_utils.hpp"
+#include "storage/postgres_schema_entry.hpp"
+#include "storage/postgres_transaction.hpp"
 
 namespace duckdb {
 
@@ -18,6 +20,9 @@ PGconn *PostgresUtils::PGConnect(const string &dsn) {
 }
 
 string PostgresUtils::TypeToString(const LogicalType &input) {
+	if (input.HasAlias()) {
+		return input.GetAlias();
+	}
 	switch(input.id()) {
 	case LogicalTypeId::FLOAT:
 		return "REAL";
@@ -27,25 +32,46 @@ string PostgresUtils::TypeToString(const LogicalType &input) {
 		return "BYTEA";
 	case LogicalTypeId::LIST:
 		return PostgresUtils::TypeToString(ListType::GetChildType(input)) + "[]";
+	case LogicalTypeId::ENUM:
+		throw NotImplementedException("Enums in Postgres must be named - unnamed enums are not supported. Use CREATE TYPE to create a named enum.");
+	case LogicalTypeId::STRUCT:
+		throw NotImplementedException("Composite types in Postgres must be named - unnamed composite types are not supported. Use CREATE TYPE to create a named composite type.");
+	case LogicalTypeId::MAP:
+		throw NotImplementedException("MAP type not supported in Postgres");
+	case LogicalTypeId::UNION:
+		throw NotImplementedException("UNION type not supported in Postgres");
 	default:
 		return input.ToString();
 	}
 }
 
-LogicalType PostgresUtils::TypeToLogicalType(const PostgresTypeData &type_info, PostgresType &postgres_type) {
+LogicalType RemoveAlias(const LogicalType &type) {
+	switch(type.id()) {
+	case LogicalTypeId::STRUCT: {
+		auto child_types = StructType::GetChildTypes(type);
+		return LogicalType::STRUCT(std::move(child_types));
+	}
+	case LogicalTypeId::ENUM: {
+		auto &enum_vector = EnumType::GetValuesInsertOrder(type);
+		Vector new_vector(LogicalType::VARCHAR);
+		new_vector.Reference(enum_vector);
+		return LogicalType::ENUM(new_vector, EnumType::GetSize(type));
+	}
+	default:
+		throw InternalException("Unsupported logical type for RemoveAlias");
+	}
+}
+
+LogicalType PostgresUtils::TypeToLogicalType(PostgresTransaction &transaction, PostgresSchemaEntry &schema, const PostgresTypeData &type_info, PostgresType &postgres_type) {
 	auto &pgtypename = type_info.type_name;
 	if (StringUtil::StartsWith(pgtypename, "_")) {
 		PostgresTypeData child_type_info;
 		child_type_info.type_name = pgtypename.substr(1);
 		PostgresType child_postgres_type;
-		auto child_type = TypeToLogicalType(child_type_info, child_postgres_type);
+		auto child_type = TypeToLogicalType(transaction, schema, child_type_info, child_postgres_type);
 		postgres_type.children.push_back(std::move(child_postgres_type));
 		return LogicalType::LIST(child_type);
 	}
-
-//	if (type_info->typtype == "e") { // ENUM
-//		throw NotImplementedException("FIXME: enum");
-//	}
 
 	if (pgtypename == "bool") {
 		return LogicalType::BOOLEAN;
@@ -91,9 +117,21 @@ LogicalType PostgresUtils::TypeToLogicalType(const PostgresTypeData &type_info, 
 	} else if (pgtypename == "uuid") {
 		return LogicalType::UUID;
 	} else {
-		// unsupported so fallback to varchar
-		postgres_type.info = PostgresTypeAnnotation::CAST_TO_VARCHAR;
-		return LogicalType::VARCHAR;
+		auto context = transaction.context.lock();
+		if (!context) {
+			throw InternalException("Context is destroyed!?");
+		}
+		auto entry = schema.GetEntry(CatalogTransaction(schema.ParentCatalog(), *context), CatalogType::TYPE_ENTRY, pgtypename);
+		if (!entry) {
+			// unsupported so fallback to varchar
+			postgres_type.info = PostgresTypeAnnotation::CAST_TO_VARCHAR;
+			return LogicalType::VARCHAR;
+		}
+		// custom type (e.g. composite or enum)
+		auto &type_entry = entry->Cast<PostgresTypeEntry>();
+		auto result_type = RemoveAlias(type_entry.user_type);
+		postgres_type = type_entry.postgres_type;
+		return result_type;
 	}
 }
 
@@ -105,6 +143,7 @@ LogicalType PostgresUtils::ToPostgresType(const LogicalType &input) {
 	case LogicalTypeId::BIGINT:
 	case LogicalTypeId::FLOAT:
 	case LogicalTypeId::DOUBLE:
+	case LogicalTypeId::ENUM:
 	case LogicalTypeId::BLOB:
 	case LogicalTypeId::DATE:
 	case LogicalTypeId::DECIMAL:
@@ -118,6 +157,17 @@ LogicalType PostgresUtils::ToPostgresType(const LogicalType &input) {
 		return input;
 	case LogicalTypeId::LIST:
 		return LogicalType::LIST(ToPostgresType(ListType::GetChildType(input)));
+	case LogicalTypeId::STRUCT: {
+		child_list_t<LogicalType> new_types;
+		for(idx_t c = 0; c < StructType::GetChildCount(input); c++) {
+			auto &name = StructType::GetChildName(input, c);
+			auto &type = StructType::GetChildType(input, c);
+			new_types.push_back(make_pair(name, ToPostgresType(type)));
+		}
+		auto result = LogicalType::STRUCT(std::move(new_types));
+		result.SetAlias(input.GetAlias());
+		return result;
+	}
 	case LogicalTypeId::TIMESTAMP_SEC:
 	case LogicalTypeId::TIMESTAMP_MS:
 	case LogicalTypeId::TIMESTAMP_NS:

@@ -9,7 +9,7 @@
 #pragma once
 
 #include "storage/postgres_catalog_set.hpp"
-#include "duckdb/catalog/catalog_entry/type_catalog_entry.hpp"
+#include "storage/postgres_type_entry.hpp"
 
 namespace duckdb {
 struct CreateTableInfo;
@@ -27,6 +27,7 @@ protected:
 	void LoadEntries() override;
 
 	LogicalType GetEnumType(const string &type_name);
+	LogicalType GetCompositeType(idx_t oid, PostgresType &postgres_type);
 
 protected:
 	PostgresSchemaEntry &schema;

@@ -23,7 +23,7 @@ public:
 public:
 	optional_ptr<CatalogEntry> CreateTable(BoundCreateTableInfo &info);
 
-	static unique_ptr<PostgresTableInfo> GetTableInfo(PostgresResult &result, const string &table_name);
+	unique_ptr<PostgresTableInfo> GetTableInfo(PostgresResult &result, const string &table_name);
 
 	void AlterTable(ClientContext &context, AlterTableInfo &info);
 
@@ -34,6 +34,8 @@ protected:
 	void AlterTable(RenameColumnInfo &info);
 	void AlterTable(AddColumnInfo &info);
 	void AlterTable(RemoveColumnInfo &info);
+
+	void AddColumn(PostgresResult &result, idx_t row, PostgresTableInfo &table_info, idx_t column_offset = 0);
 
 protected:
 	PostgresSchemaEntry &schema;

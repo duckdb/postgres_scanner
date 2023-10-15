@@ -458,6 +458,24 @@ static void ProcessValue(const LogicalType &type, const PostgresType &postgres_t
 		list_entry.length = array_length;
 		break;
 	}
+	case LogicalTypeId::STRUCT: {
+		auto &child_entries = StructVector::GetEntries(out_vec);
+		auto entry_count = reader.ReadInteger<uint32_t>();
+		if (entry_count != child_entries.size()) {
+			throw InternalException("Mismatch in entry count: expected %d but got %d", child_entries.size(), entry_count);
+		}
+		for(idx_t c = 0; c < entry_count; c++) {
+			auto &child = *child_entries[c];
+			auto value_oid = reader.ReadInteger<uint32_t>();
+			auto ele_len = reader.ReadInteger<int32_t>();
+			if (ele_len == -1) { // NULL
+				FlatVector::Validity(child).Set(output_offset, false);
+				continue;
+			}
+			ProcessValue(child.GetType(), postgres_type.children[c], reader, ele_len, child, output_offset);
+		}
+		break;
+	}
 	default:
 		throw InternalException("Unsupported Type %s", type.ToString());
 	}

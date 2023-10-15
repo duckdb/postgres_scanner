@@ -209,7 +209,8 @@ public:
 			WriteNull();
 			return;
 		}
-		switch(col.GetType().id()) {
+		auto &type = col.GetType();
+		switch(type.id()) {
 		case LogicalTypeId::BOOLEAN: {
 			auto data = FlatVector::GetData<bool>(col)[r];
 			WriteBoolean(data);
@@ -241,8 +242,8 @@ public:
 			break;
 		}
 		case LogicalTypeId::DECIMAL: {
-			auto scale = DecimalType::GetScale(col.GetType());
-			switch (col.GetType().InternalType()) {
+			auto scale = DecimalType::GetScale(type);
+			switch (type.InternalType()) {
 			case PhysicalType::INT16:
 				WriteDecimal<int16_t>(FlatVector::GetData<int16_t>(col)[r], scale);
 				break;
@@ -297,9 +298,29 @@ public:
 			WriteVarchar(data);
 			break;
 		}
+		case LogicalTypeId::ENUM: {
+			idx_t pos;
+			switch (type.InternalType()) {
+			case PhysicalType::UINT8:
+				pos = FlatVector::GetData<uint8_t>(col)[r];
+				break;
+			case PhysicalType::UINT16:
+				pos = FlatVector::GetData<uint16_t>(col)[r];
+				break;
+			case PhysicalType::UINT32:
+				pos = FlatVector::GetData<uint32_t>(col)[r];
+				break;
+			default:
+				throw InternalException("ENUM can only have unsigned integers (except "
+										"UINT64) as physical types, got %s",
+										TypeIdToString(type.InternalType()));
+			}
+			WriteVarchar(EnumType::GetString(type, pos));
+			break;
+		}
 		case LogicalTypeId::LIST: {
 			auto list_entry = FlatVector::GetData<list_entry_t>(col)[r];
-			auto value_oid = PostgresUtils::ToPostgresOid(ListType::GetChildType(col.GetType()));
+			auto value_oid = PostgresUtils::ToPostgresOid(ListType::GetChildType(type));
 			if (list_entry.length == 0) {
 				// empty list
 				WriteRawInteger<int32_t>(sizeof(uint32_t) * 3);
@@ -322,6 +343,23 @@ public:
 			auto &child_vector = ListVector::GetEntry(col);
 			for(idx_t child_idx = 0; child_idx < list_entry.length; child_idx++) {
 				WriteValue(child_vector, list_entry.offset + child_idx);
+			}
+			auto end_position = stream.GetPosition();
+			// after writing all list elements update the field size
+			auto field_size = int32_t(end_position - start_position - sizeof(int32_t));
+			Store<int32_t>(GetInteger(field_size), stream.GetData() + start_position);
+			break;
+		}
+		case LogicalTypeId::STRUCT: {
+			auto &child_entries = StructVector::GetEntries(col);
+
+			auto start_position = stream.GetPosition();
+			WriteRawInteger<int32_t>(0);                      // data size (nop for now)
+			WriteRawInteger<uint32_t>(child_entries.size());  // column count
+			for(auto &child : child_entries) {
+				auto value_oid = PostgresUtils::ToPostgresOid(child->GetType());
+				WriteRawInteger<uint32_t>(value_oid);  // value oid
+				WriteValue(*child, r);
 			}
 			auto end_position = stream.GetPosition();
 			// after writing all list elements update the field size

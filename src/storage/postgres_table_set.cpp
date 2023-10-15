@@ -17,7 +17,7 @@ namespace duckdb {
 PostgresTableSet::PostgresTableSet(PostgresSchemaEntry &schema, PostgresTransaction &transaction) :
     PostgresCatalogSet(schema.ParentCatalog(), transaction), schema(schema) {}
 
-static void AddColumn(PostgresResult &result, idx_t row, PostgresTableInfo &table_info, idx_t column_offset = 0) {
+void PostgresTableSet::AddColumn(PostgresResult &result, idx_t row, PostgresTableInfo &table_info, idx_t column_offset) {
 	PostgresTypeData type_info;
 	idx_t column_index = column_offset;
 	auto column_name = result.GetString(row, column_index);
@@ -28,7 +28,7 @@ static void AddColumn(PostgresResult &result, idx_t row, PostgresTableInfo &tabl
 	type_info.scale = result.IsNull(row, column_index + 5) ? -1 : result.GetInt64(row, column_index + 5);
 
 	PostgresType postgres_type;
-	auto column_type = PostgresUtils::TypeToLogicalType(type_info, postgres_type);
+	auto column_type = PostgresUtils::TypeToLogicalType(transaction, schema, type_info, postgres_type);
 	table_info.postgres_types.push_back(std::move(postgres_type));
 
 	ColumnDefinition column(std::move(column_name), std::move(column_type));

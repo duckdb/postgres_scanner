@@ -1,0 +1,86 @@
+# name: test/storage/attach_types_struct.test
+# description:
+# group: [postgres_storage]
+
+require postgres_scanner
+
+statement ok
+ATTACH 'dbname=postgresscanner' AS s (TYPE POSTGRES)
+
+statement ok
+USE s
+
+# create a composite type and use it in a table directly
+statement ok
+DROP TABLE IF EXISTS my_composite_tbl
+
+statement ok
+DROP TYPE IF EXISTS my_composite_type
+
+statement ok
+CREATE TYPE my_composite_type AS STRUCT(
+	id INT,
+	name VARCHAR
+);
+
+statement ok
+CREATE OR REPLACE TABLE my_composite_tbl(
+	c my_composite_type
+);
+
+statement ok
+INSERT INTO my_composite_tbl VALUES ({'id': 42, 'name': 'test 123'});
+
+statement ok
+INSERT INTO my_composite_tbl VALUES (ROW(100, 'xxx'));
+
+query I
+SELECT * FROM my_composite_tbl
+----
+{'id': 42, 'name': test 123}
+{'id': 100, 'name': xxx}
+
+query II
+SELECT c.id, c.name FROM my_composite_tbl
+----
+42	test 123
+100	xxx
+
+# use an existing composite type
+query II
+SELECT * FROM on_hand
+----
+{'name': fuzzy dice, 'supplier_id': 42, 'price': 1.99}	1000
+
+query IIII
+SELECT item.name, item.supplier_id, item.price, count FROM on_hand
+----
+fuzzy dice	42	1.99	1000
+
+statement ok
+BEGIN
+
+statement ok
+DELETE FROM on_hand
+
+statement ok
+INSERT INTO on_hand VALUES ({'name': 'fuzzy dice', 'supplier_id': 42, 'price': 1.99}, 1000);
+
+statement ok
+COMMIT
+
+query IIII
+SELECT item.name, item.supplier_id, item.price, count FROM on_hand
+----
+fuzzy dice	42	1.99	1000
+
+# numeric in composite type
+
+
+# we cannot use an unnamed STRUCT as a table
+statement error
+CREATE TABLE unsupported_tbl_def(
+	c STRUCT(id INT)
+);
+----
+Composite types in Postgres must be named

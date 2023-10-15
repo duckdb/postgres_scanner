@@ -81,16 +81,22 @@ public:
 		WriteInteger<uint64_t>(i);
 	}
 
-	static int32_t DuckDBDateToPostgres(int32_t value) {
-		if (value <= POSTGRES_MIN_DATE || value >= POSTGRES_MAX_DATE) {
-			throw InvalidInputException("DATE \"%s\" is out of range for Postgres' DATE field",
-			                            Date::ToString(date_t(value)));
+	static uint32_t DuckDBDateToPostgres(date_t value) {
+		if (value == date_t::infinity()) {
+			return POSTGRES_DATE_INF;
 		}
-		return value + DUCKDB_EPOCH_DATE - POSTGRES_EPOCH_JDATE;
+		if (value == date_t::infinity()) {
+			return POSTGRES_DATE_NINF;
+		}
+		if (value.days <= POSTGRES_MIN_DATE || value.days >= POSTGRES_MAX_DATE) {
+			throw InvalidInputException("DATE \"%s\" is out of range for Postgres' DATE field",
+			                            Date::ToString(value));
+		}
+		return uint32_t(value.days + DUCKDB_EPOCH_DATE - POSTGRES_EPOCH_JDATE);
 	}
 
 	void WriteDate(date_t value) {
-		WriteInteger<int32_t>(DuckDBDateToPostgres(value.days));
+		WriteInteger<uint32_t>(DuckDBDateToPostgres(value));
 	}
 
 	void WriteTime(dtime_t value) {
@@ -112,7 +118,7 @@ public:
 		}
 		auto time = value.value % Interval::MICROS_PER_DAY;
 		// adjust date
-		auto date = DuckDBDateToPostgres(value.value / Interval::MICROS_PER_DAY);
+		auto date = DuckDBDateToPostgres(date_t(value.value / Interval::MICROS_PER_DAY));
 		// glue it back together
 		return date * Interval::MICROS_PER_DAY + time;
 	}

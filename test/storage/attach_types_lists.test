@@ -89,3 +89,31 @@ SELECT * FROM lists
 []
 NULL
 [NULL, string 123, s]
+
+# timestamp list
+foreach type TIMESTAMP TIMESTAMP_MS TIMESTAMP_NS TIMESTAMP_S
+
+statement ok
+CREATE OR REPLACE TABLE lists(ts ${type}[]);
+
+statement ok
+INSERT INTO lists VALUES ([TIMESTAMP '2010-01-01 01:23:45', TIMESTAMP 'infinity', TIMESTAMP '-infinity']);
+
+statement ok
+INSERT INTO lists VALUES ([]);
+
+statement ok
+INSERT INTO lists VALUES (NULL);
+
+statement ok
+INSERT INTO lists VALUES ([NULL, TIMESTAMP '1900-01-01 00:00:00']);
+
+query I
+SELECT * FROM lists
+----
+[2010-01-01 01:23:45, infinity, -infinity]
+[]
+NULL
+[NULL, 1900-01-01 00:00:00]
+
+endloop

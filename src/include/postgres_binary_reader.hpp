@@ -127,6 +127,12 @@ public:
 
 	inline date_t ReadDate() {
 		auto jd = ReadInteger<uint32_t>();
+		if (jd == POSTGRES_DATE_INF) {
+			return date_t::infinity();
+		}
+		if (jd == POSTGRES_DATE_NINF) {
+			return date_t::ninfinity();
+		}
 		return date_t(jd + POSTGRES_EPOCH_JDATE - DUCKDB_EPOCH_DATE); // magic!
 	}
 

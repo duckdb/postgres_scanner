@@ -65,3 +65,16 @@ NULL
 1950-01-01
 4714-11-24 (BC)
 5874897-12-31
+
+statement ok
+DELETE FROM dates
+
+# date infinity
+statement ok
+INSERT INTO dates VALUES ('infinity'), ('-infinity')
+
+query I
+SELECT * FROM dates
+----
+infinity
+-infinity

@@ -220,28 +220,38 @@ public:
 			integral_part *= scale_POWER;
 		}
 
+		// we need to find out how large the fractional part is in terms of powers
+		// of ten this depends on how many times we multiplied with NBASE
+		// if that is different from scale, we need to divide the extra part away
+		// again
+		// similarly, if trailing zeroes have been suppressed, we have not been multiplying t
+		// the fractional part with NBASE often enough. If so, add additional powers
 		if (config.ndigits > config.weight + 1) {
-			fractional_part = ReadInteger<uint16_t>();
-			for (auto i = config.weight + 2; i < config.ndigits; i++) {
-				fractional_part *= NBASE;
-				if (i < config.ndigits) {
-					fractional_part += ReadInteger<uint16_t>();
-				}
-			}
-
-			// we need to find out how large the fractional part is in terms of powers
-			// of ten this depends on how many times we multiplied with NBASE
-			// if that is different from scale, we need to divide the extra part away
-			// again
-			// similarly, if trailing zeroes have been suppressed, we have not been multiplying t
-			// the fractional part with NBASE often enough. If so, add additional powers
 			auto fractional_power = (config.ndigits - config.weight - 1) * DEC_DIGITS;
 			auto fractional_power_correction = fractional_power - config.scale;
 			D_ASSERT(fractional_power_correction < 20);
-			if (fractional_power_correction >= 0) {
-				fractional_part /= OP::GetPowerOfTen(fractional_power_correction);
-			} else {
-				fractional_part *= OP::GetPowerOfTen(-fractional_power_correction);
+			fractional_part = 0;
+			for (auto i = config.weight + 1; i < config.ndigits; i++) {
+				if (i + 1 < config.ndigits) {
+					// more digits remain - no need to compensate yet
+					fractional_part *= NBASE;
+					fractional_part += ReadInteger<uint16_t>();
+				} else {
+					// last digit, compensate
+					T final_base = NBASE;
+					T final_digit = ReadInteger<uint16_t>();
+					if (fractional_power_correction >= 0) {
+						T compensation = OP::GetPowerOfTen(fractional_power_correction);
+						final_base /= compensation;
+						final_digit /= compensation;
+					} else {
+						T compensation = OP::GetPowerOfTen(-fractional_power_correction);
+						final_base *= compensation;
+						final_digit *= compensation;
+					}
+					fractional_part *= final_base;
+					fractional_part += final_digit;
+				}
 			}
 		}
 

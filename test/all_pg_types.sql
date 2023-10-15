@@ -121,3 +121,9 @@ CREATE TABLE pg_numeric_empty (
 CREATE TABLE pg_numeric_array_empty (
 	n NUMERIC[]
 );
+
+CREATE TABLE pg_json (
+	regular_json JSON,
+	binary_json JSONB
+);
+INSERT INTO pg_json VALUES ('{"a": 42, "b": "string"}', '{"a": 42, "b": "string"}');

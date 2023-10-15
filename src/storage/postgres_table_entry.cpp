@@ -79,7 +79,6 @@ static bool CopyRequiresText(const PostgresType &type) {
 }
 
 PostgresCopyFormat PostgresTableEntry::GetCopyFormat(ClientContext &context) {
-	return PostgresCopyFormat::TEXT;
 	for(auto &pg_type : postgres_types) {
 		if (CopyRequiresText(pg_type)) {
 			return PostgresCopyFormat::TEXT;

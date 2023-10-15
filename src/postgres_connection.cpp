@@ -102,14 +102,6 @@ vector<string> PostgresConnection::GetEntries(string entry_type) {
 	throw InternalException("Get Entries");
 }
 
-void PostgresConnection::GetIndexInfo(const string &index_name, string &sql, string &table_name) {
-	throw InternalException("GetIndexInfo");
-}
-
-void PostgresConnection::GetViewInfo(const string &view_name, string &sql) {
-	throw InternalException("GetViewInfo(");
-}
-
 vector<IndexInfo> PostgresConnection::GetIndexInfo(const string &table_name) {
 	return vector<IndexInfo>();
 }

@@ -36,8 +36,9 @@ struct PostgresType {
 };
 
 enum class PostgresCopyFormat {
-	BINARY = 0,
-	TEXT = 1
+	AUTO = 0,
+	BINARY = 1,
+	TEXT = 2
 };
 
 class PostgresUtils {

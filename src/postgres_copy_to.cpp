@@ -1,15 +1,16 @@
 #include "postgres_connection.hpp"
 #include "postgres_binary_writer.hpp"
 #include "postgres_text_writer.hpp"
+#include "storage/postgres_table_entry.hpp"
 
 namespace duckdb {
 
-void PostgresConnection::BeginCopyTo(PostgresCopyFormat format, const string &schema_name, const string &table_name, const vector<string> &column_names) {
+void PostgresConnection::BeginCopyTo(ClientContext &context, PostgresCopyState &state, PostgresTableEntry &table, const vector<string> &column_names) {
 	string query = "COPY ";
-	if (!schema_name.empty()) {
-		query += KeywordHelper::WriteQuoted(schema_name, '"') + ".";
+	if (!table.schema.name.empty()) {
+		query += KeywordHelper::WriteQuoted(table.schema.name, '"') + ".";
 	}
-	query += KeywordHelper::WriteQuoted(table_name, '"') + " ";
+	query += KeywordHelper::WriteQuoted(table.name, '"') + " ";
 	if (!column_names.empty()) {
 		query += "(";
 		for(idx_t c = 0; c < column_names.size(); c++) {
@@ -21,7 +22,10 @@ void PostgresConnection::BeginCopyTo(PostgresCopyFormat format, const string &sc
 		query += ") ";
 	}
 	query += "FROM STDIN (FORMAT ";
-	switch(format) {
+	if (state.format == PostgresCopyFormat::AUTO) {
+		state.format = table.GetCopyFormat(context);
+	}
+	switch(state.format) {
 	case PostgresCopyFormat::BINARY:
 		query += "BINARY";
 		break;
@@ -36,7 +40,7 @@ void PostgresConnection::BeginCopyTo(PostgresCopyFormat format, const string &sc
 	if (!result || PQresultStatus(result) != PGRES_COPY_IN) {
 		throw std::runtime_error("Failed to prepare COPY \"" + query + "\": " + string(PQresultErrorMessage(result)));
 	}
-	if (format == PostgresCopyFormat::BINARY) {
+	if (state.format == PostgresCopyFormat::BINARY) {
 		// binary copy requires a header
 		PostgresBinaryWriter writer;
 		writer.WriteHeader();
@@ -62,13 +66,13 @@ void PostgresConnection::CopyData(PostgresTextWriter &writer) {
 	CopyData(writer.stream.GetData(), writer.stream.GetPosition());
 }
 
-void PostgresConnection::FinishCopyTo(PostgresCopyFormat format) {
-	if (format == PostgresCopyFormat::BINARY) {
+void PostgresConnection::FinishCopyTo(PostgresCopyState &state) {
+	if (state.format == PostgresCopyFormat::BINARY) {
 		// binary copy requires a footer
 		PostgresBinaryWriter writer;
 		writer.WriteFooter();
 		CopyData(writer);
-	} else if (format == PostgresCopyFormat::TEXT) {
+	} else if (state.format == PostgresCopyFormat::TEXT) {
 		// text copy requires a footer
 		PostgresTextWriter writer;
 		writer.WriteFooter();
@@ -220,11 +224,10 @@ void CastToPostgresVarchar(ClientContext &context, Vector &input, Vector &result
 	}
 }
 
-
-void PostgresConnection::CopyChunk(ClientContext &context, PostgresCopyFormat format, DataChunk &chunk, DataChunk &varchar_chunk) {
+void PostgresConnection::CopyChunk(ClientContext &context, PostgresCopyState &state, DataChunk &chunk, DataChunk &varchar_chunk) {
 	chunk.Flatten();
 
-	if (format == PostgresCopyFormat::BINARY) {
+	if (state.format == PostgresCopyFormat::BINARY) {
 		PostgresBinaryWriter writer;
 		for (idx_t r = 0; r < chunk.size(); r++) {
 			writer.BeginRow(chunk.ColumnCount());
@@ -235,7 +238,7 @@ void PostgresConnection::CopyChunk(ClientContext &context, PostgresCopyFormat fo
 			writer.FinishRow();
 		}
 		CopyData(writer);
-	} else if (format == PostgresCopyFormat::TEXT) {
+	} else if (state.format == PostgresCopyFormat::TEXT) {
 		// cast columns to varchar
 		if (varchar_chunk.ColumnCount() == 0) {
 			// not initialized yet

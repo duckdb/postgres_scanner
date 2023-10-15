@@ -16,6 +16,7 @@ class PostgresBinaryWriter;
 class PostgresTextWriter;
 struct PostgresBinaryReader;
 class PostgresSchemaEntry;
+class PostgresTableEntry;
 class PostgresStatement;
 class PostgresResult;
 struct IndexInfo;
@@ -32,6 +33,10 @@ struct OwnedPostgresConnection {
 	}
 
 	PGconn *connection;
+};
+
+struct PostgresCopyState {
+	PostgresCopyFormat format = PostgresCopyFormat::AUTO;
 };
 
 class PostgresConnection {
@@ -54,16 +59,14 @@ public:
 	unique_ptr<PostgresResult> Query(const string &query);
 
 	vector<string> GetEntries(string entry_type);
-	void GetViewInfo(const string &view_name, string &sql);
-	void GetIndexInfo(const string &index_name, string &sql, string &table_name);
 	vector<IndexInfo> GetIndexInfo(const string &table_name);
 
-	void BeginCopyTo(PostgresCopyFormat format, const string &schema_name, const string &table_name, const vector<string> &column_names);
+	void BeginCopyTo(ClientContext &context, PostgresCopyState &state, PostgresTableEntry &table, const vector<string> &column_names);
 	void CopyData(data_ptr_t buffer, idx_t size);
 	void CopyData(PostgresBinaryWriter &writer);
 	void CopyData(PostgresTextWriter &writer);
-	void CopyChunk(ClientContext &context, PostgresCopyFormat format, DataChunk &chunk, DataChunk &varchar_chunk);
-	void FinishCopyTo(PostgresCopyFormat format);
+	void CopyChunk(ClientContext &context, PostgresCopyState &state, DataChunk &chunk, DataChunk &varchar_chunk);
+	void FinishCopyTo(PostgresCopyState &state);
 
 
 	void BeginCopyFrom(PostgresBinaryReader &reader, const string &query);

@@ -22,7 +22,7 @@ public:
 	}
 
 	PostgresTableEntry &table;
-	PostgresCopyFormat format;
+	PostgresCopyState copy_state;
 	DataChunk insert_chunk;
 	DataChunk varchar_chunk;
 	string update_sql;
@@ -90,10 +90,8 @@ unique_ptr<GlobalSinkState> PostgresUpdate::GetGlobalSinkState(ClientContext &co
 	result->insert_chunk.Initialize(context, insert_types);
 
 	// begin the COPY TO
-	result->format = postgres_table.GetCopyFormat(context);
-	string schema_name;
 	vector<string> column_names;
-	connection.BeginCopyTo(result->format, schema_name, table_name, column_names);
+	connection.BeginCopyTo(context, result->copy_state, postgres_table, column_names);
 	return std::move(result);
 }
 
@@ -131,7 +129,7 @@ SinkResultType PostgresUpdate::Sink(ExecutionContext &context, DataChunk &chunk,
 
 	auto &transaction = PostgresTransaction::Get(context.client, gstate.table.catalog);
 	auto &connection = transaction.GetConnection();
-	connection.CopyChunk(context.client, gstate.format, gstate.insert_chunk, gstate.varchar_chunk);
+	connection.CopyChunk(context.client, gstate.copy_state, gstate.insert_chunk, gstate.varchar_chunk);
 	gstate.update_count += chunk.size();
 	return SinkResultType::NEED_MORE_INPUT;
 }
@@ -145,7 +143,7 @@ SinkFinalizeType PostgresUpdate::Finalize(Pipeline &pipeline, Event &event, Clie
 	auto &transaction = PostgresTransaction::Get(context, gstate.table.catalog);
 	auto &connection = transaction.GetConnection();
 	// flush the copy to state
-	connection.FinishCopyTo(gstate.format);
+	connection.FinishCopyTo(gstate.copy_state);
 	// merge the update_info table into the actual table (i.e. perform the actual update)
 	connection.Execute(gstate.update_sql);
 	return SinkFinalizeType::READY;

@@ -154,11 +154,7 @@ public:
 		if (usec == POSTGRES_NINFINITY) {
 			return timestamp_t::ninfinity();
 		}
-		auto time = usec % Interval::MICROS_PER_DAY;
-		// adjust date
-		auto date = (usec / Interval::MICROS_PER_DAY) + POSTGRES_EPOCH_JDATE - DUCKDB_EPOCH_DATE;
-		// glue it back together
-		return timestamp_t(date * Interval::MICROS_PER_DAY + time);
+		return timestamp_t(usec + (POSTGRES_EPOCH_TS - DUCKDB_EPOCH_TS));
 	}
 
 	inline interval_t ReadInterval() {

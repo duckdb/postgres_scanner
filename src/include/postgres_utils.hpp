@@ -32,6 +32,11 @@ struct PostgresType {
 	vector<PostgresType> children;
 };
 
+enum class PostgresCopyFormat {
+	BINARY = 0,
+	TEXT = 1
+};
+
 class PostgresUtils {
 public:
 	static PGconn *PGConnect(const string &dsn);

@@ -66,4 +66,26 @@ TableStorageInfo PostgresTableEntry::GetStorageInfo(ClientContext &context) {
 	return result;
 }
 
+static bool CopyRequiresText(const PostgresType &type) {
+	if (type.info != PostgresTypeAnnotation::STANDARD) {
+		return true;
+	}
+	for(auto &child : type.children) {
+		if (CopyRequiresText(child)) {
+			return true;
+		}
+	}
+	return false;
+}
+
+PostgresCopyFormat PostgresTableEntry::GetCopyFormat(ClientContext &context) {
+	return PostgresCopyFormat::TEXT;
+	for(auto &pg_type : postgres_types) {
+		if (CopyRequiresText(pg_type)) {
+			return PostgresCopyFormat::TEXT;
+		}
+	}
+	return PostgresCopyFormat::BINARY;
+}
+
 } // namespace duckdb

@@ -85,7 +85,7 @@ public:
 		if (value == date_t::infinity()) {
 			return POSTGRES_DATE_INF;
 		}
-		if (value == date_t::infinity()) {
+		if (value == date_t::ninfinity()) {
 			return POSTGRES_DATE_NINF;
 		}
 		if (value.days <= POSTGRES_MIN_DATE || value.days >= POSTGRES_MAX_DATE) {
@@ -116,11 +116,7 @@ public:
 		if (value == timestamp_t::ninfinity()) {
 			return POSTGRES_NINFINITY;
 		}
-		auto time = value.value % Interval::MICROS_PER_DAY;
-		// adjust date
-		auto date = DuckDBDateToPostgres(date_t(value.value / Interval::MICROS_PER_DAY));
-		// glue it back together
-		return date * Interval::MICROS_PER_DAY + time;
+		return uint64_t(value.value - (POSTGRES_EPOCH_TS - DUCKDB_EPOCH_TS));
 	}
 
 	void WriteTimestamp(timestamp_t value) {

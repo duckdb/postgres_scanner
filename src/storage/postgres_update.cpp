@@ -90,7 +90,7 @@ unique_ptr<GlobalSinkState> PostgresUpdate::GetGlobalSinkState(ClientContext &co
 	result->insert_chunk.Initialize(context, insert_types);
 
 	// begin the COPY TO
-	result->format = PostgresCopyFormat::BINARY;
+	result->format = postgres_table.GetCopyFormat(context);
 	string schema_name;
 	vector<string> column_names;
 	connection.BeginCopyTo(result->format, schema_name, table_name, column_names);

@@ -34,11 +34,6 @@ struct OwnedPostgresConnection {
 	PGconn *connection;
 };
 
-enum class PostgresCopyFormat {
-	BINARY = 0,
-	TEXT = 1
-};
-
 class PostgresConnection {
 public:
 	explicit PostgresConnection(shared_ptr<OwnedPostgresConnection> connection = nullptr);
@@ -69,6 +64,7 @@ public:
 	void CopyData(PostgresTextWriter &writer);
 	void CopyChunk(ClientContext &context, PostgresCopyFormat format, DataChunk &chunk, DataChunk &varchar_chunk);
 	void FinishCopyTo(PostgresCopyFormat format);
+
 
 	void BeginCopyFrom(PostgresBinaryReader &reader, const string &query);
 

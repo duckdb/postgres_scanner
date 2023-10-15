@@ -10,7 +10,7 @@
 namespace duckdb {
 
 PostgresTransaction::PostgresTransaction(PostgresCatalog &postgres_catalog, TransactionManager &manager, ClientContext &context)
-    : Transaction(manager, context), postgres_catalog(postgres_catalog), schemas(postgres_catalog, *this) {
+    : Transaction(manager, context), postgres_catalog(postgres_catalog) {
 	connection = PostgresConnection::Open(postgres_catalog.path);
 }
 

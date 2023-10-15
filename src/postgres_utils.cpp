@@ -45,7 +45,7 @@ string PostgresUtils::TypeToString(const LogicalType &input) {
 	}
 }
 
-LogicalType RemoveAlias(const LogicalType &type) {
+LogicalType PostgresUtils::RemoveAlias(const LogicalType &type) {
 	switch(type.id()) {
 	case LogicalTypeId::STRUCT: {
 		auto child_types = StructType::GetChildTypes(type);
@@ -184,6 +184,23 @@ LogicalType PostgresUtils::ToPostgresType(const LogicalType &input) {
 	default:
 		return LogicalType::VARCHAR;
 	}
+}
+
+PostgresType PostgresUtils::CreateEmptyPostgresType(const LogicalType &type) {
+	PostgresType result;
+	switch(type.id()) {
+	case LogicalTypeId::STRUCT:
+		for(auto &child_type : StructType::GetChildTypes(type)) {
+			result.children.push_back(CreateEmptyPostgresType(child_type.second));
+		}
+		break;
+	case LogicalTypeId::LIST:
+		result.children.push_back(CreateEmptyPostgresType(ListType::GetChildType(type)));
+		break;
+	default:
+		break;
+	}
+	return result;
 }
 
 // taken from pg_type_d.h

@@ -9,7 +9,6 @@
 #pragma once
 
 #include "duckdb/transaction/transaction.hpp"
-#include "storage/postgres_schema_set.hpp"
 #include "postgres_connection.hpp"
 
 namespace duckdb {
@@ -27,16 +26,11 @@ public:
 	void Rollback();
 
 	PostgresConnection &GetConnection();
-	PostgresSchemaSet &GetSchemas() {
-		return schemas;
-	}
-
 	static PostgresTransaction &Get(ClientContext &context, Catalog &catalog);
 
 private:
 	PostgresCatalog &postgres_catalog;
 	PostgresConnection connection;
-	PostgresSchemaSet schemas;
 };
 
 } // namespace duckdb

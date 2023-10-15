@@ -78,7 +78,8 @@ unique_ptr<GlobalSinkState> PostgresInsert::GetGlobalSinkState(ClientContext &co
 	auto &connection = transaction.GetConnection();
 	auto insert_columns = GetInsertColumns(*this, *insert_table);
 	auto result = make_uniq<PostgresInsertGlobalState>(context, insert_table);
-	connection.BeginCopyTo(context, result->copy_state, *insert_table, insert_columns);
+	auto format = insert_table->GetCopyFormat(context);
+	connection.BeginCopyTo(context, result->copy_state, format, insert_table->schema.name, insert_table->name, insert_columns);
 	return std::move(result);
 }
 

@@ -14,8 +14,8 @@ struct PGTypeInfo {
 	string name;
 };
 
-PostgresTypeSet::PostgresTypeSet(PostgresSchemaEntry &schema, PostgresTransaction &transaction) :
-    PostgresCatalogSet(schema.ParentCatalog(), transaction), schema(schema) {}
+PostgresTypeSet::PostgresTypeSet(PostgresSchemaEntry &schema) :
+    PostgresCatalogSet(schema.ParentCatalog()), schema(schema) {}
 
 void PostgresTypeSet::CreateEnum(PostgresResult &result, idx_t start_row, idx_t end_row) {
 	PostgresType postgres_type;
@@ -34,10 +34,11 @@ void PostgresTypeSet::CreateEnum(PostgresResult &result, idx_t start_row, idx_t 
 	CreateEntry(std::move(type_entry));
 }
 
-void PostgresTypeSet::LoadEnumTypes(vector<PGTypeInfo> &enum_info) {
+void PostgresTypeSet::LoadEnumTypes(PostgresTransaction &transaction, vector<PGTypeInfo> &enum_info) {
 	if (enum_info.empty()) {
 		return;
 	}
+
 	auto &conn = transaction.GetConnection();
 	// compose the query
 	// we create a single big query that uses UNION ALL to get the values of all enums at the same time
@@ -72,7 +73,7 @@ void PostgresTypeSet::LoadEnumTypes(vector<PGTypeInfo> &enum_info) {
 	}
 }
 
-void PostgresTypeSet::CreateCompositeType(PostgresResult &result, idx_t start_row, idx_t end_row, unordered_map<idx_t, string> &name_map) {
+void PostgresTypeSet::CreateCompositeType(PostgresTransaction &transaction, PostgresResult &result, idx_t start_row, idx_t end_row, unordered_map<idx_t, string> &name_map) {
 	PostgresType postgres_type;
 	CreateTypeInfo info;
 	postgres_type.oid = result.GetInt64(start_row, 0);
@@ -93,7 +94,7 @@ void PostgresTypeSet::CreateCompositeType(PostgresResult &result, idx_t start_ro
 	CreateEntry(std::move(type_entry));
 }
 
-void PostgresTypeSet::LoadCompositeTypes(vector<PGTypeInfo> &composite_info) {
+void PostgresTypeSet::LoadCompositeTypes(PostgresTransaction &transaction, vector<PGTypeInfo> &composite_info) {
 	if (composite_info.empty()) {
 		return;
 	}
@@ -123,18 +124,18 @@ ORDER BY attrelid, attnum;
 		auto oid = result->GetInt64(row, 0);
 		if (oid != current_oid) {
 			if (row > start) {
-				CreateCompositeType(*result, start, row, name_map);
+				CreateCompositeType(transaction, *result, start, row, name_map);
 			}
 			start = row;
 			current_oid = oid;
 		}
 	}
 	if (count > start) {
-		CreateCompositeType(*result, start, count, name_map);
+		CreateCompositeType(transaction, *result, start, count, name_map);
 	}
 }
 
-void PostgresTypeSet::LoadEntries() {
+void PostgresTypeSet::LoadEntries(ClientContext &context) {
 	auto query = StringUtil::Replace(R"(
 SELECT t.oid AS oid, t.typrelid AS id, t.typname as type, t.typtype as typeid
 FROM pg_type t
@@ -144,6 +145,7 @@ AND NOT EXISTS(SELECT 1 FROM pg_catalog.pg_type el WHERE el.oid = t.typelem AND 
 AND n.nspname=${SCHEMA_NAME};
 )", "${SCHEMA_NAME}", KeywordHelper::WriteQuoted(schema.name));
 
+	auto &transaction = PostgresTransaction::Get(context, catalog);
 	auto &conn = transaction.GetConnection();
 	auto result = conn.Query(query);
 	auto rows = result->Count();
@@ -167,8 +169,8 @@ AND n.nspname=${SCHEMA_NAME};
 			composite_types.push_back(std::move(info));
 		}
 	}
-	LoadEnumTypes(enum_types);
-	LoadCompositeTypes(composite_types);
+	LoadEnumTypes(transaction, enum_types);
+	LoadCompositeTypes(transaction, composite_types);
 }
 
 string GetCreateTypeSQL(CreateTypeInfo &info) {
@@ -209,12 +211,15 @@ string GetCreateTypeSQL(CreateTypeInfo &info) {
 	return sql;
 }
 
-optional_ptr<CatalogEntry> PostgresTypeSet::CreateType(CreateTypeInfo &info) {
+optional_ptr<CatalogEntry> PostgresTypeSet::CreateType(ClientContext &context, CreateTypeInfo &info) {
+	auto &transaction = PostgresTransaction::Get(context, catalog);
 	auto &conn = transaction.GetConnection();
 
 	auto create_sql = GetCreateTypeSQL(info);
 	conn.Execute(create_sql);
-	auto type_entry = make_uniq<TypeCatalogEntry>(catalog, schema, info);
+	info.type.SetAlias(info.name);
+	auto pg_type = PostgresUtils::CreateEmptyPostgresType(info.type);
+	auto type_entry = make_uniq<PostgresTypeEntry>(catalog, schema, info, pg_type);
 	return CreateEntry(std::move(type_entry));
 }
 

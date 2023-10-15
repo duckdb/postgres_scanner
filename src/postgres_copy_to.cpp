@@ -5,12 +5,12 @@
 
 namespace duckdb {
 
-void PostgresConnection::BeginCopyTo(ClientContext &context, PostgresCopyState &state, PostgresTableEntry &table, const vector<string> &column_names) {
+void PostgresConnection::BeginCopyTo(ClientContext &context, PostgresCopyState &state, PostgresCopyFormat format, const string &schema_name, const string &table_name, const vector<string> &column_names) {
 	string query = "COPY ";
-	if (!table.schema.name.empty()) {
-		query += KeywordHelper::WriteQuoted(table.schema.name, '"') + ".";
+	if (!schema_name.empty()) {
+		query += KeywordHelper::WriteQuoted(schema_name, '"') + ".";
 	}
-	query += KeywordHelper::WriteQuoted(table.name, '"') + " ";
+	query += KeywordHelper::WriteQuoted(table_name, '"') + " ";
 	if (!column_names.empty()) {
 		query += "(";
 		for(idx_t c = 0; c < column_names.size(); c++) {
@@ -22,9 +22,7 @@ void PostgresConnection::BeginCopyTo(ClientContext &context, PostgresCopyState &
 		query += ") ";
 	}
 	query += "FROM STDIN (FORMAT ";
-	if (state.format == PostgresCopyFormat::AUTO) {
-		state.format = table.GetCopyFormat(context);
-	}
+	state.format = format;
 	switch(state.format) {
 	case PostgresCopyFormat::BINARY:
 		query += "BINARY";

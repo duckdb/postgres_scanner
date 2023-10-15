@@ -18,24 +18,24 @@ class PostgresSchemaEntry;
 
 class PostgresTableSet : public PostgresCatalogSet {
 public:
-	explicit PostgresTableSet(PostgresSchemaEntry &schema, PostgresTransaction &transaction);
+	explicit PostgresTableSet(PostgresSchemaEntry &schema);
 
 public:
-	optional_ptr<CatalogEntry> CreateTable(BoundCreateTableInfo &info);
+	optional_ptr<CatalogEntry> CreateTable(ClientContext &context, BoundCreateTableInfo &info);
 
-	unique_ptr<PostgresTableInfo> GetTableInfo(PostgresResult &result, const string &table_name);
+	optional_ptr<CatalogEntry> RefreshTable(ClientContext &context, const string &table_name);
 
 	void AlterTable(ClientContext &context, AlterTableInfo &info);
 
 protected:
-	void LoadEntries() override;
+	void LoadEntries(ClientContext &context) override;
 
-	void AlterTable(RenameTableInfo &info);
-	void AlterTable(RenameColumnInfo &info);
-	void AlterTable(AddColumnInfo &info);
-	void AlterTable(RemoveColumnInfo &info);
+	void AlterTable(ClientContext &context, RenameTableInfo &info);
+	void AlterTable(ClientContext &context, RenameColumnInfo &info);
+	void AlterTable(ClientContext &context, AddColumnInfo &info);
+	void AlterTable(ClientContext &context, RemoveColumnInfo &info);
 
-	void AddColumn(PostgresResult &result, idx_t row, PostgresTableInfo &table_info, idx_t column_offset = 0);
+	void AddColumn(PostgresTransaction &transaction, PostgresResult &result, idx_t row, PostgresTableInfo &table_info, idx_t column_offset = 0);
 
 protected:
 	PostgresSchemaEntry &schema;

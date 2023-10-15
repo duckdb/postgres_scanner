@@ -19,18 +19,18 @@ struct PGTypeInfo;
 
 class PostgresTypeSet : public PostgresCatalogSet {
 public:
-	explicit PostgresTypeSet(PostgresSchemaEntry &schema, PostgresTransaction &transaction);
+	explicit PostgresTypeSet(PostgresSchemaEntry &schema);
 
 public:
-	optional_ptr<CatalogEntry> CreateType(CreateTypeInfo &info);
+	optional_ptr<CatalogEntry> CreateType(ClientContext &context, CreateTypeInfo &info);
 
 protected:
-	void LoadEntries() override;
+	void LoadEntries(ClientContext &context) override;
 
-	void LoadEnumTypes(vector<PGTypeInfo> &enum_info);
+	void LoadEnumTypes(PostgresTransaction &transaction, vector<PGTypeInfo> &enum_info);
 	void CreateEnum(PostgresResult &result, idx_t start_row, idx_t end_row);
-	void LoadCompositeTypes(vector<PGTypeInfo> &composite_info);
-	void CreateCompositeType(PostgresResult &result, idx_t start_row, idx_t end_row, unordered_map<idx_t, string> &name_map);
+	void LoadCompositeTypes(PostgresTransaction &transaction, vector<PGTypeInfo> &composite_info);
+	void CreateCompositeType(PostgresTransaction &transaction, PostgresResult &result, idx_t start_row, idx_t end_row, unordered_map<idx_t, string> &name_map);
 
 protected:
 	PostgresSchemaEntry &schema;

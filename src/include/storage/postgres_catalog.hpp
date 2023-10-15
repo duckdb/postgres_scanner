@@ -11,6 +11,7 @@
 #include "duckdb/catalog/catalog.hpp"
 #include "duckdb/common/enums/access_mode.hpp"
 #include "postgres_connection.hpp"
+#include "storage/postgres_schema_set.hpp"
 
 namespace duckdb {
 class PostgresSchemaEntry;
@@ -60,6 +61,9 @@ public:
 
 private:
 	void DropSchema(ClientContext &context, DropInfo &info) override;
+
+private:
+	PostgresSchemaSet schemas;
 };
 
 } // namespace duckdb

@@ -16,10 +16,10 @@ class PostgresSchemaEntry;
 
 class PostgresIndexSet : public PostgresCatalogSet {
 public:
-	PostgresIndexSet(PostgresSchemaEntry &schema, PostgresTransaction &transaction);
+	PostgresIndexSet(PostgresSchemaEntry &schema);
 
 protected:
-	void LoadEntries() override;
+	void LoadEntries(ClientContext &context) override;
 
 protected:
 	PostgresSchemaEntry &schema;

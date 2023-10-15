@@ -4,32 +4,34 @@
 
 namespace duckdb {
 
-PostgresSchemaSet::PostgresSchemaSet(Catalog &catalog, PostgresTransaction &transaction) :
-    PostgresCatalogSet(catalog, transaction) {}
+PostgresSchemaSet::PostgresSchemaSet(Catalog &catalog) :
+    PostgresCatalogSet(catalog) {}
 
-void PostgresSchemaSet::LoadEntries() {
+void PostgresSchemaSet::LoadEntries(ClientContext &context) {
 	auto query = R"(
 SELECT schema_name
 FROM information_schema.schemata;
 )";
 
+	auto &transaction = PostgresTransaction::Get(context, catalog);
 	auto &conn = transaction.GetConnection();
 	auto result = conn.Query(query);
 	auto rows = result->Count();
 
 	for(idx_t row = 0; row < rows; row++) {
 		auto schema_name = result->GetString(row, 0);
-		auto schema = make_uniq<PostgresSchemaEntry>(transaction, catalog, schema_name);
-		entries.insert(make_pair(schema_name, std::move(schema)));
+		auto schema = make_uniq<PostgresSchemaEntry>(catalog, schema_name);
+		CreateEntry(std::move(schema));
 	}
 }
 
-optional_ptr<CatalogEntry> PostgresSchemaSet::CreateSchema(CreateSchemaInfo &info) {
+optional_ptr<CatalogEntry> PostgresSchemaSet::CreateSchema(ClientContext &context, CreateSchemaInfo &info) {
+	auto &transaction = PostgresTransaction::Get(context, catalog);
 	auto &conn = transaction.GetConnection();
 
 	string create_sql = "CREATE SCHEMA " + KeywordHelper::WriteQuoted(info.schema, '"');
 	conn.Execute(create_sql);
-	auto schema_entry = make_uniq<PostgresSchemaEntry>(transaction, catalog, info.schema);
+	auto schema_entry = make_uniq<PostgresSchemaEntry>(catalog, info.schema);
 	return CreateEntry(std::move(schema_entry));
 }
 

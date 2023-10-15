@@ -23,7 +23,7 @@ ROLLBACK
 statement error
 SELECT * FROM s.test
 ----
-Table with name test does not exist
+not found
 
 statement ok
 CREATE TABLE s.test(i INTEGER);

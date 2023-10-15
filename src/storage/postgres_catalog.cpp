@@ -9,7 +9,7 @@
 namespace duckdb {
 
 PostgresCatalog::PostgresCatalog(AttachedDatabase &db_p, const string &path, AccessMode access_mode)
-    : Catalog(db_p), path(path), access_mode(access_mode) {
+    : Catalog(db_p), path(path), access_mode(access_mode), schemas(*this) {
 }
 
 PostgresCatalog::~PostgresCatalog() = default;
@@ -25,21 +25,19 @@ optional_ptr<CatalogEntry> PostgresCatalog::CreateSchema(CatalogTransaction tran
 		try_drop.name = info.schema;
 		try_drop.if_not_found = OnEntryNotFound::RETURN_NULL;
 		try_drop.cascade = false;
-		postgres_transaction.GetSchemas().DropEntry(try_drop);
+		schemas.DropEntry(transaction.GetContext(), try_drop);
 	}
-	return postgres_transaction.GetSchemas().CreateSchema(info);
+	return schemas.CreateSchema(transaction.GetContext(), info);
 }
 
 void PostgresCatalog::DropSchema(ClientContext &context, DropInfo &info) {
-	auto &postgres_transaction = PostgresTransaction::Get(context, *this);
-	return postgres_transaction.GetSchemas().DropEntry(info);
+	return schemas.DropEntry(context, info);
 }
 
 void PostgresCatalog::ScanSchemas(ClientContext &context, std::function<void(SchemaCatalogEntry &)> callback) {
-	auto &transaction = PostgresTransaction::Get(context, *this);
-	for(auto &entry : transaction.GetSchemas().GetEntries()) {
-		callback(entry.second->Cast<PostgresSchemaEntry>());
-	}
+	schemas.Scan(context, [&](CatalogEntry &schema) {
+		callback(schema.Cast<PostgresSchemaEntry>());
+	});
 }
 
 optional_ptr<SchemaCatalogEntry> PostgresCatalog::GetSchema(CatalogTransaction transaction, const string &schema_name,
@@ -49,7 +47,7 @@ optional_ptr<SchemaCatalogEntry> PostgresCatalog::GetSchema(CatalogTransaction t
 		return GetSchema(transaction, "public", if_not_found, error_context);
 	}
 	auto &postgres_transaction = PostgresTransaction::Get(transaction.GetContext(), *this);
-	auto entry = postgres_transaction.GetSchemas().GetEntry(schema_name);
+	auto entry = schemas.GetEntry(transaction.GetContext(), schema_name);
 	if (!entry && if_not_found != OnEntryNotFound::RETURN_NULL) {
 		throw BinderException("Schema with name \"%s\" not found", schema_name);
 	}

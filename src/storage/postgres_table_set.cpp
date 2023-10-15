@@ -14,10 +14,10 @@
 
 namespace duckdb {
 
-PostgresTableSet::PostgresTableSet(PostgresSchemaEntry &schema, PostgresTransaction &transaction) :
-    PostgresCatalogSet(schema.ParentCatalog(), transaction), schema(schema) {}
+PostgresTableSet::PostgresTableSet(PostgresSchemaEntry &schema) :
+    PostgresCatalogSet(schema.ParentCatalog()), schema(schema) {}
 
-void PostgresTableSet::AddColumn(PostgresResult &result, idx_t row, PostgresTableInfo &table_info, idx_t column_offset) {
+void PostgresTableSet::AddColumn(PostgresTransaction &transaction, PostgresResult &result, idx_t row, PostgresTableInfo &table_info, idx_t column_offset) {
 	PostgresTypeData type_info;
 	idx_t column_index = column_offset;
 	auto column_name = result.GetString(row, column_index);
@@ -46,7 +46,7 @@ void PostgresTableSet::AddColumn(PostgresResult &result, idx_t row, PostgresTabl
 	}
 }
 
-void PostgresTableSet::LoadEntries() {
+void PostgresTableSet::LoadEntries(ClientContext &context) {
 	auto query = StringUtil::Replace(R"(
 SELECT table_name, column_name, udt_name, column_default, is_nullable, numeric_precision, numeric_scale
 FROM information_schema.columns
@@ -54,6 +54,7 @@ WHERE table_schema=${SCHEMA_NAME}
 ORDER BY table_name, ordinal_position;
 )", "${SCHEMA_NAME}", KeywordHelper::WriteQuoted(schema.name));
 
+	auto &transaction = PostgresTransaction::Get(context, catalog);
 	auto &conn = transaction.GetConnection();
 	auto result = conn.Query(query);
 	auto rows = result->Count();
@@ -69,28 +70,39 @@ ORDER BY table_name, ordinal_position;
 			}
 			info = make_uniq<PostgresTableInfo>(schema, table_name);
 		}
-		AddColumn(*result, row, *info, 1);
+		AddColumn(transaction, *result, row, *info, 1);
 	}
 	if (info) {
 		tables.push_back(std::move(info));
 	}
 	for(auto &tbl_info : tables) {
-		auto table_name = tbl_info->GetTableName();
 		auto table_entry = make_uniq<PostgresTableEntry>(catalog, schema, *tbl_info);
-		entries.insert(make_pair(table_name, std::move(table_entry)));
+		CreateEntry(std::move(table_entry));
 	}
 }
 
-unique_ptr<PostgresTableInfo> PostgresTableSet::GetTableInfo(PostgresResult &result, const string &table_name) {
-	auto rows = result.Count();
+optional_ptr<CatalogEntry> PostgresTableSet::RefreshTable(ClientContext &context, const string &table_name) {
+	auto &transaction = PostgresTransaction::Get(context, catalog);
+	auto query = StringUtil::Replace(StringUtil::Replace(R"(
+SELECT column_name, udt_name, column_default, is_nullable, numeric_precision, numeric_scale
+FROM information_schema.columns
+WHERE table_schema=${SCHEMA_NAME} AND table_name=${TABLE_NAME}
+ORDER BY table_name, ordinal_position;
+)", "${SCHEMA_NAME}", KeywordHelper::WriteQuoted(schema.name)), "${TABLE_NAME}", KeywordHelper::WriteQuoted(table_name));
+	auto &conn = transaction.GetConnection();
+	auto result = conn.Query(query);
+	auto rows = result->Count();
 	if (rows == 0) {
 		throw InvalidInputException("Table %s does not contain any columns.", table_name);
 	}
-	auto table_info = make_uniq<PostgresTableInfo>();
+	auto table_info = make_uniq<PostgresTableInfo>(schema, table_name);
 	for(idx_t row = 0; row < rows; row++) {
-		AddColumn(result, row, *table_info);
+		AddColumn(transaction, *result, row, *table_info);
 	}
-	return table_info;
+	auto table_entry = make_uniq<PostgresTableEntry>(catalog, schema, *table_info);
+	auto table_ptr = table_entry.get();
+	CreateEntry(std::move(table_entry));
+	return table_ptr;
 }
 
 // FIXME - this is almost entirely copied from TableCatalogEntry::ColumnsToSQL - should be unified
@@ -199,7 +211,8 @@ string GetCreateTableSQL(CreateTableInfo &info) {
 	return ss.str();
 }
 
-optional_ptr<CatalogEntry> PostgresTableSet::CreateTable(BoundCreateTableInfo &info) {
+optional_ptr<CatalogEntry> PostgresTableSet::CreateTable(ClientContext &context, BoundCreateTableInfo &info) {
+	auto &transaction = PostgresTransaction::Get(context, catalog);
 	auto &conn = transaction.GetConnection();
 
 	auto create_sql = GetCreateTableSQL(info.Base());
@@ -208,7 +221,8 @@ optional_ptr<CatalogEntry> PostgresTableSet::CreateTable(BoundCreateTableInfo &i
 	return CreateEntry(std::move(tbl_entry));
 }
 
-void PostgresTableSet::AlterTable(RenameTableInfo &info) {
+void PostgresTableSet::AlterTable(ClientContext &context, RenameTableInfo &info) {
+	auto &transaction = PostgresTransaction::Get(context, catalog);
 	string sql = "ALTER TABLE ";
 	sql += KeywordHelper::WriteOptionallyQuoted(info.name);
 	sql += " RENAME TO ";
@@ -216,7 +230,8 @@ void PostgresTableSet::AlterTable(RenameTableInfo &info) {
 	transaction.GetConnection().Execute(sql);
 }
 
-void PostgresTableSet::AlterTable(RenameColumnInfo &info) {
+void PostgresTableSet::AlterTable(ClientContext &context, RenameColumnInfo &info) {
+	auto &transaction = PostgresTransaction::Get(context, catalog);
 	string sql = "ALTER TABLE ";
 	sql += KeywordHelper::WriteOptionallyQuoted(info.name);
 	sql += " RENAME COLUMN  ";
@@ -227,7 +242,8 @@ void PostgresTableSet::AlterTable(RenameColumnInfo &info) {
 	transaction.GetConnection().Execute(sql);
 }
 
-void PostgresTableSet::AlterTable(AddColumnInfo &info) {
+void PostgresTableSet::AlterTable(ClientContext &context, AddColumnInfo &info) {
+	auto &transaction = PostgresTransaction::Get(context, catalog);
 	string sql = "ALTER TABLE ";
 	sql += KeywordHelper::WriteOptionallyQuoted(info.name);
 	sql += " ADD COLUMN  ";
@@ -240,7 +256,8 @@ void PostgresTableSet::AlterTable(AddColumnInfo &info) {
 	transaction.GetConnection().Execute(sql);
 }
 
-void PostgresTableSet::AlterTable(RemoveColumnInfo &info) {
+void PostgresTableSet::AlterTable(ClientContext &context, RemoveColumnInfo &info) {
+	auto &transaction = PostgresTransaction::Get(context, catalog);
 	string sql = "ALTER TABLE ";
 	sql += KeywordHelper::WriteOptionallyQuoted(info.name);
 	sql += " DROP COLUMN  ";
@@ -254,16 +271,16 @@ void PostgresTableSet::AlterTable(RemoveColumnInfo &info) {
 void PostgresTableSet::AlterTable(ClientContext &context, AlterTableInfo &alter) {
 	switch (alter.alter_table_type) {
 	case AlterTableType::RENAME_TABLE:
-		AlterTable(alter.Cast<RenameTableInfo>());
+		AlterTable(context, alter.Cast<RenameTableInfo>());
 		break;
 	case AlterTableType::RENAME_COLUMN:
-		AlterTable(alter.Cast<RenameColumnInfo>());
+		AlterTable(context, alter.Cast<RenameColumnInfo>());
 		break;
 	case AlterTableType::ADD_COLUMN:
-		AlterTable(alter.Cast<AddColumnInfo>());
+		AlterTable(context, alter.Cast<AddColumnInfo>());
 		break;
 	case AlterTableType::REMOVE_COLUMN:
-		AlterTable(alter.Cast<RemoveColumnInfo>());
+		AlterTable(context, alter.Cast<RemoveColumnInfo>());
 		break;
 	default:
 		throw BinderException("Unsupported ALTER TABLE type - Postgres tables only support RENAME TABLE, RENAME COLUMN, "

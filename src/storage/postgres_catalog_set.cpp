@@ -3,14 +3,15 @@
 #include "duckdb/parser/parsed_data/drop_info.hpp"
 namespace duckdb {
 
-PostgresCatalogSet::PostgresCatalogSet(Catalog &catalog, PostgresTransaction &transaction) :
-    catalog(catalog), transaction(transaction), is_loaded(false) {}
+PostgresCatalogSet::PostgresCatalogSet(Catalog &catalog) :
+    catalog(catalog), is_loaded(false) {}
 
-optional_ptr<CatalogEntry> PostgresCatalogSet::GetEntry(const string &name) {
+optional_ptr<CatalogEntry> PostgresCatalogSet::GetEntry(ClientContext &context, const string &name) {
 	if (!is_loaded) {
 		is_loaded = true;
-		LoadEntries();
+		LoadEntries(context);
 	}
+	lock_guard<mutex> l(entry_lock);
 	auto entry = entries.find(name);
 	if (entry == entries.end()) {
 		return nullptr;
@@ -18,8 +19,7 @@ optional_ptr<CatalogEntry> PostgresCatalogSet::GetEntry(const string &name) {
 	return entry->second.get();
 }
 
-void PostgresCatalogSet::DropEntry(DropInfo &info) {
-	entries.erase(info.name);
+void PostgresCatalogSet::DropEntry(ClientContext &context, DropInfo &info) {
 	string drop_query = "DROP ";
 	drop_query += CatalogTypeToString(info.type) + " ";
 	if (info.if_not_found == OnEntryNotFound::RETURN_NULL) {
@@ -29,22 +29,32 @@ void PostgresCatalogSet::DropEntry(DropInfo &info) {
 	if (info.cascade) {
 		drop_query += "CASCADE";
 	}
+	auto &transaction = PostgresTransaction::Get(context, catalog);
 	auto &conn = transaction.GetConnection();
 	conn.Execute(drop_query);
+
+	// erase the entry from the catalog set
+	lock_guard<mutex> l(entry_lock);
+	entries.erase(info.name);
 }
 
-void PostgresCatalogSet::Scan(const std::function<void(CatalogEntry &)> &callback) {
+void PostgresCatalogSet::Scan(ClientContext &context, const std::function<void(CatalogEntry &)> &callback) {
 	if (!is_loaded) {
 		is_loaded = true;
-		LoadEntries();
+		LoadEntries(context);
 	}
+	lock_guard<mutex> l(entry_lock);
 	for(auto &entry : entries) {
 		callback(*entry.second);
 	}
 }
 
 optional_ptr<CatalogEntry> PostgresCatalogSet::CreateEntry(unique_ptr<CatalogEntry> entry) {
+	lock_guard<mutex> l(entry_lock);
 	auto result = entry.get();
+	if (result->name.empty()) {
+		throw InternalException("PostgresCatalogSet::CreateEntry called with empty name");
+	}
 	entries.insert(make_pair(result->name, std::move(entry)));
 	return result;
 }

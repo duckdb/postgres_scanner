@@ -7,18 +7,14 @@
 
 namespace duckdb {
 
-PostgresType PostgresTypeFromType(const LogicalType &type) {
-	PostgresType result;
-	if (type.id() == LogicalTypeId::LIST) {
-		result.children.push_back(PostgresTypeFromType(ListType::GetChildType(type)));
-	}
-	return result;
-}
-
 PostgresTableEntry::PostgresTableEntry(Catalog &catalog, SchemaCatalogEntry &schema, CreateTableInfo &info)
 	: TableCatalogEntry(catalog, schema, info) {
-	for(auto &col : columns.Logical()) {
-		postgres_types.push_back(PostgresTypeFromType(col.GetType()));
+	for(idx_t c = 0; c < columns.LogicalColumnCount(); c++) {
+		auto &col = columns.GetColumnMutable(LogicalIndex(c));
+		if (col.GetType().HasAlias()) {
+			col.TypeMutable() = PostgresUtils::RemoveAlias(col.GetType());
+		}
+		postgres_types.push_back(PostgresUtils::CreateEmptyPostgresType(col.GetType()));
 	}
 }
 

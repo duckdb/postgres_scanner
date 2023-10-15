@@ -30,7 +30,7 @@ enum class PostgresTypeAnnotation {
 };
 
 struct PostgresType {
-	idx_t oid;
+	idx_t oid = 0;
 	PostgresTypeAnnotation info = PostgresTypeAnnotation::STANDARD;
 	vector<PostgresType> children;
 };
@@ -50,6 +50,8 @@ public:
 	static string TypeToString(const LogicalType &input);
 	static uint32_t ToPostgresOid(const LogicalType &input);
 	static bool SupportedPostgresOid(const LogicalType &input);
+	static LogicalType RemoveAlias(const LogicalType &type);
+	static PostgresType CreateEmptyPostgresType(const LogicalType &type);
 };
 
 } // namespace duckdb

@@ -13,9 +13,9 @@
 
 namespace duckdb {
 
-PostgresSchemaEntry::PostgresSchemaEntry(PostgresTransaction &transaction, Catalog &catalog, string name) :
-    SchemaCatalogEntry(catalog, std::move(name), true), tables(*this, transaction), indexes(*this, transaction),
-	types(*this, transaction) {
+PostgresSchemaEntry::PostgresSchemaEntry(Catalog &catalog, string name) :
+    SchemaCatalogEntry(catalog, std::move(name), true), tables(*this), indexes(*this),
+	types(*this) {
 }
 
 PostgresTransaction &GetPostgresTransaction(CatalogTransaction transaction) {
@@ -42,7 +42,7 @@ optional_ptr<CatalogEntry> PostgresSchemaEntry::CreateTable(CatalogTransaction t
 		// CREATE OR REPLACE - drop any existing entries first (if any)
 		TryDropEntry(transaction.GetContext(), CatalogType::TABLE_ENTRY, table_name);
 	}
-	return tables.CreateTable(info);
+	return tables.CreateTable(transaction.GetContext(), info);
 }
 
 optional_ptr<CatalogEntry> PostgresSchemaEntry::CreateFunction(CatalogTransaction transaction, CreateFunctionInfo &info) {
@@ -126,7 +126,7 @@ optional_ptr<CatalogEntry> PostgresSchemaEntry::CreateView(CatalogTransaction tr
 	}
 	auto &postgres_transaction = GetPostgresTransaction(transaction);
 	postgres_transaction.GetConnection().Execute(GetCreateViewSQL(info));
-	return GetEntry(transaction, CatalogType::VIEW_ENTRY, info.view_name);
+	return tables.RefreshTable(transaction.GetContext(), info.view_name);
 }
 
 optional_ptr<CatalogEntry> PostgresSchemaEntry::CreateType(CatalogTransaction transaction, CreateTypeInfo &info) {
@@ -136,7 +136,7 @@ optional_ptr<CatalogEntry> PostgresSchemaEntry::CreateType(CatalogTransaction tr
 		// CREATE OR REPLACE - drop any existing entries first (if any)
 		TryDropEntry(transaction.GetContext(), CatalogType::TYPE_ENTRY, info.name);
 	}
-	return types.CreateType(info);
+	return types.CreateType(transaction.GetContext(), info);
 }
 
 optional_ptr<CatalogEntry> PostgresSchemaEntry::CreateSequence(CatalogTransaction transaction, CreateSequenceInfo &info) {
@@ -185,17 +185,17 @@ bool CatalogTypeIsSupported(CatalogType type) {
 
 void PostgresSchemaEntry::Scan(ClientContext &context, CatalogType type,
                              const std::function<void(CatalogEntry &)> &callback) {
-	Scan(type, callback);
-}
-void PostgresSchemaEntry::Scan(CatalogType type, const std::function<void(CatalogEntry &)> &callback) {
 	if (!CatalogTypeIsSupported(type)) {
 		return;
 	}
-	GetCatalogSet(type).Scan(callback);
+	GetCatalogSet(type).Scan(context, callback);
+}
+void PostgresSchemaEntry::Scan(CatalogType type, const std::function<void(CatalogEntry &)> &callback) {
+	throw NotImplementedException("Scan without context not supported");
 }
 
 void PostgresSchemaEntry::DropEntry(ClientContext &context, DropInfo &info) {
-	GetCatalogSet(info.type).DropEntry(info);
+	GetCatalogSet(info.type).DropEntry(context, info);
 }
 
 optional_ptr<CatalogEntry> PostgresSchemaEntry::GetEntry(CatalogTransaction transaction, CatalogType type,
@@ -203,7 +203,7 @@ optional_ptr<CatalogEntry> PostgresSchemaEntry::GetEntry(CatalogTransaction tran
 	if (!CatalogTypeIsSupported(type)) {
 		return nullptr;
 	}
-	return GetCatalogSet(type).GetEntry(name);
+	return GetCatalogSet(type).GetEntry(transaction.GetContext(), name);
 }
 
 PostgresCatalogSet &PostgresSchemaEntry::GetCatalogSet(CatalogType type) {

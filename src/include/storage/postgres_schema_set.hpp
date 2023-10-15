@@ -16,13 +16,13 @@ struct CreateSchemaInfo;
 
 class PostgresSchemaSet : public PostgresCatalogSet {
 public:
-	explicit PostgresSchemaSet(Catalog &catalog, PostgresTransaction &transaction);
+	explicit PostgresSchemaSet(Catalog &catalog);
 
 public:
-	optional_ptr<CatalogEntry> CreateSchema(CreateSchemaInfo &info);
+	optional_ptr<CatalogEntry> CreateSchema(ClientContext &context, CreateSchemaInfo &info);
 
 protected:
-	void LoadEntries() override;
+	void LoadEntries(ClientContext &context) override;
 };
 
 } // namespace duckdb

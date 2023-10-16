@@ -11,26 +11,14 @@
 #include "duckdb.hpp"
 #include "postgres_utils.hpp"
 #include "postgres_connection.hpp"
+#include "storage/postgres_connection_pool.hpp"
 
 namespace duckdb {
 class PostgresTransaction;
 
-struct PostgresTypeInfo {
-	string typname;
-	int64_t typlen;
-	string typtype;
-	string nspname;
-};
-
-struct PostgresColumnInfo {
-	string attname;
-	int atttypmod;
-	PostgresTypeInfo type_info;
-	int64_t typelem; // OID pointer for arrays
-	PostgresTypeInfo elem_info;
-};
-
 struct PostgresBindData : public FunctionData {
+	static constexpr const idx_t DEFAULT_PAGES_PER_TASK = 1000;
+
 	string schema_name;
 	string table_name;
 	idx_t pages_approx = 0;
@@ -39,18 +27,22 @@ struct PostgresBindData : public FunctionData {
 	vector<string> names;
 	vector<LogicalType> types;
 
-	idx_t pages_per_task = 1000;
+	idx_t pages_per_task = DEFAULT_PAGES_PER_TASK;
 	string dsn;
 
 	string snapshot;
 	bool in_recovery;
 	bool requires_materialization = false;
 	bool read_only = true;
+	idx_t max_threads = 1;
 
 	PostgresConnection connection;
 	optional_ptr<PostgresTransaction> transaction;
+	PostgresConnectionReservation connection_reservation;
 
 public:
+	void SetTablePages(idx_t approx_num_pages);
+
 	unique_ptr<FunctionData> Copy() const override {
 		throw NotImplementedException("");
 	}

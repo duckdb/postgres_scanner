@@ -12,6 +12,7 @@
 #include "duckdb/common/enums/access_mode.hpp"
 #include "postgres_connection.hpp"
 #include "storage/postgres_schema_set.hpp"
+#include "storage/postgres_connection_pool.hpp"
 
 namespace duckdb {
 class PostgresSchemaEntry;
@@ -59,11 +60,16 @@ public:
 	bool InMemory() override;
 	string GetDBPath() override;
 
+	PostgresConnectionPool &GetConnectionPool() {
+		return connection_pool;
+	}
+
 private:
 	void DropSchema(ClientContext &context, DropInfo &info) override;
 
 private:
 	PostgresSchemaSet schemas;
+	PostgresConnectionPool connection_pool;
 };
 
 } // namespace duckdb

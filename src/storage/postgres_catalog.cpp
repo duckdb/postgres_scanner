@@ -5,11 +5,17 @@
 #include "duckdb/storage/database_size.hpp"
 #include "duckdb/parser/parsed_data/drop_info.hpp"
 #include "duckdb/parser/parsed_data/create_schema_info.hpp"
+#include "duckdb/main/attached_database.hpp"
 
 namespace duckdb {
 
 PostgresCatalog::PostgresCatalog(AttachedDatabase &db_p, const string &path, AccessMode access_mode)
     : Catalog(db_p), path(path), access_mode(access_mode), schemas(*this) {
+	Value connection_limit;
+	auto &db_instance = db_p.GetDatabase();
+	if (db_instance.TryGetCurrentSetting("pg_connection_limit", connection_limit)) {
+		connection_pool.SetMaximumConnections(UBigIntValue::Get(connection_limit));
+	}
 }
 
 PostgresCatalog::~PostgresCatalog() = default;

@@ -2,6 +2,7 @@ add_library(
   postgres_ext_storage OBJECT
   postgres_catalog.cpp
   postgres_catalog_set.cpp
+  postgres_connection_pool.cpp
   postgres_delete.cpp
   postgres_index.cpp
   postgres_index_entry.cpp

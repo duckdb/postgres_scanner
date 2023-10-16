@@ -51,7 +51,14 @@ TableFunction PostgresTableEntry::GetScanFunction(ClientContext &context, unique
 	}
 	result->postgres_types = postgres_types;
 	result->read_only = transaction.IsReadOnly();
-	result->pages_approx = approx_num_pages;
+	result->SetTablePages(approx_num_pages);
+
+	// check how many threads we can actually use
+	if (result->max_threads > 1) {
+		auto &connection_pool = catalog.Cast<PostgresCatalog>().GetConnectionPool();
+		result->connection_reservation = connection_pool.AllocateConnections(result->max_threads);
+		result->max_threads = result->connection_reservation.GetConnectionCount();
+	}
 
 	bind_data = std::move(result);
 	return PostgresScanFunction();

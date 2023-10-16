@@ -104,6 +104,11 @@ SinkFinalizeType PostgresInsert::Finalize(Pipeline &pipeline, Event &event, Clie
 	auto &transaction = PostgresTransaction::Get(context, gstate.table->catalog);
 	auto &connection = transaction.GetConnection();
 	connection.FinishCopyTo(gstate.copy_state);
+	// update the approx_num_pages - approximately 8 bytes per column per row
+	idx_t bytes_per_page = 8192;
+	idx_t bytes_per_row = gstate.table->GetColumns().LogicalColumnCount() * 8;
+	idx_t rows_per_page = MaxValue<idx_t>(1, bytes_per_page / bytes_per_row);
+	gstate.table->approx_num_pages += gstate.insert_count / rows_per_page;
 	return SinkFinalizeType::READY;
 }
 

@@ -61,8 +61,17 @@ void PostgresScanFunction::PrepareBind(ClientContext &context, PostgresBindData 
 	if (context.TryGetCurrentSetting("pg_pages_per_task", pages_per_task)) {
 		bind_data.pages_per_task = UBigIntValue::Get(pages_per_task);
 		if (bind_data.pages_per_task == 0) {
-			bind_data.pages_per_task = 1000;
+			bind_data.pages_per_task = PostgresBindData::DEFAULT_PAGES_PER_TASK;
 		}
+	}
+}
+
+void PostgresBindData::SetTablePages(idx_t approx_num_pages) {
+	this->pages_approx = approx_num_pages;
+	if (!read_only) {
+		max_threads = 1;
+	} else {
+		max_threads = MaxValue<idx_t>(pages_approx / pages_per_task, 1);
 	}
 }
 
@@ -86,7 +95,7 @@ static unique_ptr<FunctionData> PostgresBind(ClientContext &context, TableFuncti
 		bind_data->names.push_back(col.GetName());
 		bind_data->types.push_back(col.GetType());
 	}
-	bind_data->pages_approx = info->approx_num_pages;
+	bind_data->SetTablePages(info->approx_num_pages);
 	names = bind_data->names;
 	return_types = bind_data->types;
 
@@ -155,16 +164,11 @@ static PostgresConnection PostgresScanConnect(string dsn, bool in_recovery, stri
 
 static idx_t PostgresMaxThreads(ClientContext &context, const FunctionData *bind_data_p) {
 	D_ASSERT(bind_data_p);
-
-	// FIXME - minor cleanup, should not need to remove const-ness here
-	auto bind_data = (PostgresBindData *)bind_data_p;
-	if (bind_data->requires_materialization) {
+	auto &bind_data = bind_data_p->Cast<PostgresBindData>();
+	if (bind_data.requires_materialization) {
 		return 1;
 	}
-	if (!bind_data->read_only) {
-		return 1;
-	}
-	return MaxValue<idx_t>(bind_data->pages_approx / bind_data->pages_per_task, 1);
+	return bind_data.max_threads;
 }
 
 static unique_ptr<LocalTableFunctionState> GetLocalState(ClientContext &context, TableFunctionInitInput &input, PostgresGlobalState &gstate);

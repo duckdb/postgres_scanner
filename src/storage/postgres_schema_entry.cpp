@@ -84,7 +84,7 @@ string GetCreateIndexSQL(CreateIndexInfo &info, TableCatalogEntry &tbl) {
 optional_ptr<CatalogEntry> PostgresSchemaEntry::CreateIndex(ClientContext &context, CreateIndexInfo &info,
                                                           TableCatalogEntry &table) {
 	auto &postgres_transaction = PostgresTransaction::Get(context, table.catalog);
-	postgres_transaction.GetConnection().Execute(GetCreateIndexSQL(info, table));
+	postgres_transaction.Query(GetCreateIndexSQL(info, table));
 	return nullptr;
 }
 
@@ -125,7 +125,7 @@ optional_ptr<CatalogEntry> PostgresSchemaEntry::CreateView(CatalogTransaction tr
 		}
 	}
 	auto &postgres_transaction = GetPostgresTransaction(transaction);
-	postgres_transaction.GetConnection().Execute(GetCreateViewSQL(info));
+	postgres_transaction.Query(GetCreateViewSQL(info));
 	return tables.RefreshTable(transaction.GetContext(), info.view_name);
 }
 

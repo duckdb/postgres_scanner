@@ -32,6 +32,7 @@ public:
 	void Rollback();
 
 	PostgresConnection &GetConnection();
+	unique_ptr<PostgresResult> Query(const string &query);
 	static PostgresTransaction &Get(ClientContext &context, Catalog &catalog);
 
 private:

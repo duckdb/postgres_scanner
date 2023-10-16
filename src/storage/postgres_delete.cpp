@@ -36,8 +36,7 @@ public:
 			return;
 		}
 		auto &transaction = PostgresTransaction::Get(context, table.catalog);
-		auto &connection = transaction.GetConnection();
-		connection.Execute(GetDeleteSQL(table.name, ctid_list));
+		transaction.Query(GetDeleteSQL(table.name, ctid_list));
 		ctid_list = "";
 	}
 };

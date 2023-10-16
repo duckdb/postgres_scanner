@@ -14,8 +14,7 @@ FROM information_schema.schemata;
 )";
 
 	auto &transaction = PostgresTransaction::Get(context, catalog);
-	auto &conn = transaction.GetConnection();
-	auto result = conn.Query(query);
+	auto result = transaction.Query(query);
 	auto rows = result->Count();
 
 	for(idx_t row = 0; row < rows; row++) {
@@ -27,10 +26,9 @@ FROM information_schema.schemata;
 
 optional_ptr<CatalogEntry> PostgresSchemaSet::CreateSchema(ClientContext &context, CreateSchemaInfo &info) {
 	auto &transaction = PostgresTransaction::Get(context, catalog);
-	auto &conn = transaction.GetConnection();
 
 	string create_sql = "CREATE SCHEMA " + KeywordHelper::WriteQuoted(info.schema, '"');
-	conn.Execute(create_sql);
+	transaction.Query(create_sql);
 	auto schema_entry = make_uniq<PostgresSchemaEntry>(catalog, info.schema);
 	return CreateEntry(std::move(schema_entry));
 }

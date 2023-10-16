@@ -17,8 +17,7 @@ WHERE schemaname=${SCHEMA_NAME}
 )", "${SCHEMA_NAME}", KeywordHelper::WriteQuoted(schema.name));
 
 	auto &transaction = PostgresTransaction::Get(context, catalog);
-	auto &conn = transaction.GetConnection();
-	auto result = conn.Query(query);
+	auto result = transaction.Query(query);
 	auto rows = result->Count();
 
 	for(idx_t row = 0; row < rows; row++) {

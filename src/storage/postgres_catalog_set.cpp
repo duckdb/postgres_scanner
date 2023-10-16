@@ -30,8 +30,7 @@ void PostgresCatalogSet::DropEntry(ClientContext &context, DropInfo &info) {
 		drop_query += "CASCADE";
 	}
 	auto &transaction = PostgresTransaction::Get(context, catalog);
-	auto &conn = transaction.GetConnection();
-	conn.Execute(drop_query);
+	transaction.Query(drop_query);
 
 	// erase the entry from the catalog set
 	lock_guard<mutex> l(entry_lock);

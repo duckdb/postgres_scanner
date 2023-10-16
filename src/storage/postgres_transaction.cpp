@@ -1,7 +1,5 @@
 #include "storage/postgres_transaction.hpp"
 #include "storage/postgres_catalog.hpp"
-#include "storage/postgres_schema_entry.hpp"
-#include "duckdb/parser/parsed_data/create_table_info.hpp"
 #include "duckdb/parser/parsed_data/create_view_info.hpp"
 #include "duckdb/catalog/catalog_entry/index_catalog_entry.hpp"
 #include "duckdb/catalog/catalog_entry/view_catalog_entry.hpp"
@@ -42,6 +40,19 @@ PostgresConnection &PostgresTransaction::GetConnection() {
 		connection.Execute(query);
 	}
 	return connection;
+}
+
+unique_ptr<PostgresResult> PostgresTransaction::Query(const string &query) {
+	if (transaction_state == PostgresTransactionState::TRANSACTION_NOT_YET_STARTED) {
+		transaction_state = PostgresTransactionState::TRANSACTION_STARTED;
+		string transaction_start = "BEGIN TRANSACTION";
+		if (postgres_catalog.access_mode == AccessMode::READ_ONLY) {
+			transaction_start += " READ ONLY";
+		}
+		transaction_start += ";\n";
+		return connection.Query(transaction_start + query);
+	}
+	return connection.Query(query);
 }
 
 PostgresTransaction &PostgresTransaction::Get(ClientContext &context, Catalog &catalog) {

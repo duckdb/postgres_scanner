@@ -55,8 +55,7 @@ ORDER BY table_name, ordinal_position;
 )", "${SCHEMA_NAME}", KeywordHelper::WriteQuoted(schema.name));
 
 	auto &transaction = PostgresTransaction::Get(context, catalog);
-	auto &conn = transaction.GetConnection();
-	auto result = conn.Query(query);
+	auto result = transaction.Query(query);
 	auto rows = result->Count();
 
 	vector<unique_ptr<PostgresTableInfo>> tables;
@@ -89,8 +88,7 @@ FROM information_schema.columns
 WHERE table_schema=${SCHEMA_NAME} AND table_name=${TABLE_NAME}
 ORDER BY table_name, ordinal_position;
 )", "${SCHEMA_NAME}", KeywordHelper::WriteQuoted(schema.name)), "${TABLE_NAME}", KeywordHelper::WriteQuoted(table_name));
-	auto &conn = transaction.GetConnection();
-	auto result = conn.Query(query);
+	auto result = transaction.Query(query);
 	auto rows = result->Count();
 	if (rows == 0) {
 		throw InvalidInputException("Table %s does not contain any columns.", table_name);
@@ -213,10 +211,8 @@ string GetCreateTableSQL(CreateTableInfo &info) {
 
 optional_ptr<CatalogEntry> PostgresTableSet::CreateTable(ClientContext &context, BoundCreateTableInfo &info) {
 	auto &transaction = PostgresTransaction::Get(context, catalog);
-	auto &conn = transaction.GetConnection();
-
 	auto create_sql = GetCreateTableSQL(info.Base());
-	conn.Execute(create_sql);
+	transaction.Query(create_sql);
 	auto tbl_entry = make_uniq<PostgresTableEntry>(catalog, schema, info.Base());
 	return CreateEntry(std::move(tbl_entry));
 }
@@ -227,7 +223,7 @@ void PostgresTableSet::AlterTable(ClientContext &context, RenameTableInfo &info)
 	sql += KeywordHelper::WriteOptionallyQuoted(info.name);
 	sql += " RENAME TO ";
 	sql += KeywordHelper::WriteOptionallyQuoted(info.new_table_name);
-	transaction.GetConnection().Execute(sql);
+	transaction.Query(sql);
 }
 
 void PostgresTableSet::AlterTable(ClientContext &context, RenameColumnInfo &info) {
@@ -239,7 +235,7 @@ void PostgresTableSet::AlterTable(ClientContext &context, RenameColumnInfo &info
 	sql += " TO ";
 	sql += KeywordHelper::WriteOptionallyQuoted(info.new_name);
 
-	transaction.GetConnection().Execute(sql);
+	transaction.Query(sql);
 }
 
 void PostgresTableSet::AlterTable(ClientContext &context, AddColumnInfo &info) {
@@ -253,7 +249,7 @@ void PostgresTableSet::AlterTable(ClientContext &context, AddColumnInfo &info) {
 	sql += KeywordHelper::WriteOptionallyQuoted(info.new_column.Name());
 	sql += " ";
 	sql += info.new_column.Type().ToString();
-	transaction.GetConnection().Execute(sql);
+	transaction.Query(sql);
 }
 
 void PostgresTableSet::AlterTable(ClientContext &context, RemoveColumnInfo &info) {
@@ -265,7 +261,7 @@ void PostgresTableSet::AlterTable(ClientContext &context, RemoveColumnInfo &info
 		sql += "IF EXISTS ";
 	}
 	sql += KeywordHelper::WriteOptionallyQuoted(info.removed_column);
-	transaction.GetConnection().Execute(sql);
+	transaction.Query(sql);
 }
 
 void PostgresTableSet::AlterTable(ClientContext &context, AlterTableInfo &alter) {

@@ -4,7 +4,6 @@
 #include "storage/postgres_catalog.hpp"
 #include "storage/postgres_transaction.hpp"
 #include "postgres_connection.hpp"
-#include "postgres_stmt.hpp"
 #include "duckdb/common/types/uuid.hpp"
 
 namespace duckdb {

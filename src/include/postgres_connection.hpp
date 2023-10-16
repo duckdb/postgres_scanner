@@ -52,8 +52,6 @@ public:
 
 public:
 	static PostgresConnection Open(const string &connection_string);
-	bool TryPrepare(const string &query, PostgresStatement &result, string &error);
-	PostgresStatement Prepare(const string &query);
 	void Execute(const string &query);
 	unique_ptr<PostgresResult> TryQuery(const string &query);
 	unique_ptr<PostgresResult> Query(const string &query);

@@ -2,7 +2,6 @@
 #include "duckdb/parser/column_list.hpp"
 #include "duckdb/parser/parser.hpp"
 #include "postgres_connection.hpp"
-#include "postgres_stmt.hpp"
 #include "duckdb/common/types/uuid.hpp"
 
 namespace duckdb {
@@ -31,27 +30,6 @@ PostgresConnection PostgresConnection::Open(const string &connection_string) {
 	result.connection = make_shared<OwnedPostgresConnection>(PostgresUtils::PGConnect(connection_string));
 	result.dsn = connection_string;
 	return result;
-}
-
-bool PostgresConnection::TryPrepare(const string &query, PostgresStatement &stmt, string &error) {
-	stmt.name = "";
-	auto result = PQprepare(GetConn(), stmt.name.c_str(), query.c_str(), 0, nullptr);
-	if (!result || PQresultStatus(result) != PGRES_COMMAND_OK) {
-		error = PQresultErrorMessage(result);
-		return false;
-	}
-	return true;
-}
-
-PostgresStatement PostgresConnection::Prepare(const string &query) {
-	PostgresStatement stmt;
-	stmt.connection = GetConn();
-	string error_msg;
-	if (!TryPrepare(query, stmt, error_msg)) {
-		string error = "Failed to prepare query \"" + query + "\": " + error_msg;
-		throw std::runtime_error(error);
-	}
-	return stmt;
 }
 
 static bool ResultHasError(PGresult *result) {

@@ -35,6 +35,7 @@ static void LoadInternal(DatabaseInstance &db) {
 	config.storage_extensions["postgres_scanner"] = make_uniq<PostgresStorageExtension>();
 
 	config.AddExtensionOption("pg_use_binary_copy", "Whether or not to use BINARY copy to read data", LogicalType::BOOLEAN, Value::BOOLEAN(true));
+	config.AddExtensionOption("pg_pages_per_task", "The amount of pages per task", LogicalType::UBIGINT, Value::UBIGINT(1000));
 }
 
 void PostgresScannerExtension::Load(DuckDB &db) {

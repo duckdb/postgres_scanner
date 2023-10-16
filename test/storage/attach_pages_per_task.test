@@ -1,0 +1,38 @@
+# name: test/storage/attach_pages_per_task.test
+# description:
+# group: [postgres_storage]
+
+require postgres_scanner
+
+statement ok
+ATTACH 'dbname=postgresscanner' AS s (TYPE POSTGRES);
+
+statement ok
+USE s
+
+statement ok
+CREATE OR REPLACE TABLE pages_per_task(i INTEGER);
+
+statement ok
+INSERT INTO pages_per_task FROM range(1000000)
+
+query I
+SELECT COUNT(*) FROM pages_per_task
+----
+1000000
+
+statement ok
+SET pg_pages_per_task=0
+
+query I
+SELECT COUNT(*) FROM pages_per_task
+----
+1000000
+
+statement ok
+SET pg_pages_per_task=999999999999999
+
+query I
+SELECT COUNT(*) FROM pages_per_task
+----
+1000000

@@ -56,6 +56,14 @@ void PostgresScanFunction::PrepareBind(ClientContext &context, PostgresBindData 
 	if (!bind_data.in_recovery) {
 		bind_data.snapshot = result->GetString(0, 1);
 	}
+
+	Value pages_per_task;
+	if (context.TryGetCurrentSetting("pg_pages_per_task", pages_per_task)) {
+		bind_data.pages_per_task = UBigIntValue::Get(pages_per_task);
+		if (bind_data.pages_per_task == 0) {
+			bind_data.pages_per_task = 1000;
+		}
+	}
 }
 
 static unique_ptr<FunctionData> PostgresBind(ClientContext &context, TableFunctionBindInput &input,

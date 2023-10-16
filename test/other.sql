@@ -137,3 +137,14 @@ CREATE TABLE tbl_with_case_sensitive_columns (
 	"mycolumn" INT
 );
 INSERT INTO tbl_with_case_sensitive_columns VALUES (42, 84);
+
+-- tables with the same name but different case
+CREATE TABLE "SameCaseName" (
+	i INT
+);
+INSERT INTO "SameCaseName" VALUES (42);
+
+CREATE TABLE samecasename (
+	s VARCHAR
+);
+INSERT INTO samecasename VALUES ('hello world');

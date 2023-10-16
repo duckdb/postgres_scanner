@@ -63,9 +63,12 @@ string PostgresFilterPushdown::TransformFilters(const vector<column_t> &column_i
 	}
 	string result;
 	for (auto &entry : filters->filters) {
+		if (!result.empty()) {
+			result += " AND ";
+		}
 		auto column_name = KeywordHelper::WriteQuoted(names[column_ids[entry.first]], '"');
 		auto &filter = *entry.second;
-		result += " AND " + TransformFilter(column_name, filter);
+		result += TransformFilter(column_name, filter);
 	}
 	return result;
 }

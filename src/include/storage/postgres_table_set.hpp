@@ -13,6 +13,7 @@
 
 namespace duckdb {
 struct CreateTableInfo;
+class PostgresConnection;
 class PostgresResult;
 class PostgresSchemaEntry;
 
@@ -23,6 +24,8 @@ public:
 public:
 	optional_ptr<CatalogEntry> CreateTable(ClientContext &context, BoundCreateTableInfo &info);
 
+	static unique_ptr<PostgresTableInfo> GetTableInfo(PostgresTransaction &transaction, PostgresSchemaEntry &schema, const string &table_name);
+	static unique_ptr<PostgresTableInfo> GetTableInfo(PostgresConnection &connection, const string &schema_name, const string &table_name);
 	optional_ptr<CatalogEntry> RefreshTable(ClientContext &context, const string &table_name);
 
 	void AlterTable(ClientContext &context, AlterTableInfo &info);
@@ -35,7 +38,7 @@ protected:
 	void AlterTable(ClientContext &context, AddColumnInfo &info);
 	void AlterTable(ClientContext &context, RemoveColumnInfo &info);
 
-	void AddColumn(PostgresTransaction &transaction, PostgresResult &result, idx_t row, PostgresTableInfo &table_info, idx_t column_offset = 0);
+	static void AddColumn(optional_ptr<PostgresTransaction> transaction, optional_ptr<PostgresSchemaEntry> schema, PostgresResult &result, idx_t row, PostgresTableInfo &table_info, idx_t column_offset = 0);
 
 protected:
 	PostgresSchemaEntry &schema;

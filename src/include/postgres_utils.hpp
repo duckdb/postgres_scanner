@@ -46,7 +46,7 @@ public:
 	static PGconn *PGConnect(const string &dsn);
 
 	static LogicalType ToPostgresType(const LogicalType &input);
-	static LogicalType TypeToLogicalType(PostgresTransaction &transaction, PostgresSchemaEntry &schema, const PostgresTypeData &input, PostgresType &postgres_type);
+	static LogicalType TypeToLogicalType(optional_ptr<PostgresTransaction> transaction, optional_ptr<PostgresSchemaEntry> schema, const PostgresTypeData &input, PostgresType &postgres_type);
 	static string TypeToString(const LogicalType &input);
 	static uint32_t ToPostgresOid(const LogicalType &input);
 	static bool SupportedPostgresOid(const LogicalType &input);

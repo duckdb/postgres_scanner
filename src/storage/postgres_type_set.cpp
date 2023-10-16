@@ -85,7 +85,7 @@ void PostgresTypeSet::CreateCompositeType(PostgresTransaction &transaction, Post
 		PostgresTypeData type_data;
 		type_data.type_name = result.GetString(row, 2);
 		PostgresType child_type;
-		child_types.push_back(make_pair(type_name, PostgresUtils::TypeToLogicalType(transaction, schema, type_data, child_type)));
+		child_types.push_back(make_pair(type_name, PostgresUtils::TypeToLogicalType(&transaction, &schema, type_data, child_type)));
 		postgres_type.children.push_back(std::move(child_type));
 	}
 	info.type = LogicalType::STRUCT(std::move(child_types));

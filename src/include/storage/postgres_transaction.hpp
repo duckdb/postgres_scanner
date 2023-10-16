@@ -36,9 +36,9 @@ public:
 	static PostgresTransaction &Get(ClientContext &context, Catalog &catalog);
 
 private:
-	PostgresCatalog &postgres_catalog;
 	PostgresConnection connection;
 	PostgresTransactionState transaction_state;
+	AccessMode access_mode;
 };
 
 } // namespace duckdb

@@ -62,7 +62,7 @@ LogicalType PostgresUtils::RemoveAlias(const LogicalType &type) {
 	}
 }
 
-LogicalType PostgresUtils::TypeToLogicalType(PostgresTransaction &transaction, PostgresSchemaEntry &schema, const PostgresTypeData &type_info, PostgresType &postgres_type) {
+LogicalType PostgresUtils::TypeToLogicalType(optional_ptr<PostgresTransaction> transaction, optional_ptr<PostgresSchemaEntry> schema, const PostgresTypeData &type_info, PostgresType &postgres_type) {
 	auto &pgtypename = type_info.type_name;
 
 	// TODO better check, does the typtyp say something here?
@@ -122,11 +122,16 @@ LogicalType PostgresUtils::TypeToLogicalType(PostgresTransaction &transaction, P
 	} else if (pgtypename == "uuid") {
 		return LogicalType::UUID;
 	} else {
-		auto context = transaction.context.lock();
+		if (!transaction) {
+			// unsupported so fallback to varchar
+			postgres_type.info = PostgresTypeAnnotation::CAST_TO_VARCHAR;
+			return LogicalType::VARCHAR;
+		}
+		auto context = transaction->context.lock();
 		if (!context) {
 			throw InternalException("Context is destroyed!?");
 		}
-		auto entry = schema.GetEntry(CatalogTransaction(schema.ParentCatalog(), *context), CatalogType::TYPE_ENTRY, pgtypename);
+		auto entry = schema->GetEntry(CatalogTransaction(schema->ParentCatalog(), *context), CatalogType::TYPE_ENTRY, pgtypename);
 		if (!entry) {
 			// unsupported so fallback to varchar
 			postgres_type.info = PostgresTypeAnnotation::CAST_TO_VARCHAR;

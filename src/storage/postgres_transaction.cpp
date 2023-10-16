@@ -8,7 +8,7 @@
 namespace duckdb {
 
 PostgresTransaction::PostgresTransaction(PostgresCatalog &postgres_catalog, TransactionManager &manager, ClientContext &context)
-    : Transaction(manager, context), postgres_catalog(postgres_catalog) {
+    : Transaction(manager, context), access_mode(postgres_catalog.access_mode) {
 	connection = PostgresConnection::Open(postgres_catalog.path);
 }
 
@@ -34,7 +34,7 @@ PostgresConnection &PostgresTransaction::GetConnection() {
 	if (transaction_state == PostgresTransactionState::TRANSACTION_NOT_YET_STARTED) {
 		transaction_state = PostgresTransactionState::TRANSACTION_STARTED;
 		string query = "BEGIN TRANSACTION";
-		if (postgres_catalog.access_mode == AccessMode::READ_ONLY) {
+		if (access_mode == AccessMode::READ_ONLY) {
 			query += " READ ONLY";
 		}
 		connection.Execute(query);
@@ -46,7 +46,7 @@ unique_ptr<PostgresResult> PostgresTransaction::Query(const string &query) {
 	if (transaction_state == PostgresTransactionState::TRANSACTION_NOT_YET_STARTED) {
 		transaction_state = PostgresTransactionState::TRANSACTION_STARTED;
 		string transaction_start = "BEGIN TRANSACTION";
-		if (postgres_catalog.access_mode == AccessMode::READ_ONLY) {
+		if (access_mode == AccessMode::READ_ONLY) {
 			transaction_start += " READ ONLY";
 		}
 		transaction_start += ";\n";

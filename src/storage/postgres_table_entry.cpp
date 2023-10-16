@@ -51,6 +51,7 @@ TableFunction PostgresTableEntry::GetScanFunction(ClientContext &context, unique
 	}
 	result->postgres_types = postgres_types;
 	result->read_only = transaction.IsReadOnly();
+	result->pages_approx = approx_num_pages;
 
 	bind_data = std::move(result);
 	return PostgresScanFunction();

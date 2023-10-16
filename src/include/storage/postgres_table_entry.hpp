@@ -18,6 +18,9 @@ struct PostgresTableInfo {
 	PostgresTableInfo() {
 		create_info = make_uniq<CreateTableInfo>();
 	}
+	PostgresTableInfo(const string &schema, const string &table) {
+		create_info = make_uniq<CreateTableInfo>(string(), schema, table);
+	}
 	PostgresTableInfo(const SchemaCatalogEntry &schema, const string &table) {
 		create_info = make_uniq<CreateTableInfo>(schema, table);
 	}

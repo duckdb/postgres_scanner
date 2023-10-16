@@ -9,6 +9,7 @@
 #include "postgres_result.hpp"
 #include "postgres_binary_reader.hpp"
 #include "storage/postgres_transaction.hpp"
+#include "storage/postgres_table_set.hpp"
 
 namespace duckdb {
 
@@ -44,84 +45,7 @@ struct PostgresGlobalState : public GlobalTableFunctionState {
 	}
 };
 
-static LogicalType DuckDBType2(PostgresTypeInfo *type_info, int atttypmod, PostgresTypeInfo *ele_info, PostgresConnection &con,
-                               ClientContext &context, PostgresType &postgres_type) {
-	auto &pgtypename = type_info->typname;
-
-	// TODO better check, does the typtyp say something here?
-	// postgres array types start with an _
-	if (StringUtil::StartsWith(pgtypename, "_")) {
-		PostgresType child_type;
-		auto result = LogicalType::LIST(DuckDBType2(ele_info, atttypmod, nullptr, con, context, child_type));
-		postgres_type.children.push_back(std::move(child_type));
-		return result;
-	}
-
-	if (type_info->typtype == "e") { // ENUM
-		auto res = con.Query(
-		    StringUtil::Format("SELECT unnest(enum_range(NULL::%s.%s))", type_info->nspname, type_info->typname));
-		Vector duckdb_levels(LogicalType::VARCHAR, res->Count());
-		for (idx_t row = 0; row < res->Count(); row++) {
-			duckdb_levels.SetValue(row, res->GetString(row, 0));
-		}
-		return LogicalType::ENUM("postgres_enum_" + pgtypename, duckdb_levels, res->Count());
-	}
-
-	if (pgtypename == "bool") {
-		return LogicalType::BOOLEAN;
-	} else if (pgtypename == "int2") {
-		return LogicalType::SMALLINT;
-	} else if (pgtypename == "int4") {
-		return LogicalType::INTEGER;
-	} else if (pgtypename == "int8") {
-		return LogicalType::BIGINT;
-	} else if (pgtypename == "oid") { // "The oid type is currently implemented as an unsigned four-byte integer."
-		return LogicalType::UINTEGER;
-	} else if (pgtypename == "float4") {
-		return LogicalType::FLOAT;
-	} else if (pgtypename == "float8") {
-		return LogicalType::DOUBLE;
-	} else if (pgtypename == "numeric") {
-		if (atttypmod == -1) { // unbounded decimal/numeric, will just return as double
-			postgres_type.info = PostgresTypeAnnotation::NUMERIC_AS_DOUBLE;
-			return LogicalType::DOUBLE;
-		}
-		auto width = ((atttypmod - sizeof(int32_t)) >> 16) & 0xffff;
-		auto scale = (((atttypmod - sizeof(int32_t)) & 0x7ff) ^ 1024) - 1024;
-		return LogicalType::DECIMAL(width, scale);
-	} else if (pgtypename == "char" || pgtypename == "bpchar" || pgtypename == "varchar" || pgtypename == "text" ||
-	           pgtypename == "json") {
-		return LogicalType::VARCHAR;
-	} else if (pgtypename == "jsonb") {
-		postgres_type.info = PostgresTypeAnnotation::JSONB;
-		return LogicalType::VARCHAR;
-	} else if (pgtypename == "date") {
-		return LogicalType::DATE;
-	} else if (pgtypename == "bytea") {
-		return LogicalType::BLOB;
-	} else if (pgtypename == "time") {
-		return LogicalType::TIME;
-	} else if (pgtypename == "timetz") {
-		return LogicalType::TIME_TZ;
-	} else if (pgtypename == "timestamp") {
-		return LogicalType::TIMESTAMP;
-	} else if (pgtypename == "timestamptz") {
-		return LogicalType::TIMESTAMP_TZ;
-	} else if (pgtypename == "interval") {
-		return LogicalType::INTERVAL;
-	} else if (pgtypename == "uuid") {
-		return LogicalType::UUID;
-	} else {
-		postgres_type.info = PostgresTypeAnnotation::CAST_TO_VARCHAR;
-		return LogicalType::VARCHAR;
-	}
-}
-
-static LogicalType DuckDBType(PostgresColumnInfo &info, PostgresConnection &con, ClientContext &context, PostgresType &postgres_type) {
-	return DuckDBType2(&info.type_info, info.atttypmod, &info.elem_info, con, context, postgres_type);
-}
-
-int64_t PostgresScanFunction::PrepareBind(ClientContext &context, PostgresBindData &bind_data) {
+void PostgresScanFunction::PrepareBind(ClientContext &context, PostgresBindData &bind_data) {
 	// we create a transaction here, and get the snapshot id so the parallel
 	// reader threads can use the same snapshot
 	auto &con = bind_data.connection;
@@ -132,21 +56,6 @@ int64_t PostgresScanFunction::PrepareBind(ClientContext &context, PostgresBindDa
 	if (!bind_data.in_recovery) {
 		bind_data.snapshot = result->GetString(0, 1);
 	}
-
-	// find the id of the table in question to simplify below queries and avoid
-	// complex joins (ha)
-	auto res = con.Query(StringUtil::Format(R"(
-SELECT pg_class.oid, relpages
-FROM pg_class JOIN pg_namespace ON relnamespace = pg_namespace.oid
-WHERE nspname=%s AND relname=%s
-)", KeywordHelper::WriteQuoted(bind_data.schema_name), KeywordHelper::WriteQuoted(bind_data.table_name)));
-	if (res->Count() != 1) {
-		throw InvalidInputException("Postgres table \"%s\".\"%s\" not found", bind_data.schema_name,
-		                            bind_data.table_name);
-	}
-	auto oid = res->GetInt64(0, 0);
-	bind_data.pages_approx = res->GetInt64(0, 1);
-	return oid;
 }
 
 static unique_ptr<FunctionData> PostgresBind(ClientContext &context, TableFunctionBindInput &input,
@@ -158,63 +67,20 @@ static unique_ptr<FunctionData> PostgresBind(ClientContext &context, TableFuncti
 	bind_data->table_name = input.inputs[2].GetValue<string>();
 
 	bind_data->connection = PostgresConnection::Open(bind_data->dsn);
-
 	bind_data->connection.Execute("BEGIN TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY");
-	auto oid = PostgresScanFunction::PrepareBind(context, *bind_data);
+	PostgresScanFunction::PrepareBind(context, *bind_data);
 
 	// query the table schema so we can interpret the bits in the pages
-	// fun fact: this query also works in DuckDB ^^
-	auto query = StringUtil::Format(R"(
-SELECT
-    attname, atttypmod, pg_namespace.nspname,
-    pg_type.typname, pg_type.typlen, pg_type.typtype, pg_type.typelem,
-    pg_type_elem.typname elem_typname, pg_type_elem.typlen elem_typlen, pg_type_elem.typtype elem_typtype
-FROM pg_attribute
-    JOIN pg_type ON atttypid=pg_type.oid
-    LEFT JOIN pg_type pg_type_elem ON pg_type.typelem=pg_type_elem.oid
-    LEFT JOIN pg_namespace ON pg_type.typnamespace = pg_namespace.oid
-WHERE attrelid=%d AND attnum > 0
-ORDER BY attnum;
-)", oid);
-	auto res = bind_data->connection.Query(query);
+	auto info = PostgresTableSet::GetTableInfo(bind_data->connection, bind_data->schema_name, bind_data->table_name);
 
-	// can't scan a table without columns (yes those exist)
-	if (res->Count() == 0) {
-		throw InvalidInputException("Table %s does not contain any columns.", bind_data->table_name);
+	bind_data->postgres_types = info->postgres_types;
+	for(auto &col : info->create_info->columns.Logical()) {
+		bind_data->names.push_back(col.GetName());
+		bind_data->types.push_back(col.GetType());
 	}
-
-	for (idx_t row = 0; row < res->Count(); row++) {
-		PostgresColumnInfo info;
-		info.attname = res->GetString(row, 0);
-		info.atttypmod = res->GetInt32(row, 1);
-
-		info.type_info.nspname = res->GetString(row, 2);
-		info.type_info.typname = res->GetString(row, 3);
-		info.type_info.typlen = res->GetInt64(row, 4);
-		info.type_info.typtype = res->GetString(row, 5);
-		info.typelem = res->GetInt64(row, 6);
-
-		info.elem_info.nspname = res->GetString(row, 2);
-		info.elem_info.typname = res->GetString(row, 7);
-		info.elem_info.typlen = res->GetInt64(row, 8);
-		info.elem_info.typtype = res->GetString(row, 9);
-
-		bind_data->names.push_back(info.attname);
-		PostgresType type;
-		auto duckdb_type = DuckDBType(info, bind_data->connection, context, type);
-
-		// we cast unsupported types to varchar on read
-		auto needs_cast = duckdb_type == LogicalType::INVALID;
-		if (!needs_cast) {
-			bind_data->types.push_back(std::move(duckdb_type));
-		} else {
-			bind_data->types.push_back(LogicalType::VARCHAR);
-		}
-		bind_data->postgres_types.push_back(type);
-	}
-
-	return_types = bind_data->types;
+	bind_data->pages_approx = info->approx_num_pages;
 	names = bind_data->names;
+	return_types = bind_data->types;
 
 	return std::move(bind_data);
 }
@@ -255,6 +121,8 @@ static void PostgresInitInternal(ClientContext &context, const PostgresBindData 
 	if (!filter_string.empty()) {
 		if (filter.empty()) {
 			filter += "WHERE ";
+		} else {
+			filter += " AND ";
 		}
 		filter += filter_string;
 	}

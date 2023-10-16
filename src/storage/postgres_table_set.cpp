@@ -17,7 +17,7 @@ namespace duckdb {
 PostgresTableSet::PostgresTableSet(PostgresSchemaEntry &schema) :
     PostgresCatalogSet(schema.ParentCatalog()), schema(schema) {}
 
-void PostgresTableSet::AddColumn(PostgresTransaction &transaction, PostgresResult &result, idx_t row, PostgresTableInfo &table_info, idx_t column_offset) {
+void PostgresTableSet::AddColumn(optional_ptr<PostgresTransaction> transaction, optional_ptr<PostgresSchemaEntry> schema, PostgresResult &result, idx_t row, PostgresTableInfo &table_info, idx_t column_offset) {
 	PostgresTypeData type_info;
 	idx_t column_index = column_offset;
 	auto column_name = result.GetString(row, column_index);
@@ -75,7 +75,7 @@ ORDER BY relname, attnum;
 			info = make_uniq<PostgresTableInfo>(schema, table_name);
 			info->approx_num_pages = approx_num_pages;
 		}
-		AddColumn(transaction, *result, row, *info, 2);
+		AddColumn(&transaction, &schema, *result, row, *info, 2);
 	}
 	if (info) {
 		tables.push_back(std::move(info));
@@ -86,9 +86,8 @@ ORDER BY relname, attnum;
 	}
 }
 
-optional_ptr<CatalogEntry> PostgresTableSet::RefreshTable(ClientContext &context, const string &table_name) {
-	auto &transaction = PostgresTransaction::Get(context, catalog);
-	auto query = StringUtil::Replace(StringUtil::Replace(R"(
+string GetTableInfoQuery(const string &schema_name, const string &table_name) {
+	return StringUtil::Replace(StringUtil::Replace(R"(
 SELECT relpages, attname,
     pg_type.typname type_name, atttypmod type_modifier, pg_attribute.attndims ndim
 FROM pg_class
@@ -97,7 +96,11 @@ JOIN pg_attribute ON pg_class.oid=pg_attribute.attrelid
 JOIN pg_type ON atttypid=pg_type.oid
 WHERE pg_namespace.nspname=${SCHEMA_NAME} AND relname=${TABLE_NAME} AND attnum > 0
 ORDER BY relname, attnum;
-)", "${SCHEMA_NAME}", KeywordHelper::WriteQuoted(schema.name)), "${TABLE_NAME}", KeywordHelper::WriteQuoted(table_name));
+)", "${SCHEMA_NAME}", KeywordHelper::WriteQuoted(schema_name)), "${TABLE_NAME}", KeywordHelper::WriteQuoted(table_name));
+}
+
+unique_ptr<PostgresTableInfo> PostgresTableSet::GetTableInfo(PostgresTransaction &transaction, PostgresSchemaEntry &schema, const string &table_name) {
+	auto query = GetTableInfoQuery(schema.name, table_name);
 	auto result = transaction.Query(query);
 	auto rows = result->Count();
 	if (rows == 0) {
@@ -105,8 +108,30 @@ ORDER BY relname, attnum;
 	}
 	auto table_info = make_uniq<PostgresTableInfo>(schema, table_name);
 	for(idx_t row = 0; row < rows; row++) {
-		AddColumn(transaction, *result, row, *table_info, 1);
+		AddColumn(&transaction, &schema, *result, row, *table_info, 1);
 	}
+	table_info->approx_num_pages = result->GetInt64(0, 0);
+	return table_info;
+}
+
+unique_ptr<PostgresTableInfo> PostgresTableSet::GetTableInfo(PostgresConnection &connection, const string &schema_name, const string &table_name) {
+	auto query = GetTableInfoQuery(schema_name, table_name);
+	auto result = connection.Query(query);
+	auto rows = result->Count();
+	if (rows == 0) {
+		throw InvalidInputException("Table %s does not contain any columns.", table_name);
+	}
+	auto table_info = make_uniq<PostgresTableInfo>(schema_name, table_name);
+	for(idx_t row = 0; row < rows; row++) {
+		AddColumn(nullptr, nullptr, *result, row, *table_info, 1);
+	}
+	table_info->approx_num_pages = result->GetInt64(0, 0);
+	return table_info;
+}
+
+optional_ptr<CatalogEntry> PostgresTableSet::RefreshTable(ClientContext &context, const string &table_name) {
+	auto &transaction = PostgresTransaction::Get(context, catalog);
+	auto table_info = GetTableInfo(transaction, schema, table_name);
 	auto table_entry = make_uniq<PostgresTableEntry>(catalog, schema, *table_info);
 	auto table_ptr = table_entry.get();
 	CreateEntry(std::move(table_entry));

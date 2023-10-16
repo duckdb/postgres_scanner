@@ -22,10 +22,10 @@ void PostgresTableSet::AddColumn(PostgresTransaction &transaction, PostgresResul
 	idx_t column_index = column_offset;
 	auto column_name = result.GetString(row, column_index);
 	type_info.type_name = result.GetString(row, column_index + 1);
-	auto default_value = result.GetString(row, column_index + 2);
-	auto is_nullable = result.GetString(row, column_index + 3);
-	type_info.precision = result.IsNull(row, column_index + 4) ? -1 : result.GetInt64(row, column_index + 4);
-	type_info.scale = result.IsNull(row, column_index + 5) ? -1 : result.GetInt64(row, column_index + 5);
+	type_info.type_modifier = result.GetInt64(row, column_index + 2);
+	type_info.array_dimensions = result.GetInt64(row, column_index + 3);
+	string default_value;
+	bool is_nullable = true;
 
 	PostgresType postgres_type;
 	auto column_type = PostgresUtils::TypeToLogicalType(transaction, schema, type_info, postgres_type);
@@ -41,17 +41,21 @@ void PostgresTableSet::AddColumn(PostgresTransaction &transaction, PostgresResul
 	}
 	auto &create_info = *table_info.create_info;
 	create_info.columns.AddColumn(std::move(column));
-	if (is_nullable != "YES") {
+	if (!is_nullable) {
 		create_info.constraints.push_back(make_uniq<NotNullConstraint>(LogicalIndex(row)));
 	}
 }
 
 void PostgresTableSet::LoadEntries(ClientContext &context) {
 	auto query = StringUtil::Replace(R"(
-SELECT table_name, column_name, udt_name, column_default, is_nullable, numeric_precision, numeric_scale
-FROM information_schema.columns
-WHERE table_schema=${SCHEMA_NAME}
-ORDER BY table_name, ordinal_position;
+SELECT relname, relpages, attname,
+    pg_type.typname type_name, atttypmod type_modifier, pg_attribute.attndims ndim
+FROM pg_class
+JOIN pg_namespace ON relnamespace = pg_namespace.oid
+JOIN pg_attribute ON pg_class.oid=pg_attribute.attrelid
+JOIN pg_type ON atttypid=pg_type.oid
+WHERE pg_namespace.nspname=${SCHEMA_NAME} AND attnum > 0
+ORDER BY relname, attnum;
 )", "${SCHEMA_NAME}", KeywordHelper::WriteQuoted(schema.name));
 
 	auto &transaction = PostgresTransaction::Get(context, catalog);
@@ -63,13 +67,15 @@ ORDER BY table_name, ordinal_position;
 
 	for(idx_t row = 0; row < rows; row++) {
 		auto table_name = result->GetString(row, 0);
+		auto approx_num_pages = result->GetInt64(row, 1);
 		if (!info || info->GetTableName() != table_name) {
 			if (info) {
 				tables.push_back(std::move(info));
 			}
 			info = make_uniq<PostgresTableInfo>(schema, table_name);
+			info->approx_num_pages = approx_num_pages;
 		}
-		AddColumn(transaction, *result, row, *info, 1);
+		AddColumn(transaction, *result, row, *info, 2);
 	}
 	if (info) {
 		tables.push_back(std::move(info));
@@ -83,10 +89,14 @@ ORDER BY table_name, ordinal_position;
 optional_ptr<CatalogEntry> PostgresTableSet::RefreshTable(ClientContext &context, const string &table_name) {
 	auto &transaction = PostgresTransaction::Get(context, catalog);
 	auto query = StringUtil::Replace(StringUtil::Replace(R"(
-SELECT column_name, udt_name, column_default, is_nullable, numeric_precision, numeric_scale
-FROM information_schema.columns
-WHERE table_schema=${SCHEMA_NAME} AND table_name=${TABLE_NAME}
-ORDER BY table_name, ordinal_position;
+SELECT relpages, attname,
+    pg_type.typname type_name, atttypmod type_modifier, pg_attribute.attndims ndim
+FROM pg_class
+JOIN pg_namespace ON relnamespace = pg_namespace.oid
+JOIN pg_attribute ON pg_class.oid=pg_attribute.attrelid
+JOIN pg_type ON atttypid=pg_type.oid
+WHERE pg_namespace.nspname=${SCHEMA_NAME} AND relname=${TABLE_NAME} AND attnum > 0
+ORDER BY relname, attnum;
 )", "${SCHEMA_NAME}", KeywordHelper::WriteQuoted(schema.name)), "${TABLE_NAME}", KeywordHelper::WriteQuoted(table_name));
 	auto result = transaction.Query(query);
 	auto rows = result->Count();
@@ -95,7 +105,7 @@ ORDER BY table_name, ordinal_position;
 	}
 	auto table_info = make_uniq<PostgresTableInfo>(schema, table_name);
 	for(idx_t row = 0; row < rows; row++) {
-		AddColumn(transaction, *result, row, *table_info);
+		AddColumn(transaction, *result, row, *table_info, 1);
 	}
 	auto table_entry = make_uniq<PostgresTableEntry>(catalog, schema, *table_info);
 	auto table_ptr = table_entry.get();

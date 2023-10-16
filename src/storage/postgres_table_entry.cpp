@@ -16,11 +16,13 @@ PostgresTableEntry::PostgresTableEntry(Catalog &catalog, SchemaCatalogEntry &sch
 		}
 		postgres_types.push_back(PostgresUtils::CreateEmptyPostgresType(col.GetType()));
 	}
+	approx_num_pages = 0;
 }
 
 PostgresTableEntry::PostgresTableEntry(Catalog &catalog, SchemaCatalogEntry &schema, PostgresTableInfo &info)
     : TableCatalogEntry(catalog, schema, *info.create_info), postgres_types(std::move(info.postgres_types)) {
 	D_ASSERT(postgres_types.size() == columns.LogicalColumnCount());
+	approx_num_pages = info.approx_num_pages;
 }
 
 unique_ptr<BaseStatistics> PostgresTableEntry::GetStatistics(ClientContext &context, column_t column_id) {

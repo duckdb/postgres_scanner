@@ -28,6 +28,7 @@ struct PostgresTableInfo {
 
 	unique_ptr<CreateTableInfo> create_info;
 	vector<PostgresType> postgres_types;
+	idx_t approx_num_pages;
 };
 
 class PostgresTableEntry : public TableCatalogEntry {
@@ -50,6 +51,7 @@ public:
 
 public:
 	vector<PostgresType> postgres_types;
+	idx_t approx_num_pages;
 };
 
 } // namespace duckdb

@@ -16,9 +16,9 @@ class PostgresSchemaEntry;
 class PostgresTransaction;
 
 struct PostgresTypeData {
+	int64_t type_modifier = 0;
 	string type_name;
-	int32_t precision;
-	int32_t scale;
+	idx_t array_dimensions = 0;
 };
 
 enum class PostgresTypeAnnotation {

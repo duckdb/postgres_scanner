@@ -64,13 +64,16 @@ LogicalType PostgresUtils::RemoveAlias(const LogicalType &type) {
 
 LogicalType PostgresUtils::TypeToLogicalType(PostgresTransaction &transaction, PostgresSchemaEntry &schema, const PostgresTypeData &type_info, PostgresType &postgres_type) {
 	auto &pgtypename = type_info.type_name;
+
+	// TODO better check, does the typtyp say something here?
+	// postgres array types start with an _
 	if (StringUtil::StartsWith(pgtypename, "_")) {
 		PostgresTypeData child_type_info;
 		child_type_info.type_name = pgtypename.substr(1);
-		PostgresType child_postgres_type;
-		auto child_type = TypeToLogicalType(transaction, schema, child_type_info, child_postgres_type);
-		postgres_type.children.push_back(std::move(child_postgres_type));
-		return LogicalType::LIST(child_type);
+		PostgresType child_type;
+		auto result = LogicalType::LIST(PostgresUtils::TypeToLogicalType(transaction, schema, child_type_info, child_type));
+		postgres_type.children.push_back(std::move(child_type));
+		return result;
 	}
 
 	if (pgtypename == "bool") {
@@ -88,12 +91,14 @@ LogicalType PostgresUtils::TypeToLogicalType(PostgresTransaction &transaction, P
 	} else if (pgtypename == "float8") {
 		return LogicalType::DOUBLE;
 	} else if (pgtypename == "numeric") {
-		if (type_info.precision < 0 || type_info.scale < 0 || type_info.precision > 38) {
+		auto width = ((type_info.type_modifier - sizeof(int32_t)) >> 16) & 0xffff;
+		auto scale = (((type_info.type_modifier - sizeof(int32_t)) & 0x7ff) ^ 1024) - 1024;
+		if (type_info.type_modifier == -1 || width < 0 || scale < 0 || width > 38) {
 			// fallback to double
 			postgres_type.info = PostgresTypeAnnotation::NUMERIC_AS_DOUBLE;
 			return LogicalType::DOUBLE;
 		}
-		return LogicalType::DECIMAL(type_info.precision, type_info.scale);
+		return LogicalType::DECIMAL(width, scale);
 	} else if (pgtypename == "char" || pgtypename == "bpchar" || pgtypename == "varchar" || pgtypename == "text" ||
 	           pgtypename == "json") {
 		return LogicalType::VARCHAR;

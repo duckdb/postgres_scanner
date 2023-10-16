@@ -490,7 +490,7 @@ static idx_t PostgresMaxThreads(ClientContext &context, const FunctionData *bind
 	if (bind_data->requires_materialization) {
 		return 1;
 	}
-	if (bind_data->transaction && !bind_data->transaction->IsReadOnly()) {
+	if (!bind_data->read_only) {
 		return 1;
 	}
 	return MaxValue<idx_t>(bind_data->pages_approx / bind_data->pages_per_task, 1);
@@ -560,7 +560,7 @@ static unique_ptr<LocalTableFunctionState> GetLocalState(ClientContext &context,
 	}
 	local_state->column_ids = input.column_ids;
 
-	if (bind_data.transaction && !bind_data.transaction->IsReadOnly()) {
+	if (bind_data.transaction && !bind_data.read_only) {
 		// if we have made other modifications in this transaction we have to use the main connection
 		local_state->connection = PostgresConnection(bind_data.transaction->GetConnection().GetConnection());
 	} else {

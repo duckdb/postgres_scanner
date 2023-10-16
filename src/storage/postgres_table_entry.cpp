@@ -48,6 +48,7 @@ TableFunction PostgresTableEntry::GetScanFunction(ClientContext &context, unique
 		result->names.push_back(col.GetName());
 	}
 	result->postgres_types = postgres_types;
+	result->read_only = transaction.IsReadOnly();
 
 	bind_data = std::move(result);
 	return PostgresScanFunction();

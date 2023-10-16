@@ -145,211 +145,6 @@ static PostgresConnection PostgresScanConnect(string dsn, bool in_recovery, stri
 	return conn;
 }
 
-static void ProcessValue(const LogicalType &type, const PostgresType &postgres_type, PostgresBinaryReader &reader, idx_t value_len,
-                         Vector &out_vec, idx_t output_offset) {
-	switch (type.id()) {
-	case LogicalTypeId::SMALLINT:
-		D_ASSERT(value_len == sizeof(int16_t));
-		FlatVector::GetData<int16_t>(out_vec)[output_offset] = reader.ReadInteger<int16_t>();
-		break;
-
-	case LogicalTypeId::INTEGER:
-		D_ASSERT(value_len == sizeof(int32_t));
-		FlatVector::GetData<int32_t>(out_vec)[output_offset] = reader.ReadInteger<int32_t>();
-		break;
-
-	case LogicalTypeId::UINTEGER:
-		D_ASSERT(value_len == sizeof(uint32_t));
-		FlatVector::GetData<uint32_t>(out_vec)[output_offset] = reader.ReadInteger<uint32_t>();
-		break;
-
-	case LogicalTypeId::BIGINT:
-		D_ASSERT(value_len == sizeof(int64_t));
-		FlatVector::GetData<int64_t>(out_vec)[output_offset] = reader.ReadInteger<int64_t>();
-		break;
-
-	case LogicalTypeId::FLOAT: {
-		D_ASSERT(value_len == sizeof(float));
-		FlatVector::GetData<float>(out_vec)[output_offset] = reader.ReadFloat();
-		break;
-	}
-
-	case LogicalTypeId::DOUBLE: {
-		// this was an unbounded decimal, read params from value and cast to double
-		if (postgres_type.info == PostgresTypeAnnotation::NUMERIC_AS_DOUBLE) {
-			FlatVector::GetData<double>(out_vec)[output_offset] = reader.ReadDecimal<double, DecimalConversionDouble>();
-			break;
-		}
-		D_ASSERT(value_len == sizeof(double));
-		FlatVector::GetData<double>(out_vec)[output_offset] = reader.ReadDouble();
-		break;
-	}
-
-	case LogicalTypeId::BLOB:
-	case LogicalTypeId::VARCHAR: {
-		if (postgres_type.info == PostgresTypeAnnotation::JSONB) {
-			auto version = reader.ReadInteger<uint8_t>();
-			value_len--;
-			if (version != 1) {
-				throw NotImplementedException("JSONB version number mismatch, expected 1, got %d", version);
-			}
-		}
-		FlatVector::GetData<string_t>(out_vec)[output_offset] =
-		    StringVector::AddStringOrBlob(out_vec, reader.ReadString(value_len), value_len);
-		break;
-	}
-	case LogicalTypeId::BOOLEAN:
-		D_ASSERT(value_len == sizeof(bool));
-		FlatVector::GetData<bool>(out_vec)[output_offset] = reader.ReadBoolean();
-		break;
-	case LogicalTypeId::DECIMAL: {
-		if (value_len < sizeof(uint16_t) * 4) {
-			throw InvalidInputException("Need at least 8 bytes to read a Postgres decimal. Got %d", value_len);
-		}
-		switch (type.InternalType()) {
-		case PhysicalType::INT16:
-			FlatVector::GetData<int16_t>(out_vec)[output_offset] = reader.ReadDecimal<int16_t>();
-			break;
-		case PhysicalType::INT32:
-			FlatVector::GetData<int32_t>(out_vec)[output_offset] = reader.ReadDecimal<int32_t>();
-			break;
-		case PhysicalType::INT64:
-			FlatVector::GetData<int64_t>(out_vec)[output_offset] = reader.ReadDecimal<int64_t>();
-			break;
-		case PhysicalType::INT128:
-			FlatVector::GetData<hugeint_t>(out_vec)[output_offset] = reader.ReadDecimal<hugeint_t, DecimalConversionHugeint>();
-			break;
-		default:
-			throw InvalidInputException("Unsupported decimal storage type");
-		}
-		break;
-	}
-
-	case LogicalTypeId::DATE: {
-		D_ASSERT(value_len == sizeof(int32_t));
-		auto out_ptr = FlatVector::GetData<date_t>(out_vec);
-		out_ptr[output_offset] = reader.ReadDate();
-		break;
-	}
-	case LogicalTypeId::TIME: {
-		D_ASSERT(value_len == sizeof(int64_t));
-		FlatVector::GetData<dtime_t>(out_vec)[output_offset] = reader.ReadTime();
-		break;
-	}
-	case LogicalTypeId::TIME_TZ: {
-		D_ASSERT(value_len == sizeof(int64_t) + sizeof(int32_t));
-		FlatVector::GetData<dtime_tz_t>(out_vec)[output_offset] = reader.ReadTimeTZ();
-		break;
-	}
-	case LogicalTypeId::TIMESTAMP_TZ:
-	case LogicalTypeId::TIMESTAMP: {
-		D_ASSERT(value_len == sizeof(int64_t));
-		FlatVector::GetData<timestamp_t>(out_vec)[output_offset] = reader.ReadTimestamp();
-		break;
-	}
-	case LogicalTypeId::ENUM: {
-		auto enum_val = string(reader.ReadString(value_len), value_len);
-		auto offset = EnumType::GetPos(type, enum_val);
-		if (offset < 0) {
-			throw IOException("Could not map ENUM value %s", enum_val);
-		}
-		switch (type.InternalType()) {
-		case PhysicalType::UINT8:
-			FlatVector::GetData<uint8_t>(out_vec)[output_offset] = (uint8_t)offset;
-			break;
-		case PhysicalType::UINT16:
-			FlatVector::GetData<uint16_t>(out_vec)[output_offset] = (uint16_t)offset;
-			break;
-
-		case PhysicalType::UINT32:
-			FlatVector::GetData<uint32_t>(out_vec)[output_offset] = (uint32_t)offset;
-			break;
-
-		default:
-			throw InternalException("ENUM can only have unsigned integers (except "
-			                        "UINT64) as physical types, got %s",
-			                        TypeIdToString(type.InternalType()));
-		}
-		break;
-	}
-	case LogicalTypeId::INTERVAL: {
-		FlatVector::GetData<interval_t>(out_vec)[output_offset] = reader.ReadInterval();
-		break;
-	}
-
-	case LogicalTypeId::UUID: {
-		D_ASSERT(value_len == 2 * sizeof(int64_t));
-		FlatVector::GetData<hugeint_t>(out_vec)[output_offset] = reader.ReadUUID();
-		break;
-	}
-	case LogicalTypeId::LIST: {
-		auto &list_entry = FlatVector::GetData<list_entry_t>(out_vec)[output_offset];
-		auto child_offset = ListVector::GetListSize(out_vec);
-
-		if (value_len < 1) {
-			list_entry.offset = child_offset;
-			list_entry.length = 0;
-			break;
-		}
-		D_ASSERT(value_len >= 3 * sizeof(uint32_t));
-		auto flag_one = reader.ReadInteger<uint32_t>();
-		auto flag_two = reader.ReadInteger<uint32_t>();
-		auto value_oid = reader.ReadInteger<uint32_t>();
-		if (flag_one == 0) {
-			list_entry.offset = child_offset;
-			list_entry.length = 0;
-			return;
-		}
-		// D_ASSERT(flag_two == 1); // TODO what is this?!
-		auto array_length = reader.ReadInteger<uint32_t>();
-		auto array_dim = reader.ReadInteger<uint32_t>();
-		if (array_dim != 1) {
-			throw NotImplementedException("Only one-dimensional Postgres arrays are supported %u %u ", array_length,
-			                              array_dim);
-		}
-
-		auto &child_vec = ListVector::GetEntry(out_vec);
-		ListVector::Reserve(out_vec, child_offset + array_length);
-		for (idx_t child_idx = 0; child_idx < array_length; child_idx++) {
-			// handle NULLs again (TODO: unify this with scan)
-			auto ele_len = reader.ReadInteger<int32_t>();
-			if (ele_len == -1) { // NULL
-				FlatVector::Validity(child_vec).Set(child_offset + child_idx, false);
-				continue;
-			}
-
-			ProcessValue(ListType::GetChildType(type), postgres_type.children[0], reader, ele_len, child_vec,
-			             child_offset + child_idx);
-		}
-		ListVector::SetListSize(out_vec, child_offset + array_length);
-
-		list_entry.offset = child_offset;
-		list_entry.length = array_length;
-		break;
-	}
-	case LogicalTypeId::STRUCT: {
-		auto &child_entries = StructVector::GetEntries(out_vec);
-		auto entry_count = reader.ReadInteger<uint32_t>();
-		if (entry_count != child_entries.size()) {
-			throw InternalException("Mismatch in entry count: expected %d but got %d", child_entries.size(), entry_count);
-		}
-		for(idx_t c = 0; c < entry_count; c++) {
-			auto &child = *child_entries[c];
-			auto value_oid = reader.ReadInteger<uint32_t>();
-			auto ele_len = reader.ReadInteger<int32_t>();
-			if (ele_len == -1) { // NULL
-				FlatVector::Validity(child).Set(output_offset, false);
-				continue;
-			}
-			ProcessValue(child.GetType(), postgres_type.children[c], reader, ele_len, child, output_offset);
-		}
-		break;
-	}
-	default:
-		throw InternalException("Unsupported Type %s", type.ToString());
-	}
-}
-
 static idx_t PostgresMaxThreads(ClientContext &context, const FunctionData *bind_data_p) {
 	D_ASSERT(bind_data_p);
 
@@ -488,21 +283,15 @@ void PostgresLocalState::ScanChunk(ClientContext &context, const PostgresBindDat
 		for (idx_t output_idx = 0; output_idx < output.ColumnCount(); output_idx++) {
 			auto col_idx = column_ids[output_idx];
 			auto &out_vec = output.data[output_idx];
-			auto raw_len = reader.ReadInteger<int32_t>();
-			if (raw_len == -1) { // NULL
-				FlatVector::Validity(out_vec).Set(output_offset, false);
-				continue;
-			}
 			if (col_idx == COLUMN_IDENTIFIER_ROW_ID) {
 				// row id
 				// ctid in postgres are a composite type of (page_index, tuple_in_page)
 				// the page index is a 4-byte integer, the tuple_in_page a 2-byte integer
-				D_ASSERT(raw_len == 6);
-				int64_t page_index = reader.ReadInteger<int32_t>();
-				int64_t row_in_page = reader.ReadInteger<int16_t>();
-				FlatVector::GetData<int64_t>(out_vec)[output_offset] = (page_index << 16LL) + row_in_page;
+				PostgresType ctid_type;
+				ctid_type.info = PostgresTypeAnnotation::CTID;
+				reader.ReadValue(LogicalType::BIGINT, ctid_type, out_vec, output_offset);
 			} else {
-				ProcessValue(bind_data.types[col_idx], bind_data.postgres_types[col_idx], reader, raw_len, out_vec,
+				reader.ReadValue(bind_data.types[col_idx], bind_data.postgres_types[col_idx], out_vec,
 							 output_offset);
 			}
 		}
@@ -528,73 +317,6 @@ static string PostgresScanToString(const FunctionData *bind_data_p) {
 
 	auto bind_data = (const PostgresBindData *)bind_data_p;
 	return bind_data->table_name;
-}
-
-struct AttachFunctionData : public TableFunctionData {
-	bool finished = false;
-	string source_schema = "public";
-	string sink_schema = "main";
-	string suffix = "";
-	bool overwrite = false;
-	bool filter_pushdown = false;
-
-	string dsn = "";
-};
-
-static unique_ptr<FunctionData> AttachBind(ClientContext &context, TableFunctionBindInput &input,
-                                           vector<LogicalType> &return_types, vector<string> &names) {
-
-	auto result = make_uniq<AttachFunctionData>();
-	result->dsn = input.inputs[0].GetValue<string>();
-
-	for (auto &kv : input.named_parameters) {
-		if (kv.first == "source_schema") {
-			result->source_schema = StringValue::Get(kv.second);
-		} else if (kv.first == "sink_schema") {
-			result->sink_schema = StringValue::Get(kv.second);
-		} else if (kv.first == "overwrite") {
-			result->overwrite = BooleanValue::Get(kv.second);
-		} else if (kv.first == "filter_pushdown") {
-			result->filter_pushdown = BooleanValue::Get(kv.second);
-		}
-	}
-
-	return_types.push_back(LogicalType::BOOLEAN);
-	names.emplace_back("Success");
-	return std::move(result);
-}
-
-static void AttachFunction(ClientContext &context, TableFunctionInput &data_p, DataChunk &output) {
-	auto &data = (AttachFunctionData &)*data_p.bind_data;
-	if (data.finished) {
-		return;
-	}
-
-	auto conn = PostgresConnection::Open(data.dsn);
-	auto dconn = Connection(context.db->GetDatabase(context));
-	auto res = conn.Query(StringUtil::Format(
-	                             R"(
-SELECT relname
-FROM pg_class JOIN pg_namespace ON pg_class.relnamespace = pg_namespace.oid
-JOIN pg_attribute ON pg_class.oid = pg_attribute.attrelid
-WHERE relkind = 'r' AND attnum > 0 AND nspname = '%s'
-GROUP BY relname
-ORDER BY relname;
-)",
-	                             data.source_schema)
-	                             .c_str());
-
-	for (idx_t row = 0; row < PQntuples(res->res); row++) {
-		auto table_name = res->GetString(row, 0);
-
-		dconn
-		    .TableFunction(data.filter_pushdown ? "postgres_scan_pushdown" : "postgres_scan",
-		                   {Value(data.dsn), Value(data.source_schema), Value(table_name)})
-		    ->CreateView(data.sink_schema, table_name, data.overwrite, false);
-	}
-	res.reset();
-
-	data.finished = true;
 }
 
 static void PostgresScanSerialize(Serializer &serializer, const optional_ptr<FunctionData> bind_data_p,
@@ -623,10 +345,6 @@ PostgresScanFunctionFilterPushdown::PostgresScanFunctionFilterPushdown()
 	deserialize = PostgresScanDeserialize;
 	projection_pushdown = true;
 	filter_pushdown = true;
-}
-
-PostgresAttachFunction::PostgresAttachFunction()
-	: TableFunction("postgres_attach", {LogicalType::VARCHAR}, AttachFunction, AttachBind) {
 }
 
 }

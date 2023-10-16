@@ -1,0 +1,32 @@
+# name: test/storage/attach_use_binary_copy.test
+# description:
+# group: [postgres_storage]
+
+require postgres_scanner
+
+statement ok
+ATTACH 'dbname=postgresscanner' AS s (TYPE POSTGRES)
+
+statement ok
+USE s;
+
+statement ok
+CREATE OR REPLACE TABLE binary_copy_tbl(i INTEGER, s VARCHAR, arr INT[]);
+
+statement ok
+INSERT INTO binary_copy_tbl VALUES (1, 'a', [42]), (2, 'hello world', [1, 2, 3]), (3, 'xx', []);
+
+statement ok
+SET pg_use_binary_copy=false
+
+statement ok
+INSERT INTO binary_copy_tbl VALUES (4, 'this is a long string', [10, NULL, 100]), (NULL, 'xxx', [NULL]);
+
+query III
+SELECT * FROM binary_copy_tbl
+----
+1	a	[42]
+2	hello world	[1, 2, 3]
+3	xx	[]
+4	this is a long string	[10, NULL, 100]
+NULL	xxx	[NULL]

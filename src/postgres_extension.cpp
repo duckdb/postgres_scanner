@@ -33,6 +33,8 @@ static void LoadInternal(DatabaseInstance &db) {
 
 	auto &config = DBConfig::GetConfig(db);
 	config.storage_extensions["postgres_scanner"] = make_uniq<PostgresStorageExtension>();
+
+	config.AddExtensionOption("pg_use_binary_copy", "Whether or not to use BINARY copy to read data", LogicalType::BOOLEAN, Value::BOOLEAN(true));
 }
 
 void PostgresScannerExtension::Load(DuckDB &db) {

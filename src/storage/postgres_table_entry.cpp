@@ -101,6 +101,12 @@ static bool CopyRequiresText(const LogicalType &type, const PostgresType &pg_typ
 }
 
 PostgresCopyFormat PostgresTableEntry::GetCopyFormat(ClientContext &context) {
+	Value use_binary_copy;
+	if (context.TryGetCurrentSetting("pg_use_binary_copy", use_binary_copy)) {
+		if (!BooleanValue::Get(use_binary_copy)) {
+			return PostgresCopyFormat::TEXT;
+		}
+	}
 	D_ASSERT(postgres_types.size() == columns.LogicalColumnCount());
 	for(idx_t c = 0; c < postgres_types.size(); c++) {
 		if (CopyRequiresText(columns.GetColumn(LogicalIndex(c)).GetType(), postgres_types[c])) {

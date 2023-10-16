@@ -260,6 +260,205 @@ public:
 		return (config.is_negative ? -base_res : base_res);
 	}
 
+	void ReadValue(const LogicalType &type, const PostgresType &postgres_type,
+							 Vector &out_vec, idx_t output_offset) {
+		auto value_len = ReadInteger<int32_t>();
+		if (value_len == -1) { // NULL
+			FlatVector::SetNull(out_vec, output_offset, true);
+			return;
+		}
+		switch (type.id()) {
+		case LogicalTypeId::SMALLINT:
+			D_ASSERT(value_len == sizeof(int16_t));
+			FlatVector::GetData<int16_t>(out_vec)[output_offset] = ReadInteger<int16_t>();
+			break;
+		case LogicalTypeId::INTEGER:
+			D_ASSERT(value_len == sizeof(int32_t));
+			FlatVector::GetData<int32_t>(out_vec)[output_offset] = ReadInteger<int32_t>();
+			break;
+		case LogicalTypeId::UINTEGER:
+			D_ASSERT(value_len == sizeof(uint32_t));
+			FlatVector::GetData<uint32_t>(out_vec)[output_offset] = ReadInteger<uint32_t>();
+			break;
+		case LogicalTypeId::BIGINT:
+			if (postgres_type.info == PostgresTypeAnnotation::CTID) {
+				D_ASSERT(value_len == 6);
+				int64_t page_index = ReadInteger<int32_t>();
+				int64_t row_in_page = ReadInteger<int16_t>();
+				FlatVector::GetData<int64_t>(out_vec)[output_offset] = (page_index << 16LL) + row_in_page;
+				return;
+			}
+			D_ASSERT(value_len == sizeof(int64_t));
+			FlatVector::GetData<int64_t>(out_vec)[output_offset] = ReadInteger<int64_t>();
+			break;
+		case LogicalTypeId::FLOAT:
+			D_ASSERT(value_len == sizeof(float));
+			FlatVector::GetData<float>(out_vec)[output_offset] = ReadFloat();
+			break;
+		case LogicalTypeId::DOUBLE: {
+			// this was an unbounded decimal, read params from value and cast to double
+			if (postgres_type.info == PostgresTypeAnnotation::NUMERIC_AS_DOUBLE) {
+				FlatVector::GetData<double>(out_vec)[output_offset] = ReadDecimal<double, DecimalConversionDouble>();
+				break;
+			}
+			D_ASSERT(value_len == sizeof(double));
+			FlatVector::GetData<double>(out_vec)[output_offset] = ReadDouble();
+			break;
+		}
+
+		case LogicalTypeId::BLOB:
+		case LogicalTypeId::VARCHAR: {
+			if (postgres_type.info == PostgresTypeAnnotation::JSONB) {
+				auto version = ReadInteger<uint8_t>();
+				value_len--;
+				if (version != 1) {
+					throw NotImplementedException("JSONB version number mismatch, expected 1, got %d", version);
+				}
+			}
+			FlatVector::GetData<string_t>(out_vec)[output_offset] =
+				StringVector::AddStringOrBlob(out_vec, ReadString(value_len), value_len);
+			break;
+		}
+		case LogicalTypeId::BOOLEAN:
+			D_ASSERT(value_len == sizeof(bool));
+			FlatVector::GetData<bool>(out_vec)[output_offset] = ReadBoolean();
+			break;
+		case LogicalTypeId::DECIMAL: {
+			if (value_len < sizeof(uint16_t) * 4) {
+				throw InvalidInputException("Need at least 8 bytes to read a Postgres decimal. Got %d", value_len);
+			}
+			switch (type.InternalType()) {
+			case PhysicalType::INT16:
+				FlatVector::GetData<int16_t>(out_vec)[output_offset] = ReadDecimal<int16_t>();
+				break;
+			case PhysicalType::INT32:
+				FlatVector::GetData<int32_t>(out_vec)[output_offset] = ReadDecimal<int32_t>();
+				break;
+			case PhysicalType::INT64:
+				FlatVector::GetData<int64_t>(out_vec)[output_offset] = ReadDecimal<int64_t>();
+				break;
+			case PhysicalType::INT128:
+				FlatVector::GetData<hugeint_t>(out_vec)[output_offset] = ReadDecimal<hugeint_t, DecimalConversionHugeint>();
+				break;
+			default:
+				throw InvalidInputException("Unsupported decimal storage type");
+			}
+			break;
+		}
+
+		case LogicalTypeId::DATE: {
+			D_ASSERT(value_len == sizeof(int32_t));
+			auto out_ptr = FlatVector::GetData<date_t>(out_vec);
+			out_ptr[output_offset] = ReadDate();
+			break;
+		}
+		case LogicalTypeId::TIME: {
+			D_ASSERT(value_len == sizeof(int64_t));
+			FlatVector::GetData<dtime_t>(out_vec)[output_offset] = ReadTime();
+			break;
+		}
+		case LogicalTypeId::TIME_TZ: {
+			D_ASSERT(value_len == sizeof(int64_t) + sizeof(int32_t));
+			FlatVector::GetData<dtime_tz_t>(out_vec)[output_offset] = ReadTimeTZ();
+			break;
+		}
+		case LogicalTypeId::TIMESTAMP_TZ:
+		case LogicalTypeId::TIMESTAMP: {
+			D_ASSERT(value_len == sizeof(int64_t));
+			FlatVector::GetData<timestamp_t>(out_vec)[output_offset] = ReadTimestamp();
+			break;
+		}
+		case LogicalTypeId::ENUM: {
+			auto enum_val = string(ReadString(value_len), value_len);
+			auto offset = EnumType::GetPos(type, enum_val);
+			if (offset < 0) {
+				throw IOException("Could not map ENUM value %s", enum_val);
+			}
+			switch (type.InternalType()) {
+			case PhysicalType::UINT8:
+				FlatVector::GetData<uint8_t>(out_vec)[output_offset] = (uint8_t)offset;
+				break;
+			case PhysicalType::UINT16:
+				FlatVector::GetData<uint16_t>(out_vec)[output_offset] = (uint16_t)offset;
+				break;
+
+			case PhysicalType::UINT32:
+				FlatVector::GetData<uint32_t>(out_vec)[output_offset] = (uint32_t)offset;
+				break;
+
+			default:
+				throw InternalException("ENUM can only have unsigned integers (except "
+										"UINT64) as physical types, got %s",
+										TypeIdToString(type.InternalType()));
+			}
+			break;
+		}
+		case LogicalTypeId::INTERVAL: {
+			FlatVector::GetData<interval_t>(out_vec)[output_offset] = ReadInterval();
+			break;
+		}
+
+		case LogicalTypeId::UUID: {
+			D_ASSERT(value_len == 2 * sizeof(int64_t));
+			FlatVector::GetData<hugeint_t>(out_vec)[output_offset] = ReadUUID();
+			break;
+		}
+		case LogicalTypeId::LIST: {
+			auto &list_entry = FlatVector::GetData<list_entry_t>(out_vec)[output_offset];
+			auto child_offset = ListVector::GetListSize(out_vec);
+
+			if (value_len < 1) {
+				list_entry.offset = child_offset;
+				list_entry.length = 0;
+				break;
+			}
+			D_ASSERT(value_len >= 3 * sizeof(uint32_t));
+			auto flag_one = ReadInteger<uint32_t>();
+			auto flag_two = ReadInteger<uint32_t>();
+			auto value_oid = ReadInteger<uint32_t>();
+			if (flag_one == 0) {
+				list_entry.offset = child_offset;
+				list_entry.length = 0;
+				return;
+			}
+			// D_ASSERT(flag_two == 1); // TODO what is this?!
+			auto array_length = ReadInteger<uint32_t>();
+			auto array_dim = ReadInteger<uint32_t>();
+			if (array_dim != 1) {
+				throw NotImplementedException("Only one-dimensional Postgres arrays are supported %u %u ", array_length,
+											  array_dim);
+			}
+
+			auto &child_vec = ListVector::GetEntry(out_vec);
+			ListVector::Reserve(out_vec, child_offset + array_length);
+			for (idx_t child_idx = 0; child_idx < array_length; child_idx++) {
+				ReadValue(ListType::GetChildType(type), postgres_type.children[0], child_vec,
+							 child_offset + child_idx);
+			}
+			ListVector::SetListSize(out_vec, child_offset + array_length);
+
+			list_entry.offset = child_offset;
+			list_entry.length = array_length;
+			break;
+		}
+		case LogicalTypeId::STRUCT: {
+			auto &child_entries = StructVector::GetEntries(out_vec);
+			auto entry_count = ReadInteger<uint32_t>();
+			if (entry_count != child_entries.size()) {
+				throw InternalException("Mismatch in entry count: expected %d but got %d", child_entries.size(), entry_count);
+			}
+			for(idx_t c = 0; c < entry_count; c++) {
+				auto &child = *child_entries[c];
+				auto value_oid = ReadInteger<uint32_t>();
+				ReadValue(child.GetType(), postgres_type.children[c], child, output_offset);
+			}
+			break;
+		}
+		default:
+			throw InternalException("Unsupported Type %s", type.ToString());
+		}
+	}
+
 private:
 	data_ptr_t buffer = nullptr;
 	data_ptr_t buffer_ptr = nullptr;

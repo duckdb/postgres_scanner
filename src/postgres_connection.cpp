@@ -45,14 +45,6 @@ static bool ResultHasError(PGresult *result) {
 	}
 }
 
-unique_ptr<PostgresResult> PostgresConnection::TryQuery(const string &query) {
-	auto result = PQexec(GetConn(), query.c_str());
-	if (ResultHasError(result)) {
-		return nullptr;
-	}
-	return make_uniq<PostgresResult>(result);
-}
-
 unique_ptr<PostgresResult> PostgresConnection::Query(const string &query) {
 	auto result = PQexec(GetConn(), query.c_str());
 	if (ResultHasError(result)) {

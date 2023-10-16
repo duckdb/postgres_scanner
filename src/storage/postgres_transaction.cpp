@@ -17,20 +17,30 @@ PostgresTransaction::PostgresTransaction(PostgresCatalog &postgres_catalog, Tran
 PostgresTransaction::~PostgresTransaction() = default;
 
 void PostgresTransaction::Start() {
-	string query = "BEGIN TRANSACTION";
-	if (postgres_catalog.access_mode == AccessMode::READ_ONLY) {
-		query += " READ ONLY";
-	}
-	connection.Execute(query);
+	transaction_state = PostgresTransactionState::TRANSACTION_NOT_YET_STARTED;
 }
 void PostgresTransaction::Commit() {
-	connection.Execute("COMMIT");
+	if (transaction_state == PostgresTransactionState::TRANSACTION_STARTED) {
+		transaction_state = PostgresTransactionState::TRANSACTION_FINISHED;
+		connection.Execute("COMMIT");
+	}
 }
 void PostgresTransaction::Rollback() {
-	connection.Execute("ROLLBACK");
+	if (transaction_state == PostgresTransactionState::TRANSACTION_STARTED) {
+		transaction_state = PostgresTransactionState::TRANSACTION_FINISHED;
+		connection.Execute("ROLLBACK");
+	}
 }
 
 PostgresConnection &PostgresTransaction::GetConnection() {
+	if (transaction_state == PostgresTransactionState::TRANSACTION_NOT_YET_STARTED) {
+		transaction_state = PostgresTransactionState::TRANSACTION_STARTED;
+		string query = "BEGIN TRANSACTION";
+		if (postgres_catalog.access_mode == AccessMode::READ_ONLY) {
+			query += " READ ONLY";
+		}
+		connection.Execute(query);
+	}
 	return connection;
 }
 

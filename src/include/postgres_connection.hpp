@@ -53,7 +53,6 @@ public:
 public:
 	static PostgresConnection Open(const string &connection_string);
 	void Execute(const string &query);
-	unique_ptr<PostgresResult> TryQuery(const string &query);
 	unique_ptr<PostgresResult> Query(const string &query);
 
 	vector<string> GetEntries(string entry_type);

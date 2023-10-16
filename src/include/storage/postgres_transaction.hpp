@@ -16,6 +16,12 @@ class PostgresCatalog;
 class PostgresSchemaEntry;
 class PostgresTableEntry;
 
+enum class PostgresTransactionState {
+	TRANSACTION_NOT_YET_STARTED,
+	TRANSACTION_STARTED,
+	TRANSACTION_FINISHED
+};
+
 class PostgresTransaction : public Transaction {
 public:
 	PostgresTransaction(PostgresCatalog &postgres_catalog, TransactionManager &manager, ClientContext &context);
@@ -31,6 +37,7 @@ public:
 private:
 	PostgresCatalog &postgres_catalog;
 	PostgresConnection connection;
+	PostgresTransactionState transaction_state;
 };
 
 } // namespace duckdb

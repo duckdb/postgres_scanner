@@ -17,21 +17,25 @@ namespace duckdb {
 struct PostgresTableInfo {
 	PostgresTableInfo() {
 		create_info = make_uniq<CreateTableInfo>();
+		create_info->columns.SetAllowDuplicates(true);
 	}
 	PostgresTableInfo(const string &schema, const string &table) {
 		create_info = make_uniq<CreateTableInfo>(string(), schema, table);
+		create_info->columns.SetAllowDuplicates(true);
 	}
 	PostgresTableInfo(const SchemaCatalogEntry &schema, const string &table) {
 		create_info = make_uniq<CreateTableInfo>(schema, table);
+		create_info->columns.SetAllowDuplicates(true);
 	}
 
-	const string &GetTableName() {
+	const string &GetTableName() const {
 		return create_info->table;
 	}
 
 	unique_ptr<CreateTableInfo> create_info;
 	vector<PostgresType> postgres_types;
-	idx_t approx_num_pages;
+	vector<string> postgres_names;
+	idx_t approx_num_pages = 0;
 };
 
 class PostgresTableEntry : public TableCatalogEntry {
@@ -54,6 +58,7 @@ public:
 
 public:
 	vector<PostgresType> postgres_types;
+	vector<string> postgres_names;
 	idx_t approx_num_pages;
 };
 

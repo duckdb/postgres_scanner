@@ -22,7 +22,7 @@ public:
 	}
 
 	void WriteChar(char c) {
-		switch(c) {
+		switch (c) {
 		case '\n':
 			WriteChar('\\');
 			WriteChar('n');
@@ -56,7 +56,7 @@ public:
 	void WriteVarchar(string_t value) {
 		auto size = value.GetSize();
 		auto data = value.GetData();
-		for(idx_t c = 0; c < size; c++) {
+		for (idx_t c = 0; c < size; c++) {
 			WriteChar(data[c]);
 		}
 	}

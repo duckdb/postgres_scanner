@@ -21,13 +21,7 @@ struct PostgresTypeData {
 	idx_t array_dimensions = 0;
 };
 
-enum class PostgresTypeAnnotation {
-	STANDARD,
-	CAST_TO_VARCHAR,
-	NUMERIC_AS_DOUBLE,
-	CTID,
-	JSONB
-};
+enum class PostgresTypeAnnotation { STANDARD, CAST_TO_VARCHAR, NUMERIC_AS_DOUBLE, CTID, JSONB };
 
 struct PostgresType {
 	idx_t oid = 0;
@@ -35,18 +29,16 @@ struct PostgresType {
 	vector<PostgresType> children;
 };
 
-enum class PostgresCopyFormat {
-	AUTO = 0,
-	BINARY = 1,
-	TEXT = 2
-};
+enum class PostgresCopyFormat { AUTO = 0, BINARY = 1, TEXT = 2 };
 
 class PostgresUtils {
 public:
 	static PGconn *PGConnect(const string &dsn);
 
 	static LogicalType ToPostgresType(const LogicalType &input);
-	static LogicalType TypeToLogicalType(optional_ptr<PostgresTransaction> transaction, optional_ptr<PostgresSchemaEntry> schema, const PostgresTypeData &input, PostgresType &postgres_type);
+	static LogicalType TypeToLogicalType(optional_ptr<PostgresTransaction> transaction,
+	                                     optional_ptr<PostgresSchemaEntry> schema, const PostgresTypeData &input,
+	                                     PostgresType &postgres_type);
 	static string TypeToString(const LogicalType &input);
 	static uint32_t ToPostgresOid(const LogicalType &input);
 	static bool SupportedPostgresOid(const LogicalType &input);

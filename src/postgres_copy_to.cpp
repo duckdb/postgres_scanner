@@ -17,7 +17,7 @@ void PostgresConnection::BeginCopyTo(ClientContext &context, PostgresCopyState &
 			if (c > 0) {
 				query += ", ";
 			}
-			query += KeywordHelper::WriteOptionallyQuoted(column_names[c]);
+			query += KeywordHelper::WriteQuoted(column_names[c], '"');
 		}
 		query += ") ";
 	}

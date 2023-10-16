@@ -15,12 +15,14 @@ PostgresTableEntry::PostgresTableEntry(Catalog &catalog, SchemaCatalogEntry &sch
 			col.TypeMutable() = PostgresUtils::RemoveAlias(col.GetType());
 		}
 		postgres_types.push_back(PostgresUtils::CreateEmptyPostgresType(col.GetType()));
+		postgres_names.push_back(col.GetName());
 	}
 	approx_num_pages = 0;
 }
 
 PostgresTableEntry::PostgresTableEntry(Catalog &catalog, SchemaCatalogEntry &schema, PostgresTableInfo &info)
-    : TableCatalogEntry(catalog, schema, *info.create_info), postgres_types(std::move(info.postgres_types)) {
+    : TableCatalogEntry(catalog, schema, *info.create_info), postgres_types(std::move(info.postgres_types)),
+	postgres_names(std::move(info.postgres_names)) {
 	D_ASSERT(postgres_types.size() == columns.LogicalColumnCount());
 	approx_num_pages = info.approx_num_pages;
 }
@@ -47,8 +49,8 @@ TableFunction PostgresTableEntry::GetScanFunction(ClientContext &context, unique
 	PostgresScanFunction::PrepareBind(context, *result);
 	for(auto &col : columns.Logical()) {
 		result->types.push_back(col.GetType());
-		result->names.push_back(col.GetName());
 	}
+	result->names = postgres_names;
 	result->postgres_types = postgres_types;
 	result->read_only = transaction.IsReadOnly();
 	result->SetTablePages(approx_num_pages);

@@ -130,3 +130,10 @@ insert into some_schema.some_table values ('two');
 CREATE TABLE dum();
 CREATE TABLE dee();
 INSERT INTO dee DEFAULT VALUES;
+
+-- table with duplicate column names
+CREATE TABLE tbl_with_case_sensitive_columns (
+	"MyColumn" INT,
+	"mycolumn" INT
+);
+INSERT INTO tbl_with_case_sensitive_columns VALUES (42, 84);

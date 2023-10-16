@@ -30,7 +30,7 @@ void PostgresTableSet::AddColumn(optional_ptr<PostgresTransaction> transaction, 
 	PostgresType postgres_type;
 	auto column_type = PostgresUtils::TypeToLogicalType(transaction, schema, type_info, postgres_type);
 	table_info.postgres_types.push_back(std::move(postgres_type));
-
+	table_info.postgres_names.push_back(column_name);
 	ColumnDefinition column(std::move(column_name), std::move(column_type));
 	if (!default_value.empty()) {
 		auto expressions = Parser::ParseExpressionList(default_value);

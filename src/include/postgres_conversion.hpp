@@ -28,7 +28,6 @@
 #define POSTGRES_INFINITY    9223372036854775807ULL
 #define POSTGRES_NINFINITY   9223372036854775808ULL
 
-
 #define NBASE      10000
 #define DEC_DIGITS 4 /* decimal digits per NBASE digit */
 
@@ -100,7 +99,6 @@ struct PostgresConversion {
 	static constexpr const idx_t COPY_HEADER_LENGTH = 11;
 };
 
-
 // copied from cast_helpers.cpp because windows linking issues
 struct DecimalConversionInteger {
 	static int64_t GetPowerOfTen(idx_t index) {
@@ -129,7 +127,7 @@ struct DecimalConversionInteger {
 		return POWERS_OF_TEN[index];
 	}
 
-	template<class T>
+	template <class T>
 	static T Finalize(const PostgresDecimalConfig &config, T result) {
 		return result;
 	}

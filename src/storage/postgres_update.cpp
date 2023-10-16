@@ -36,8 +36,9 @@ string CreateUpdateTable(const string &name, PostgresTableEntry &table, const ve
 		if (i > 0) {
 			result += ", ";
 		}
+		auto &column_name = table.postgres_names[index[i].index];
 		auto &col = table.GetColumn(LogicalIndex(index[i].index));
-		result += KeywordHelper::WriteQuoted(col.GetName(), '"');
+		result += KeywordHelper::WriteQuoted(column_name, '"');
 		result += " ";
 		result += PostgresUtils::TypeToString(col.GetType());
 	}
@@ -53,12 +54,12 @@ string GetUpdateSQL(const string &name, PostgresTableEntry &table, const vector<
 		if (i > 0) {
 			result += ", ";
 		}
-		auto &col = table.GetColumn(LogicalIndex(index[i].index));
-		result += KeywordHelper::WriteQuoted(col.GetName(), '"');
+		auto &column_name = table.postgres_names[index[i].index];
+		result += KeywordHelper::WriteQuoted(column_name, '"');
 		result += " = ";
 		result += KeywordHelper::WriteQuoted(name, '"');
 		result += ".";
-		result += KeywordHelper::WriteQuoted(col.GetName(), '"');
+		result += KeywordHelper::WriteQuoted(column_name, '"');
 	}
 	result += " FROM " + KeywordHelper::WriteOptionallyQuoted(name);
 	result += " WHERE ";

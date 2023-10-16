@@ -79,7 +79,18 @@ unique_ptr<GlobalSinkState> PostgresInsert::GetGlobalSinkState(ClientContext &co
 	auto insert_columns = GetInsertColumns(*this, *insert_table);
 	auto result = make_uniq<PostgresInsertGlobalState>(context, insert_table);
 	auto format = insert_table->GetCopyFormat(context);
-	connection.BeginCopyTo(context, result->copy_state, format, insert_table->schema.name, insert_table->name, insert_columns);
+	vector<string> insert_column_names;
+	if (!insert_columns.empty()) {
+		for(auto &str : insert_columns) {
+			auto index = insert_table->GetColumnIndex(str, true);
+			if (!index.IsValid()) {
+				insert_column_names.push_back(str);
+			} else {
+				insert_column_names.push_back(insert_table->postgres_names[index.index]);
+			}
+		}
+	}
+	connection.BeginCopyTo(context, result->copy_state, format, insert_table->schema.name, insert_table->name, insert_column_names);
 	return std::move(result);
 }
 

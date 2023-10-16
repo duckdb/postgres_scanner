@@ -260,8 +260,7 @@ public:
 		return (config.is_negative ? -base_res : base_res);
 	}
 
-	void ReadValue(const LogicalType &type, const PostgresType &postgres_type,
-							 Vector &out_vec, idx_t output_offset) {
+	void ReadValue(const LogicalType &type, const PostgresType &postgres_type, Vector &out_vec, idx_t output_offset) {
 		auto value_len = ReadInteger<int32_t>();
 		if (value_len == -1) { // NULL
 			FlatVector::SetNull(out_vec, output_offset, true);
@@ -316,7 +315,7 @@ public:
 				}
 			}
 			FlatVector::GetData<string_t>(out_vec)[output_offset] =
-				StringVector::AddStringOrBlob(out_vec, ReadString(value_len), value_len);
+			    StringVector::AddStringOrBlob(out_vec, ReadString(value_len), value_len);
 			break;
 		}
 		case LogicalTypeId::BOOLEAN:
@@ -338,7 +337,8 @@ public:
 				FlatVector::GetData<int64_t>(out_vec)[output_offset] = ReadDecimal<int64_t>();
 				break;
 			case PhysicalType::INT128:
-				FlatVector::GetData<hugeint_t>(out_vec)[output_offset] = ReadDecimal<hugeint_t, DecimalConversionHugeint>();
+				FlatVector::GetData<hugeint_t>(out_vec)[output_offset] =
+				    ReadDecimal<hugeint_t, DecimalConversionHugeint>();
 				break;
 			default:
 				throw InvalidInputException("Unsupported decimal storage type");
@@ -388,8 +388,8 @@ public:
 
 			default:
 				throw InternalException("ENUM can only have unsigned integers (except "
-										"UINT64) as physical types, got %s",
-										TypeIdToString(type.InternalType()));
+				                        "UINT64) as physical types, got %s",
+				                        TypeIdToString(type.InternalType()));
 			}
 			break;
 		}
@@ -426,14 +426,13 @@ public:
 			auto array_dim = ReadInteger<uint32_t>();
 			if (array_dim != 1) {
 				throw NotImplementedException("Only one-dimensional Postgres arrays are supported %u %u ", array_length,
-											  array_dim);
+				                              array_dim);
 			}
 
 			auto &child_vec = ListVector::GetEntry(out_vec);
 			ListVector::Reserve(out_vec, child_offset + array_length);
 			for (idx_t child_idx = 0; child_idx < array_length; child_idx++) {
-				ReadValue(ListType::GetChildType(type), postgres_type.children[0], child_vec,
-							 child_offset + child_idx);
+				ReadValue(ListType::GetChildType(type), postgres_type.children[0], child_vec, child_offset + child_idx);
 			}
 			ListVector::SetListSize(out_vec, child_offset + array_length);
 
@@ -445,9 +444,10 @@ public:
 			auto &child_entries = StructVector::GetEntries(out_vec);
 			auto entry_count = ReadInteger<uint32_t>();
 			if (entry_count != child_entries.size()) {
-				throw InternalException("Mismatch in entry count: expected %d but got %d", child_entries.size(), entry_count);
+				throw InternalException("Mismatch in entry count: expected %d but got %d", child_entries.size(),
+				                        entry_count);
 			}
-			for(idx_t c = 0; c < entry_count; c++) {
+			for (idx_t c = 0; c < entry_count; c++) {
 				auto &child = *child_entries[c];
 				auto value_oid = ReadInteger<uint32_t>();
 				ReadValue(child.GetType(), postgres_type.children[c], child, output_offset);

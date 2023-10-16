@@ -92,12 +92,12 @@ static unique_ptr<FunctionData> PostgresBind(ClientContext &context, TableFuncti
 
 	bind_data->postgres_types = info->postgres_types;
 	for(auto &col : info->create_info->columns.Logical()) {
-		bind_data->names.push_back(col.GetName());
-		bind_data->types.push_back(col.GetType());
+		names.push_back(col.GetName());
+		return_types.push_back(col.GetType());
 	}
+	bind_data->names = info->postgres_names;
+	bind_data->types = return_types;
 	bind_data->SetTablePages(info->approx_num_pages);
-	names = bind_data->names;
-	return_types = bind_data->types;
 
 	return std::move(bind_data);
 }

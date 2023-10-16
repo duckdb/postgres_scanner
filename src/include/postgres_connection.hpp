@@ -58,13 +58,13 @@ public:
 	vector<string> GetEntries(string entry_type);
 	vector<IndexInfo> GetIndexInfo(const string &table_name);
 
-	void BeginCopyTo(ClientContext &context, PostgresCopyState &state, PostgresCopyFormat format, const string &schema_name, const string &table_name, const vector<string> &column_names);
+	void BeginCopyTo(ClientContext &context, PostgresCopyState &state, PostgresCopyFormat format,
+	                 const string &schema_name, const string &table_name, const vector<string> &column_names);
 	void CopyData(data_ptr_t buffer, idx_t size);
 	void CopyData(PostgresBinaryWriter &writer);
 	void CopyData(PostgresTextWriter &writer);
 	void CopyChunk(ClientContext &context, PostgresCopyState &state, DataChunk &chunk, DataChunk &varchar_chunk);
 	void FinishCopyTo(PostgresCopyState &state);
-
 
 	void BeginCopyFrom(PostgresBinaryReader &reader, const string &query);
 

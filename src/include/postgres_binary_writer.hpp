@@ -89,8 +89,7 @@ public:
 			return POSTGRES_DATE_NINF;
 		}
 		if (value.days <= POSTGRES_MIN_DATE || value.days >= POSTGRES_MAX_DATE) {
-			throw InvalidInputException("DATE \"%s\" is out of range for Postgres' DATE field",
-			                            Date::ToString(value));
+			throw InvalidInputException("DATE \"%s\" is out of range for Postgres' DATE field", Date::ToString(value));
 		}
 		return uint32_t(value.days + DUCKDB_EPOCH_DATE - POSTGRES_EPOCH_JDATE);
 	}
@@ -203,14 +202,13 @@ public:
 		stream.WriteData(const_data_ptr_cast(value.GetData()), value.GetSize());
 	}
 
-
 	void WriteValue(Vector &col, idx_t r) {
 		if (FlatVector::IsNull(col, r)) {
 			WriteNull();
 			return;
 		}
 		auto &type = col.GetType();
-		switch(type.id()) {
+		switch (type.id()) {
 		case LogicalTypeId::BOOLEAN: {
 			auto data = FlatVector::GetData<bool>(col)[r];
 			WriteBoolean(data);
@@ -282,7 +280,7 @@ public:
 			WriteTimestamp(data);
 			break;
 		}
-		case LogicalTypeId::INTERVAL:{
+		case LogicalTypeId::INTERVAL: {
 			auto data = FlatVector::GetData<interval_t>(col)[r];
 			WriteInterval(data);
 			break;
@@ -312,8 +310,8 @@ public:
 				break;
 			default:
 				throw InternalException("ENUM can only have unsigned integers (except "
-										"UINT64) as physical types, got %s",
-										TypeIdToString(type.InternalType()));
+				                        "UINT64) as physical types, got %s",
+				                        TypeIdToString(type.InternalType()));
 			}
 			WriteVarchar(EnumType::GetString(type, pos));
 			break;
@@ -332,16 +330,16 @@ public:
 			// list header
 			// record the location of the field size in the stream
 			auto start_position = stream.GetPosition();
-			WriteRawInteger<int32_t>(0);  // data size (nop for now)
-			WriteRawInteger<uint32_t>(1); // flag one
-			WriteRawInteger<uint32_t>(0); // flag two
-			WriteRawInteger<uint32_t>(value_oid); // value_oid
+			WriteRawInteger<int32_t>(0);                  // data size (nop for now)
+			WriteRawInteger<uint32_t>(1);                 // flag one
+			WriteRawInteger<uint32_t>(0);                 // flag two
+			WriteRawInteger<uint32_t>(value_oid);         // value_oid
 			WriteRawInteger<uint32_t>(list_entry.length); // array length
-			WriteRawInteger<uint32_t>(1); // array dim
+			WriteRawInteger<uint32_t>(1);                 // array dim
 
 			// now recursively write the child values
 			auto &child_vector = ListVector::GetEntry(col);
-			for(idx_t child_idx = 0; child_idx < list_entry.length; child_idx++) {
+			for (idx_t child_idx = 0; child_idx < list_entry.length; child_idx++) {
 				WriteValue(child_vector, list_entry.offset + child_idx);
 			}
 			auto end_position = stream.GetPosition();
@@ -354,11 +352,11 @@ public:
 			auto &child_entries = StructVector::GetEntries(col);
 
 			auto start_position = stream.GetPosition();
-			WriteRawInteger<int32_t>(0);                      // data size (nop for now)
-			WriteRawInteger<uint32_t>(child_entries.size());  // column count
-			for(auto &child : child_entries) {
+			WriteRawInteger<int32_t>(0);                     // data size (nop for now)
+			WriteRawInteger<uint32_t>(child_entries.size()); // column count
+			for (auto &child : child_entries) {
 				auto value_oid = PostgresUtils::ToPostgresOid(child->GetType());
-				WriteRawInteger<uint32_t>(value_oid);  // value oid
+				WriteRawInteger<uint32_t>(value_oid); // value oid
 				WriteValue(*child, r);
 			}
 			auto end_position = stream.GetPosition();
@@ -370,7 +368,6 @@ public:
 		default:
 			throw InternalException("Unsupported type for Postgres insert");
 		}
-
 	}
 
 public:

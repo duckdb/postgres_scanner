@@ -30,7 +30,8 @@ protected:
 	void LoadEnumTypes(PostgresTransaction &transaction, vector<PGTypeInfo> &enum_info);
 	void CreateEnum(PostgresResult &result, idx_t start_row, idx_t end_row);
 	void LoadCompositeTypes(PostgresTransaction &transaction, vector<PGTypeInfo> &composite_info);
-	void CreateCompositeType(PostgresTransaction &transaction, PostgresResult &result, idx_t start_row, idx_t end_row, unordered_map<idx_t, string> &name_map);
+	void CreateCompositeType(PostgresTransaction &transaction, PostgresResult &result, idx_t start_row, idx_t end_row,
+	                         unordered_map<idx_t, string> &name_map);
 
 protected:
 	PostgresSchemaEntry &schema;

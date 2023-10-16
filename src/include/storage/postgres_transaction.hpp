@@ -16,11 +16,7 @@ class PostgresCatalog;
 class PostgresSchemaEntry;
 class PostgresTableEntry;
 
-enum class PostgresTransactionState {
-	TRANSACTION_NOT_YET_STARTED,
-	TRANSACTION_STARTED,
-	TRANSACTION_FINISHED
-};
+enum class PostgresTransactionState { TRANSACTION_NOT_YET_STARTED, TRANSACTION_STARTED, TRANSACTION_FINISHED };
 
 class PostgresTransaction : public Transaction {
 public:

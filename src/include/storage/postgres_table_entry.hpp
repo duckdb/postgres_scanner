@@ -24,7 +24,7 @@ struct PostgresTableInfo {
 		create_info->columns.SetAllowDuplicates(true);
 	}
 	PostgresTableInfo(const SchemaCatalogEntry &schema, const string &table) {
-		create_info = make_uniq<CreateTableInfo>(schema, table);
+		create_info = make_uniq<CreateTableInfo>((SchemaCatalogEntry &)schema, table);
 		create_info->columns.SetAllowDuplicates(true);
 	}
 

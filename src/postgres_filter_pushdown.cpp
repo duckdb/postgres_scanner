@@ -46,8 +46,7 @@ string PostgresFilterPushdown::TransformFilter(string &column_name, TableFilter 
 	}
 	case TableFilterType::CONSTANT_COMPARISON: {
 		auto &constant_filter = (ConstantFilter &)filter;
-		// TODO properly escape ' in constant value
-		auto constant_string = "'" + constant_filter.constant.ToString() + "'";
+		auto constant_string = KeywordHelper::WriteQuoted(constant_filter.constant.ToString());
 		auto operator_string = TransformComparision(constant_filter.comparison_type);
 		return StringUtil::Format("%s %s %s", column_name, operator_string, constant_string);
 	}

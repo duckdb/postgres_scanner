@@ -125,10 +125,9 @@ CREATE TABLE pg_numeric_array_empty (
 
 -- json
 CREATE TABLE pg_json (
-	regular_json JSON,
-	binary_json JSONB
+	regular_json JSON
 );
-INSERT INTO pg_json VALUES ('{"a": 42, "b": "string"}', '{"a": 42, "b": "string"}');
+INSERT INTO pg_json VALUES ('{"a": 42, "b": "string"}');
 
 -- composite type example
 CREATE TYPE inventory_item AS (

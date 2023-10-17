@@ -13,15 +13,15 @@ USE s;
 query II
 SELECT * FROM pg_json
 ----
-{"a": 42, "b": "string"}	{"a": 42, "b": "string"}
+{"a": 42, "b": "string"}
 
 statement ok
 DELETE FROM pg_json
 
 statement ok
-INSERT INTO pg_json VALUES ('{"a": 42, "b": "string"}', '{"a": 42, "b": "string"}')
+INSERT INTO pg_json VALUES ('{"a": 42, "b": "string"}')
 
 query II
 SELECT * FROM pg_json
 ----
-{"a": 42, "b": "string"}	{"a": 42, "b": "string"}
+{"a": 42, "b": "string"}

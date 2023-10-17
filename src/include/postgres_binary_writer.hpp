@@ -202,6 +202,26 @@ public:
 		stream.WriteData(const_data_ptr_cast(value.GetData()), value.GetSize());
 	}
 
+	void WriteArray(Vector &col, idx_t r, const vector<uint32_t> &dimensions, idx_t depth, uint32_t count) {
+		auto list_data = FlatVector::GetData<list_entry_t>(col);
+		auto &child_vector = ListVector::GetEntry(col);
+		for(idx_t i = 0; i < count; i++) {
+			auto list_entry = list_data[r + i];
+			if (list_entry.length != dimensions[depth]) {
+				throw InvalidInputException("Postgres multidimensional arrays must all have matching dimensions - found a length mismatch (found %llu entries, expected %llu)", list_entry.length, dimensions[depth]);
+			}
+			if (child_vector.GetType().id() == LogicalTypeId::LIST) {
+				// multidimensional array - recurse
+				WriteArray(child_vector, list_entry.offset, dimensions, depth + 1, list_entry.length);
+			} else {
+				// write the actual values
+				for (idx_t child_idx = 0; child_idx < list_entry.length; child_idx++) {
+					WriteValue(child_vector, list_entry.offset + child_idx);
+				}
+			}
+		}
+	}
+
 	void WriteValue(Vector &col, idx_t r) {
 		if (FlatVector::IsNull(col, r)) {
 			WriteNull();
@@ -327,23 +347,34 @@ public:
 				WriteRawInteger<uint32_t>(value_oid);
 				return;
 			}
+			// compute how many dimensions we will write
+			vector<uint32_t> dimensions;
+			const_reference<Vector> current_vector = col;
+			idx_t current_position = r;
+			while(current_vector.get().GetType().id() == LogicalTypeId::LIST) {
+				auto current_entry = FlatVector::GetData<list_entry_t>(current_vector.get())[current_position];
+				dimensions.push_back(current_entry.length);
+				current_vector = ListVector::GetEntry(current_vector.get());
+				current_position = current_entry.offset;
+			}
+
 			// list header
 			// record the location of the field size in the stream
 			auto start_position = stream.GetPosition();
 			WriteRawInteger<int32_t>(0);                  // data size (nop for now)
-			WriteRawInteger<uint32_t>(1);                 // flag one
-			WriteRawInteger<uint32_t>(0);                 // flag two
+			WriteRawInteger<uint32_t>(dimensions.size()); // ndim
+			WriteRawInteger<uint32_t>(1);                 // has nulls
 			WriteRawInteger<uint32_t>(value_oid);         // value_oid
-			WriteRawInteger<uint32_t>(list_entry.length); // array length
-			WriteRawInteger<uint32_t>(1);                 // array dim
-
-			// now recursively write the child values
-			auto &child_vector = ListVector::GetEntry(col);
-			for (idx_t child_idx = 0; child_idx < list_entry.length; child_idx++) {
-				WriteValue(child_vector, list_entry.offset + child_idx);
+			// write the dimensions of the arrays
+			for(auto &dim : dimensions) {
+				WriteRawInteger<uint32_t>(dim);           // array length
+				WriteRawInteger<uint32_t>(1);             // index lower bounds
 			}
-			auto end_position = stream.GetPosition();
+			// now recursively write the actual values
+			WriteArray(col, r, dimensions, 0, 1);
+
 			// after writing all list elements update the field size
+			auto end_position = stream.GetPosition();
 			auto field_size = int32_t(end_position - start_position - sizeof(int32_t));
 			Store<int32_t>(GetInteger(field_size), stream.GetData() + start_position);
 			break;

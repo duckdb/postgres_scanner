@@ -67,6 +67,19 @@ LogicalType PostgresUtils::TypeToLogicalType(optional_ptr<PostgresTransaction> t
 
 	// postgres array types start with an _
 	if (StringUtil::StartsWith(pgtypename, "_")) {
+		if (transaction) {
+			auto context = transaction->context.lock();
+			if (!context) {
+				throw InternalException("Context is destroyed!?");
+			}
+			Value array_as_varchar;
+			if (context->TryGetCurrentSetting("pg_array_as_varchar", array_as_varchar)) {
+				if (BooleanValue::Get(array_as_varchar)) {
+					postgres_type.info = PostgresTypeAnnotation::CAST_TO_VARCHAR;
+					return LogicalType::VARCHAR;
+				}
+			}
+		}
 		// get the array dimension information
 		idx_t dimensions = type_info.array_dimensions;
 		if (dimensions == 0) {
@@ -303,6 +316,8 @@ uint32_t PostgresUtils::ToPostgresOid(const LogicalType &input) {
 		return BITOID;
 	case LogicalTypeId::UUID:
 		return UUIDOID;
+	case LogicalTypeId::LIST:
+		return PostgresUtils::ToPostgresOid(ListType::GetChildType(input));
 	default:
 		throw NotImplementedException("Unsupported type for Postgres array copy: %s", input.ToString());
 	}

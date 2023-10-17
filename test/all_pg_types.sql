@@ -166,3 +166,23 @@ CREATE TABLE array_of_composites_tbl (
 	items inventory_item[]
 );
 INSERT INTO array_of_composites_tbl VALUES (ARRAY[ROW('fuzzy dice', 42, 1.99), ROW('fuzzy mice', 84, 0.5)]::inventory_item[]);
+
+CREATE TABLE many_multidimensional_arrays (
+	i int[][][],
+	s varchar[][]
+);
+INSERT INTO many_multidimensional_arrays VALUES (
+	ARRAY[ARRAY[[1, 2, 3]], ARRAY[[4, 5, 6]], ARRAY[[7, 8, 9]]],
+	ARRAY[ARRAY['hello world', 'abc'], ARRAY['this is', 'an array']]);
+
+-- postgres allows mixing array dimensions (for some reason)
+-- duckdb does not, so we need to catch this error
+CREATE TABLE mixed_arrays (
+	i int[]
+);
+INSERT INTO mixed_arrays VALUES (
+	ARRAY[ARRAY[[1, 2, 3]], ARRAY[[4, 5, 6]], ARRAY[[7, 8, 9]]]
+);
+INSERT INTO mixed_arrays VALUES (
+	ARRAY[1, 2, 3]
+);

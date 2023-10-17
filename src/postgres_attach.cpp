@@ -49,25 +49,43 @@ static void AttachFunction(ClientContext &context, TableFunctionInput &data_p, D
 
 	auto conn = PostgresConnection::Open(data.dsn);
 	auto dconn = Connection(context.db->GetDatabase(context));
-	auto res = conn.Query(StringUtil::Format(
+	auto fetch_table_query = StringUtil::Format(
 	                             R"(
 SELECT relname
 FROM pg_class JOIN pg_namespace ON pg_class.relnamespace = pg_namespace.oid
 JOIN pg_attribute ON pg_class.oid = pg_attribute.attrelid
-WHERE relkind = 'r' AND attnum > 0 AND nspname = '%s'
+WHERE relkind = 'r' AND attnum > 0 AND nspname = %s
 GROUP BY relname
 ORDER BY relname;
 )",
-	                             data.source_schema)
-	                             .c_str());
-
+	                             KeywordHelper::WriteQuoted(data.source_schema));
+	auto res = conn.Query(fetch_table_query);
 	for (idx_t row = 0; row < PQntuples(res->res); row++) {
 		auto table_name = res->GetString(row, 0);
-
-		dconn
-		    .TableFunction(data.filter_pushdown ? "postgres_scan_pushdown" : "postgres_scan",
-		                   {Value(data.dsn), Value(data.source_schema), Value(table_name)})
-		    ->CreateView(data.sink_schema, table_name, data.overwrite, false);
+		string query;
+		if (data.overwrite) {
+			query = "CREATE OR REPLACE VIEW ";
+		} else {
+			query = "CREATE VIEW IF NOT EXISTS ";
+		}
+		if (!data.sink_schema.empty()) {
+			query += KeywordHelper::WriteQuoted(data.sink_schema, '"') + ".";
+		}
+		query += KeywordHelper::WriteQuoted(table_name, '"');
+		query += " AS SELECT * FROM ";
+		if (data.filter_pushdown) {
+			query += "postgres_scan_pushdown";
+		} else {
+			query += "postgres_scan";
+		}
+		query += "(";
+		query += KeywordHelper::WriteQuoted(data.dsn);
+		query += ", ";
+		query += KeywordHelper::WriteQuoted(data.source_schema);
+		query += ", ";
+		query += KeywordHelper::WriteQuoted(table_name);
+		query += ");";
+		dconn.Query(query);
 	}
 	res.reset();
 

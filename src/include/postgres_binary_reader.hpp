@@ -443,7 +443,7 @@ public:
 			D_ASSERT(value_len >= 3 * sizeof(uint32_t));
 			auto array_dim = ReadInteger<uint32_t>();
 			auto array_has_null = ReadInteger<uint32_t>(); // whether or not the array has nulls - ignore
-			auto value_oid = ReadInteger<uint32_t>();
+			auto value_oid = ReadInteger<uint32_t>(); // value_oid - not necessary
 			if (array_dim == 0) {
 				list_entry.offset = child_offset;
 				list_entry.length = 0;
@@ -457,7 +457,7 @@ public:
 				expected_dimensions++;
 			}
 			if (expected_dimensions != array_dim) {
-				throw InvalidInputException("Expected an array with %llu dimensions, but this array has %llu dimensions. The array stored in Postgres does not match the schema. Postgres does not enforce that arrays match the provided schema but DuckDB requires this.", expected_dimensions, array_dim);
+				throw InvalidInputException("Expected an array with %llu dimensions, but this array has %llu dimensions. The array stored in Postgres does not match the schema. Postgres does not enforce that arrays match the provided schema but DuckDB requires this.\nSet pg_array_as_varchar=true to read the array as a varchar instead. Note that you might have to run CALL pg_clear_cache() to clear cached type information as well.", expected_dimensions, array_dim);
 			}
 			uint32_t dimensions[array_dim];
 			for(idx_t d = 0; d < array_dim; d++) {

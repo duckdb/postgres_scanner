@@ -10,7 +10,7 @@ ATTACH 'dbname=postgresscanner' AS s (TYPE POSTGRES)
 statement ok
 USE s;
 
-query II
+query I
 SELECT * FROM pg_json
 ----
 {"a": 42, "b": "string"}
@@ -21,7 +21,7 @@ DELETE FROM pg_json
 statement ok
 INSERT INTO pg_json VALUES ('{"a": 42, "b": "string"}')
 
-query II
+query I
 SELECT * FROM pg_json
 ----
 {"a": 42, "b": "string"}

@@ -64,6 +64,8 @@ public:
 		return connection_pool;
 	}
 
+	void ClearCache();
+
 private:
 	void DropSchema(ClientContext &context, DropInfo &info) override;
 

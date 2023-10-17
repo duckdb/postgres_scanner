@@ -34,7 +34,8 @@ void PostgresConnection::BeginCopyTo(ClientContext &context, PostgresCopyState &
 		throw InternalException("Unsupported type for postgres copy format");
 	}
 	query += ")";
-	auto result = PQexec(GetConn(), query.c_str());
+
+	auto result = PQExecute(query.c_str());
 	if (!result || PQresultStatus(result) != PGRES_COPY_IN) {
 		throw std::runtime_error("Failed to prepare COPY \"" + query + "\": " + string(PQresultErrorMessage(result)));
 	}

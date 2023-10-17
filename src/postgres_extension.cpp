@@ -34,6 +34,9 @@ static void SetPostgresConnectionLimit(ClientContext &context, SetScope scope, V
 	config.SetOption("pg_connection_limit", parameter);
 }
 
+static void SetPostgresDebugQueryPrint(ClientContext &context, SetScope scope, Value &parameter) {
+	PostgresConnection::DebugSetPrintQueries(BooleanValue::Get(parameter));
+}
 
 static void LoadInternal(DatabaseInstance &db) {
 	PostgresScanFunction postgres_fun;
@@ -43,14 +46,10 @@ static void LoadInternal(DatabaseInstance &db) {
 	ExtensionUtil::RegisterFunction(db, postgres_fun_filter_pushdown);
 
 	PostgresAttachFunction attach_func;
-	attach_func.named_parameters["overwrite"] = LogicalType::BOOLEAN;
-	attach_func.named_parameters["filter_pushdown"] = LogicalType::BOOLEAN;
-
-	attach_func.named_parameters["source_schema"] = LogicalType::VARCHAR;
-	attach_func.named_parameters["sink_schema"] = LogicalType::VARCHAR;
-	attach_func.named_parameters["suffix"] = LogicalType::VARCHAR;
-
 	ExtensionUtil::RegisterFunction(db, attach_func);
+
+	PostgresClearCacheFunction clear_cache_func;
+	ExtensionUtil::RegisterFunction(db, clear_cache_func);
 
 	auto &config = DBConfig::GetConfig(db);
 	config.storage_extensions["postgres_scanner"] = make_uniq<PostgresStorageExtension>();
@@ -59,7 +58,7 @@ static void LoadInternal(DatabaseInstance &db) {
 	config.AddExtensionOption("pg_pages_per_task", "The amount of pages per task", LogicalType::UBIGINT, Value::UBIGINT(PostgresBindData::DEFAULT_PAGES_PER_TASK));
 	config.AddExtensionOption("pg_connection_limit", "The maximum amount of concurrent Postgres connections", LogicalType::UBIGINT, Value::UBIGINT(PostgresConnectionPool::DEFAULT_MAX_CONNECTIONS), SetPostgresConnectionLimit);
 	config.AddExtensionOption("pg_experimental_filter_pushdown", "Whether or not to use filter pushdown (currently experimental)", LogicalType::BOOLEAN, Value::BOOLEAN(false));
-
+	config.AddExtensionOption("pg_debug_show_queries", "DEBUG SETTING: print all queries sent to Postgres to stdout", LogicalType::BOOLEAN, Value::BOOLEAN(false), SetPostgresDebugQueryPrint);
 }
 
 void PostgresScannerExtension::Load(DuckDB &db) {

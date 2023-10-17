@@ -85,7 +85,12 @@ public:
 		return connection->connection;
 	}
 
+	static void DebugSetPrintQueries(bool print);
+	static bool DebugPrintQueries();
+
 private:
+	PGresult *PQExecute(const string &query);
+
 	shared_ptr<OwnedPostgresConnection> connection;
 	string dsn;
 };

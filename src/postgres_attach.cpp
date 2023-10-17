@@ -76,6 +76,12 @@ ORDER BY relname;
 
 PostgresAttachFunction::PostgresAttachFunction()
 	: TableFunction("postgres_attach", {LogicalType::VARCHAR}, AttachFunction, AttachBind) {
+	named_parameters["overwrite"] = LogicalType::BOOLEAN;
+	named_parameters["filter_pushdown"] = LogicalType::BOOLEAN;
+
+	named_parameters["source_schema"] = LogicalType::VARCHAR;
+	named_parameters["sink_schema"] = LogicalType::VARCHAR;
+	named_parameters["suffix"] = LogicalType::VARCHAR;
 }
 
 }

@@ -68,4 +68,9 @@ public:
 	PostgresScanFunctionFilterPushdown();
 };
 
+class PostgresClearCacheFunction : public TableFunction {
+public:
+	PostgresClearCacheFunction();
+};
+
 } // namespace duckdb

@@ -72,4 +72,9 @@ DatabaseSize PostgresCatalog::GetDatabaseSize(ClientContext &context) {
 	throw InternalException("GetDatabaseSize");
 }
 
+void PostgresCatalog::ClearCache() {
+	schemas.ClearEntries();
+}
+
+
 } // namespace duckdb

@@ -6,6 +6,8 @@
 
 namespace duckdb {
 
+static bool debug_postgres_print_queries = false;
+
 PostgresConnection::PostgresConnection(shared_ptr<OwnedPostgresConnection> connection_p)
     : connection(std::move(connection_p)) {
 }
@@ -45,8 +47,15 @@ static bool ResultHasError(PGresult *result) {
 	}
 }
 
+PGresult *PostgresConnection::PQExecute(const string &query) {
+	if (PostgresConnection::DebugPrintQueries()) {
+		Printer::Print(query + "\n");
+	}
+	return PQexec(GetConn(), query.c_str());
+}
+
 unique_ptr<PostgresResult> PostgresConnection::Query(const string &query) {
-	auto result = PQexec(GetConn(), query.c_str());
+	auto result = PQExecute(query.c_str());
 	if (ResultHasError(result)) {
 		throw std::runtime_error("Failed to execute query \"" + query + "\": " + string(PQresultErrorMessage(result)));
 	}
@@ -68,12 +77,16 @@ void PostgresConnection::Close() {
 	connection = nullptr;
 }
 
-vector<string> PostgresConnection::GetEntries(string entry_type) {
-	throw InternalException("Get Entries");
-}
-
 vector<IndexInfo> PostgresConnection::GetIndexInfo(const string &table_name) {
 	return vector<IndexInfo>();
+}
+
+void PostgresConnection::DebugSetPrintQueries(bool print) {
+	debug_postgres_print_queries = print;
+}
+
+bool PostgresConnection::DebugPrintQueries() {
+	return debug_postgres_print_queries;
 }
 
 } // namespace duckdb

@@ -1,0 +1,34 @@
+# name: test/sql/storage/attach_types_uuid.test
+# description: Test inserting/querying UUID
+# group: [storage]
+
+require postgres_scanner
+
+statement ok
+ATTACH 'dbname=postgresscanner' AS s (TYPE POSTGRES)
+
+statement ok
+USE s;
+
+statement ok
+CREATE OR REPLACE TABLE uuids(u UUID);
+
+statement ok
+INSERT INTO uuids VALUES (UUID '6d3d2541-710b-4bde-b3af-4711738636bf');
+
+statement ok
+INSERT INTO uuids VALUES (NULL);
+
+statement ok
+INSERT INTO uuids VALUES (UUID '00000000-0000-0000-0000-000000000001');
+
+statement ok
+INSERT INTO uuids VALUES (UUID 'ffffffff-ffff-ffff-ffff-ffffffffffff');
+
+query I
+SELECT * FROM uuids
+----
+6d3d2541-710b-4bde-b3af-4711738636bf
+NULL
+00000000-0000-0000-0000-000000000001
+ffffffff-ffff-ffff-ffff-ffffffffffff

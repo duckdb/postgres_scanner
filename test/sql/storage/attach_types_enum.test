@@ -1,0 +1,98 @@
+# name: test/sql/storage/attach_types_enum.test
+# description: Test inserting/querying enums
+# group: [storage]
+
+require postgres_scanner
+
+statement ok
+ATTACH 'dbname=postgresscanner' AS s (TYPE POSTGRES)
+
+statement ok
+USE s;
+
+statement ok
+DROP TABLE IF EXISTS enums
+
+statement ok
+DROP TYPE IF EXISTS mood
+
+statement ok
+CREATE TYPE mood AS ENUM ('sad', 'ok', 'happy');
+
+query I
+SELECT UNNEST(enum_range(NULL::MOOD))
+----
+sad
+ok
+happy
+
+statement ok
+CREATE OR REPLACE TABLE enums(e MOOD);
+
+statement ok
+INSERT INTO enums VALUES ('sad');
+
+statement ok
+INSERT INTO enums VALUES ('happy');
+
+statement error
+INSERT INTO enums VALUES ('xxx')
+----
+Could not convert
+
+statement ok
+INSERT INTO enums VALUES (NULL);
+
+query I
+SELECT * FROM enums
+----
+sad
+happy
+NULL
+
+# reconnect
+statement ok
+ATTACH ':memory:' AS x
+
+statement ok
+USE x
+
+statement ok
+DETACH s
+
+statement ok
+ATTACH 'dbname=postgresscanner' AS s (TYPE POSTGRES)
+
+statement ok
+USE s;
+
+query I
+SELECT UNNEST(enum_range(NULL::MOOD))
+----
+sad
+ok
+happy
+
+statement ok
+CREATE OR REPLACE TABLE enums(e MOOD);
+
+statement ok
+INSERT INTO enums VALUES ('sad');
+
+statement ok
+INSERT INTO enums VALUES ('happy');
+
+statement ok
+INSERT INTO enums VALUES (NULL);
+
+query I
+SELECT * FROM enums
+----
+sad
+happy
+NULL
+
+statement error
+CREATE OR REPLACE TABLE enums(e ENUM('sad', 'happy'));
+----
+Enums in Postgres must be named

@@ -1,0 +1,34 @@
+# name: test/sql/scanner/bug69.test
+# description: Issue #69 - Floating point exception (core dumped)
+# group: [scanner]
+
+require postgres_scanner
+
+statement ok
+CALL postgres_attach('dbname=postgresscanner');
+
+statement ok
+ATTACH 'dbname=postgresscanner' AS s (TYPE POSTGRES)
+
+statement ok
+USE s;
+
+loop i 0 2
+
+query I
+SELECT * FROM fail;
+----
+42.8875000
+42.0000000
+42.1000000
+42.1200000
+42.1230000
+42.1234000
+42.1234500
+42.1234560
+42.1234567
+
+statement ok
+USE memory
+
+endloop

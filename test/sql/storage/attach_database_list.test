@@ -1,0 +1,21 @@
+# name: test/sql/storage/attach_database_list.test
+# description: Test listing databases
+# group: [storage]
+
+require postgres_scanner
+
+statement ok
+ATTACH 'dbname=postgresscanner' AS s1 (TYPE POSTGRES)
+
+statement ok
+SELECT * FROM duckdb_databases();
+
+query I
+SELECT COUNT(*) FROM duckdb_databases() WHERE database_name IN ('s1', 's2');
+----
+1
+
+query II
+SELECT name, file FROM pragma_database_list WHERE Name IN ('s1', 's2') ORDER BY name;
+----
+s1	dbname=postgresscanner

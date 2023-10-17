@@ -1,0 +1,13 @@
+# name: test/sql/scanner/bug63.test
+# description: Issue #63 - postgres_scan error with enums with multiple schemas
+# group: [scanner]
+
+require postgres_scanner
+
+statement ok
+CALL postgres_attach('dbname=postgresscanner', source_schema='some_schema');
+
+query I
+SELECT * FROM some_table;
+----
+two

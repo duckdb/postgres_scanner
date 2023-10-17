@@ -123,12 +123,16 @@ set(PARAMETERS "-no-warnings")
 build_loadable_extension(${TARGET_NAME} ${PARAMETERS} ${ALL_OBJECT_FILES}
                          ${LIBPG_SOURCES_FULLPATH})
 
-target_include_directories(${TARGET_NAME}_loadable_extension PRIVATE include postgres/src/include postgres/src/backend
-                    postgres/src/interfaces/libpq ${OPENSSL_INCLUDE_DIR})
+target_include_directories(
+  ${TARGET_NAME}_loadable_extension
+  PRIVATE include postgres/src/include postgres/src/backend
+          postgres/src/interfaces/libpq ${OPENSSL_INCLUDE_DIR})
 
 if(WIN32)
-  target_include_directories(${TARGET_NAME}_loadable_extension PRIVATE postgres/src/include/port/win32 postgres/src/port
-                      postgres/src/include/port/win32_msvc)
+  target_include_directories(
+    ${TARGET_NAME}_loadable_extension
+    PRIVATE postgres/src/include/port/win32 postgres/src/port
+            postgres/src/include/port/win32_msvc)
 endif()
 
 target_link_libraries(${TARGET_NAME}_loadable_extension ${OPENSSL_LIBRARIES})

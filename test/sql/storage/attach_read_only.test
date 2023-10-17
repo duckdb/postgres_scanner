@@ -1,0 +1,13 @@
+# name: test/sql/storage/attach_read_only.test
+# description: Test attaching in read only mode
+# group: [storage]
+
+require postgres_scanner
+
+statement ok
+ATTACH 'dbname=postgresscanner' AS s (TYPE POSTGRES, READ_ONLY)
+
+statement error
+CREATE TABLE s.read_only_tbl(i INTEGER);
+----
+read-only mode

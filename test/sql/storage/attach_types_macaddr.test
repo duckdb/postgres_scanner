@@ -1,0 +1,51 @@
+# name: test/sql/storage/attach_types_macaddr.test
+# description: Test inserting/querying macaddr
+# group: [storage]
+
+require postgres_scanner
+
+statement ok
+ATTACH 'dbname=postgresscanner' AS s (TYPE POSTGRES)
+
+statement ok
+USE s;
+
+# macaddress only
+statement ok
+DELETE FROM pg_macaddr
+
+statement ok
+INSERT INTO pg_macaddr VALUES ('08:00:2b:01:02:03')
+
+statement ok
+INSERT INTO pg_macaddr VALUES (NULL)
+
+query I
+SELECT * FROM pg_macaddr
+----
+08:00:2b:01:02:03
+NULL
+
+# complex types, including list of macaddr
+statement ok
+DELETE FROM pg_complex_types_mix
+
+statement ok
+INSERT INTO pg_complex_types_mix VALUES (0, ['08:00:2b:01:02:03'], 'hello	world', ['string', 'list', NULL], '\x00\xFF')
+
+statement ok
+INSERT INTO pg_complex_types_mix VALUES (NULL, NULL, NULL, NULL, NULL)
+
+query IIIII
+SELECT * FROM pg_complex_types_mix
+----
+0
+[08:00:2b:01:02:03]
+hello	world
+[string, list, NULL]
+\x00\xFF
+NULL
+NULL
+NULL
+NULL
+NULL

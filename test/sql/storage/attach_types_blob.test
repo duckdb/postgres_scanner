@@ -1,0 +1,27 @@
+# name: test/sql/storage/attach_types_blob.test
+# description: Test inserting/querying blobs
+# group: [storage]
+
+require postgres_scanner
+
+statement ok
+ATTACH 'dbname=postgresscanner' AS s (TYPE POSTGRES)
+
+statement ok
+CREATE OR REPLACE TABLE s.blobs(b BLOB);
+
+statement ok
+INSERT INTO s.blobs VALUES ('\x00\x00\x00');
+
+statement ok
+INSERT INTO s.blobs VALUES (NULL);
+
+statement ok
+INSERT INTO s.blobs VALUES ('thisisalongstring\x00\x00withnullbytes');
+
+query I
+SELECT * FROM s.blobs
+----
+\x00\x00\x00
+NULL
+thisisalongstring\x00\x00withnullbytes

@@ -1,0 +1,16 @@
+# name: test/sql/scanner/nulls.test
+# description: NULLs in different configurations
+# group: [scanner]
+
+require postgres_scanner
+
+statement ok
+CALL postgres_attach('dbname=postgresscanner');
+
+query IIIIIIIIII
+select * from nulltest;
+----
+1	2	3	4	5	6	7	8	9	10	
+1	NULL	3	4	NULL	6	7	8	NULL	10	
+NULL	NULL	3	4	5	6	7	NULL	NULL	NULL	
+NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL

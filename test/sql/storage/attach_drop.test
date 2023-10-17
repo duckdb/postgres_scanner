@@ -1,0 +1,37 @@
+# name: test/sql/storage/attach_drop.test
+# description: Test DROP TABLE/VIEW
+# group: [storage]
+
+require postgres_scanner
+
+statement ok
+ATTACH 'dbname=postgresscanner' AS simple (TYPE POSTGRES)
+
+statement ok
+DROP TABLE IF EXISTS simple.test
+
+statement ok
+CREATE TABLE simple.test(i INTEGER);
+
+statement ok
+SELECT * FROM simple.test;
+
+statement error
+DROP VIEW simple.test
+----
+not a view
+
+statement ok
+DROP TABLE simple.test
+
+# verify the drop was successful
+statement error
+SELECT * FROM simple.test;
+
+statement error
+DROP TABLE simple.testx
+----
+Table with name testx does not exist
+
+statement ok
+DROP TABLE IF EXISTS simple.testx

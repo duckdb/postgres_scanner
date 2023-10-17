@@ -1,0 +1,13 @@
+# name: test/sql/scanner/aws-rds.test
+# description: Read over AWS RDS
+# group: [scanner]
+
+require postgres_scanner
+
+statement ok
+CALL postgres_attach('postgres://readonly:asdf@test-1.cqbaqbiayfd2.us-east-1.rds.amazonaws.com/postgres');
+
+query I
+SELECT * FROM fortytwo;
+----
+42

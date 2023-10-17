@@ -1,0 +1,16 @@
+# name: test/sql/scanner/count_star.test
+# description: COUNT(*) over a postgres table
+# group: [scanner]
+
+require postgres_scanner
+
+statement ok
+pragma enable_verification
+
+statement ok
+CALL postgres_attach('dbname=postgresscanner');
+
+query I
+select count(*) from cars;
+----
+4

@@ -1,0 +1,80 @@
+# name: test/sql/storage/attach_types_date.test
+# description: Test inserting/querying dates
+# group: [storage]
+
+require postgres_scanner
+
+statement ok
+ATTACH 'dbname=postgresscanner' AS s (TYPE POSTGRES)
+
+statement ok
+USE s;
+
+statement ok
+CREATE OR REPLACE TABLE dates(d DATE);
+
+statement ok
+INSERT INTO dates VALUES (DATE '1992-01-01');
+
+statement ok
+INSERT INTO dates VALUES (NULL);
+
+statement ok
+INSERT INTO dates VALUES (DATE '1950-01-01');
+
+query I
+SELECT * FROM dates
+----
+1992-01-01
+NULL
+1950-01-01
+
+# postgres date limits
+statement error
+insert into dates values (date '4714-11-23 (BC)');
+----
+out of range
+
+statement ok
+insert into dates values (date '4714-11-24 (BC)');
+
+statement error
+insert into dates values (date '5874898-01-01');
+----
+out of range
+
+statement ok
+insert into dates values (date '5874897-12-31');
+
+# duckdb date limits
+statement error
+INSERT INTO dates VALUES (DATE '5877642-06-25 (BC)');
+----
+out of range
+
+statement error
+INSERT INTO dates VALUES (DATE '5881580-07-10');
+----
+out of range
+
+query I
+SELECT * FROM dates
+----
+1992-01-01
+NULL
+1950-01-01
+4714-11-24 (BC)
+5874897-12-31
+
+statement ok
+DELETE FROM dates
+
+# date infinity
+statement ok
+INSERT INTO dates VALUES ('infinity'), ('-infinity')
+
+query I
+SELECT * FROM dates
+----
+infinity
+-infinity

@@ -1,0 +1,17 @@
+# name: test/sql/storage/attach_prefix.test
+# description: Test attaching using the "postgres:" prefix instead of explicitly setting the type
+# group: [storage]
+
+require postgres_scanner
+
+statement ok
+ATTACH 'postgres:dbname=postgresscanner' AS s
+
+statement ok
+CREATE OR REPLACE TABLE s.integers(i INTEGER)
+
+statement ok
+INSERT INTO s.integers VALUES (42)
+
+statement ok
+DETACH s

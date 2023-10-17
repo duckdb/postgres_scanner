@@ -219,7 +219,7 @@ static bool PostgresParallelStateNext(ClientContext &context, const FunctionData
 		}
 
 		PostgresInitInternal(context, bind_data, lstate, gstate.page_idx, page_max);
-		gstate.page_idx += bind_data->pages_per_task;
+		gstate.page_idx = page_max;
 		return true;
 	}
 	lstate.done = true;
@@ -244,6 +244,7 @@ static unique_ptr<LocalTableFunctionState> GetLocalState(ClientContext &context,
 	local_state->filters = input.filters.get();
 	if (bind_data.pages_approx == 0 || bind_data.requires_materialization) {
 		PostgresInitInternal(context, &bind_data, *local_state, 0, POSTGRES_TID_MAX);
+		gstate.page_idx = POSTGRES_TID_MAX;
 	} else if (!PostgresParallelStateNext(context, input.bind_data.get(), *local_state, gstate)) {
 		local_state->done = true;
 	}

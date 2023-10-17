@@ -344,8 +344,15 @@ public:
 					throw NotImplementedException("JSONB version number mismatch, expected 1, got %d", version);
 				}
 			}
+			auto str = ReadString(value_len);
+			if (postgres_type.info == PostgresTypeAnnotation::FIXED_LENGTH_CHAR) {
+				// CHAR column - remove trailing spaces
+				while (value_len > 0 && str[value_len - 1] == ' ') {
+					value_len--;
+				}
+			}
 			FlatVector::GetData<string_t>(out_vec)[output_offset] =
-			    StringVector::AddStringOrBlob(out_vec, ReadString(value_len), value_len);
+			    StringVector::AddStringOrBlob(out_vec, str, value_len);
 			break;
 		}
 		case LogicalTypeId::BOOLEAN:

@@ -21,7 +21,7 @@ struct PostgresTypeData {
 	idx_t array_dimensions = 0;
 };
 
-enum class PostgresTypeAnnotation { STANDARD, CAST_TO_VARCHAR, NUMERIC_AS_DOUBLE, CTID, JSONB };
+enum class PostgresTypeAnnotation { STANDARD, CAST_TO_VARCHAR, NUMERIC_AS_DOUBLE, CTID, JSONB, FIXED_LENGTH_CHAR };
 
 struct PostgresType {
 	idx_t oid = 0;

@@ -148,3 +148,14 @@ CREATE TABLE samecasename (
 	s VARCHAR
 );
 INSERT INTO samecasename VALUES ('hello world');
+
+-- chars
+CREATE TABLE chars(c CHAR(10));
+INSERT INTO chars VALUES ('hello'), ('world'), ('maxlength1'), ('hello     '), ('     '), (NULL);
+
+CREATE TABLE chars_array(c CHAR(10)[]);
+INSERT INTO chars_array VALUES (ARRAY['hello', 'world', 'maxlength1', 'hello     ', '     ', NULL]);
+
+-- varchar with length limit
+CREATE TABLE varchars_fixed_len(c VARCHAR(10));
+INSERT INTO varchars_fixed_len VALUES ('hello'), ('world'), ('maxlength1'), ('hello     '), ('     '), (NULL);

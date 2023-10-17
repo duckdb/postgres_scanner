@@ -39,3 +39,23 @@ query I
 SELECT * FROM s1.test2
 ----
 hello, world
+
+
+# clear cache and reload from Postgres itself
+# FIXME - we don't correctly load constraint information from Postgres (yet?)
+mode skip
+
+statement ok
+CALL pg_clear_cache()
+
+query IIIIII
+DESCRIBE s1.test
+----
+i	BIGINT	NO	NULL	NULL	NULL
+j	BIGINT	YES	NULL	42	NULL
+
+query ITTTTT
+PRAGMA table_info('s1.test');
+----
+0	i	BIGINT	1	NULL	1
+1	j	BIGINT	0	42	0

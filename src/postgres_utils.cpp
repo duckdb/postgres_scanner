@@ -126,8 +126,10 @@ LogicalType PostgresUtils::TypeToLogicalType(optional_ptr<PostgresTransaction> t
 			return LogicalType::DOUBLE;
 		}
 		return LogicalType::DECIMAL(width, scale);
-	} else if (pgtypename == "char" || pgtypename == "bpchar" || pgtypename == "varchar" || pgtypename == "text" ||
-	           pgtypename == "json") {
+	} else if (pgtypename == "char" || pgtypename == "bpchar") {
+		postgres_type.info = PostgresTypeAnnotation::FIXED_LENGTH_CHAR;
+		return LogicalType::VARCHAR;
+	} else if (pgtypename == "varchar" || pgtypename == "text" || pgtypename == "json") {
 		return LogicalType::VARCHAR;
 	} else if (pgtypename == "jsonb") {
 		postgres_type.info = PostgresTypeAnnotation::JSONB;

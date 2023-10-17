@@ -25,7 +25,6 @@ void PostgresTableSet::AddColumn(optional_ptr<PostgresTransaction> transaction, 
 	type_info.type_modifier = result.GetInt64(row, column_index + 2);
 	type_info.array_dimensions = result.GetInt64(row, column_index + 3);
 	string default_value;
-	bool is_nullable = true;
 
 	PostgresType postgres_type;
 	auto column_type = PostgresUtils::TypeToLogicalType(transaction, schema, type_info, postgres_type);
@@ -41,9 +40,6 @@ void PostgresTableSet::AddColumn(optional_ptr<PostgresTransaction> transaction, 
 	}
 	auto &create_info = *table_info.create_info;
 	create_info.columns.AddColumn(std::move(column));
-	if (!is_nullable) {
-		create_info.constraints.push_back(make_uniq<NotNullConstraint>(LogicalIndex(row)));
-	}
 }
 
 void PostgresTableSet::LoadEntries(ClientContext &context) {

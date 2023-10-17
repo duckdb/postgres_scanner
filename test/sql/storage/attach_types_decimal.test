@@ -1,0 +1,183 @@
+# name: test/sql/storage/attach_types_decimal.test
+# description: Test inserting/querying decimals
+# group: [storage]
+
+require postgres_scanner
+
+statement ok
+ATTACH 'dbname=postgresscanner' AS s (TYPE POSTGRES)
+
+statement ok
+USE s;
+
+# no scale (integers)
+statement ok
+CREATE OR REPLACE TABLE decimals(d DECIMAL(4,0));
+
+statement ok
+INSERT INTO decimals VALUES (0);
+
+statement ok
+INSERT INTO decimals VALUES (NULL);
+
+statement ok
+INSERT INTO decimals VALUES (9999);
+
+statement ok
+INSERT INTO decimals VALUES (-9999);
+
+query I
+SELECT * FROM decimals
+----
+0
+NULL
+9999
+-9999
+
+# scale and precision
+# small scales (fits within NBASE)
+statement ok
+CREATE OR REPLACE TABLE decimals(d DECIMAL(4,1));
+
+statement ok
+INSERT INTO decimals VALUES (0.5);
+
+statement ok
+INSERT INTO decimals VALUES (5.0);
+
+statement ok
+INSERT INTO decimals VALUES (NULL);
+
+statement ok
+INSERT INTO decimals VALUES (123.4);
+
+statement ok
+INSERT INTO decimals VALUES (999.9);
+
+statement ok
+INSERT INTO decimals VALUES (-999.9);
+
+query I
+SELECT * FROM decimals
+----
+0.5
+5.0
+NULL
+123.4
+999.9
+-999.9
+
+statement ok
+CREATE OR REPLACE TABLE decimals(d DECIMAL(4,2));
+
+statement ok
+INSERT INTO decimals VALUES (0.5);
+
+statement ok
+INSERT INTO decimals VALUES (5.0);
+
+statement ok
+INSERT INTO decimals VALUES (NULL);
+
+statement ok
+INSERT INTO decimals VALUES (12.34);
+
+statement ok
+INSERT INTO decimals VALUES (99.99);
+
+statement ok
+INSERT INTO decimals VALUES (-99.99);
+
+query I
+SELECT * FROM decimals
+----
+0.5
+5.0
+NULL
+12.34
+99.99
+-99.99
+
+# multiple NBASE for both ndigits and scale
+statement ok
+CREATE OR REPLACE TABLE decimals(d DECIMAL(10,5));
+
+statement ok
+INSERT INTO decimals VALUES (0.5);
+
+statement ok
+INSERT INTO decimals VALUES (5.0);
+
+statement ok
+INSERT INTO decimals VALUES (12345.67891);
+
+statement ok
+INSERT INTO decimals VALUES (99999.99999);
+
+statement ok
+INSERT INTO decimals VALUES (-99999.99999);
+
+query I
+SELECT * FROM decimals
+----
+0.5
+5.0
+12345.67891
+99999.99999
+-99999.99999
+
+# even more nbase, bigint limit
+statement ok
+CREATE OR REPLACE TABLE decimals(d DECIMAL(18,9));
+
+statement ok
+INSERT INTO decimals VALUES (0.5);
+
+statement ok
+INSERT INTO decimals VALUES (5.0);
+
+statement ok
+INSERT INTO decimals VALUES (123456789.123456789);
+
+statement ok
+INSERT INTO decimals VALUES (999999999.999999999);
+
+statement ok
+INSERT INTO decimals VALUES (-999999999.999999999);
+
+query I
+SELECT * FROM decimals
+----
+0.5
+5.0
+123456789.123456789
+999999999.999999999
+-999999999.999999999
+
+# hugeint limit
+statement ok
+CREATE OR REPLACE TABLE decimals(d DECIMAL(38,19));
+
+statement ok
+INSERT INTO decimals VALUES (0.5);
+
+statement ok
+INSERT INTO decimals VALUES (5.0);
+
+statement ok
+INSERT INTO decimals VALUES (1234567891234567891.1234567891234567891);
+
+statement ok
+INSERT INTO decimals VALUES (9999999999999999999.9999999999999999999);
+
+statement ok
+INSERT INTO decimals VALUES (-9999999999999999999.9999999999999999999);
+
+query I
+SELECT * FROM decimals
+----
+0.5
+5.0
+1234567891234567891.1234567891234567891
+9999999999999999999.9999999999999999999
+-9999999999999999999.9999999999999999999

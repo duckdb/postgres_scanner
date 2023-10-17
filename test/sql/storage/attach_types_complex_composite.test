@@ -1,0 +1,80 @@
+# name: test/sql/storage/attach_types_complex_composite.test
+# description: Test inserting/querying composite types
+# group: [storage]
+
+require postgres_scanner
+
+statement ok
+ATTACH 'dbname=postgresscanner' AS s (TYPE POSTGRES)
+
+statement ok
+USE s;
+
+# composite with arrays
+query I
+SELECT * FROM composite_with_arrays_tbl;
+----
+{'names': [Name 1, Name 2], 'ids': [42, 84, 100, 120]}
+
+statement ok
+BEGIN
+
+statement ok
+DELETE FROM composite_with_arrays_tbl
+
+statement ok
+INSERT INTO composite_with_arrays_tbl VALUES ({'names': ['Name 1', 'Name 2'], 'ids': [42, 84, 100, 120]})
+
+statement ok
+COMMIT
+
+query I
+SELECT * FROM composite_with_arrays_tbl;
+----
+{'names': [Name 1, Name 2], 'ids': [42, 84, 100, 120]}
+
+# array of composites
+query I
+SELECT * FROM array_of_composites_tbl
+----
+[{'name': fuzzy dice, 'supplier_id': 42, 'price': 1.99}, {'name': fuzzy mice, 'supplier_id': 84, 'price': 0.5}]
+
+statement ok
+BEGIN
+
+statement ok
+DELETE FROM array_of_composites_tbl
+
+statement ok
+INSERT INTO array_of_composites_tbl VALUES ([ROW('fuzzy dice', 42, 1.99), ROW('fuzzy mice', 84, 0.5)])
+
+statement ok
+COMMIT
+
+query I
+SELECT * FROM array_of_composites_tbl
+----
+[{'name': fuzzy dice, 'supplier_id': 42, 'price': 1.99}, {'name': fuzzy mice, 'supplier_id': 84, 'price': 0.5}]
+
+# composite with enums
+query I
+SELECT * FROM composite_with_enums_tbl
+----
+{'current_mood': happy, 'past_moods': [ok, happy, sad, happy, ok]}
+
+statement ok
+BEGIN
+
+statement ok
+DELETE FROM composite_with_enums_tbl
+
+statement ok
+INSERT INTO composite_with_enums_tbl VALUES ({'current_mood': 'happy', 'past_moods': ['ok', 'happy', 'sad', 'happy', 'ok']})
+
+statement ok
+COMMIT
+
+query I
+SELECT * FROM composite_with_enums_tbl
+----
+{'current_mood': happy, 'past_moods': [ok, happy, sad, happy, ok]}

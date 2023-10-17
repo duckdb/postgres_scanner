@@ -1,0 +1,37 @@
+# name: test/sql/storage/attach_case_sensitive_tables.test
+# description: Test for multiple tables with names that differ only in case
+# group: [storage]
+
+require postgres_scanner
+
+statement ok
+ATTACH 'dbname=postgresscanner' AS s (TYPE POSTGRES)
+
+# when there are "clone tables" they become case sensitive
+query I
+SELECT * FROM s.SameCaseName
+----
+42
+
+query I
+SELECT * FROM s.samecasename
+----
+hello world
+
+# we can query a name that doesn't match but the result will be unpredictable (depends on the order we load the tables)
+statement ok
+SELECT * FROM s.SAMECASENAME
+
+# we can query other tables in case insensitive manner as well
+query I
+SELECT * FROM s.oids
+----
+42
+43
+
+query I
+SELECT * FROM s."OiDs"
+----
+42
+43
+

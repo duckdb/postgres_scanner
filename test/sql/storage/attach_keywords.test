@@ -1,0 +1,46 @@
+# name: test/sql/storage/attach_keywords.test
+# description: Test quoting in ATTACH with keyword identifiers
+# group: [storage]
+
+require postgres_scanner
+
+statement ok
+ATTACH 'dbname=postgresscanner' AS s (TYPE POSTGRES)
+
+statement ok
+CREATE OR REPLACE TABLE s."TaBlE"("TABLE" INTEGER);
+
+statement ok
+INSERT INTO s."TaBlE" VALUES (42);
+
+query I
+SELECT "TABLE" FROM s."TaBlE"
+----
+42
+
+query I
+SELECT "table" FROM s."TaBlE"
+----
+42
+
+statement ok
+CREATE OR REPLACE TABLE s."this 'name' contains ""escaped quotes"""("this 'name' contains ""escaped quotes""" INTEGER);
+
+statement ok
+INSERT INTO s."this 'name' contains ""escaped quotes""" VALUES (84);
+
+query I
+SELECT "this 'name' contains ""escaped quotes""" FROM s."this 'name' contains ""escaped quotes"""
+----
+84
+
+# FIXME: ALTER TABLE
+mode skip
+
+statement ok
+ALTER TABLE s."this 'name' contains ""escaped quotes""" DROP COLUMN IF EXISTS "hello""world"
+
+statement error
+ALTER TABLE s."this 'name' contains ""escaped quotes""" DROP COLUMN "this 'name' contains ""escaped quotes"""
+----
+no other columns exist

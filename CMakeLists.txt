@@ -110,6 +110,8 @@ function(PREPEND var prefix)
       PARENT_SCOPE)
 endfunction(PREPEND)
 
+add_subdirectory(src)
+
 prepend(LIBPG_SOURCES_FULLPATH ${CMAKE_CURRENT_SOURCE_DIR} ${LIBPG_SOURCES})
 
 add_custom_command(
@@ -118,8 +120,20 @@ add_custom_command(
   COMMAND sh pgconfigure)
 
 set(PARAMETERS "-no-warnings")
-build_loadable_extension(${TARGET_NAME} ${PARAMETERS} postgres_scanner.cpp
+build_loadable_extension(${TARGET_NAME} ${PARAMETERS} ${ALL_OBJECT_FILES}
                          ${LIBPG_SOURCES_FULLPATH})
+
+target_include_directories(
+  ${TARGET_NAME}_loadable_extension
+  PRIVATE include postgres/src/include postgres/src/backend
+          postgres/src/interfaces/libpq ${OPENSSL_INCLUDE_DIR})
+
+if(WIN32)
+  target_include_directories(
+    ${TARGET_NAME}_loadable_extension
+    PRIVATE postgres/src/include/port/win32 postgres/src/port
+            postgres/src/include/port/win32_msvc)
+endif()
 
 target_link_libraries(${TARGET_NAME}_loadable_extension ${OPENSSL_LIBRARIES})
 set_property(TARGET ${TARGET_NAME}_loadable_extension PROPERTY C_STANDARD 99)

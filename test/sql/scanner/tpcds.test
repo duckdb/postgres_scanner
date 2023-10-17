@@ -1,0 +1,64 @@
+# name: test/sql/scanner/tpcds.test
+# description: Run TPC-DS queries over Postgres tables
+# group: [scanner]
+
+require tpcds
+
+require postgres_scanner
+
+# TODO: currently fails with out of storage on CI?
+mode skip
+
+statement ok
+CALL postgres_attach('dbname=postgresscanner', source_schema='tpcds');
+
+statement ok
+PRAGMA default_null_order='NULLS LAST'
+
+# too slow queries:
+# 64, 85
+
+loop i 1 9
+
+query I
+PRAGMA tpcds(${i})
+----
+<FILE>:duckdb/extension/tpcds/dsdgen/answers/sf0.01/0${i}.csv
+
+endloop
+
+loop i 10 13
+
+query I
+PRAGMA tpcds(${i})
+----
+<FILE>:duckdb/extension/tpcds/dsdgen/answers/sf0.01/${i}.csv
+
+endloop
+
+loop i 15 64
+
+query I
+PRAGMA tpcds(${i})
+----
+<FILE>:duckdb/extension/tpcds/dsdgen/answers/sf0.01/${i}.csv
+
+endloop
+
+loop i 65 85
+
+query I
+PRAGMA tpcds(${i})
+----
+<FILE>:duckdb/extension/tpcds/dsdgen/answers/sf0.01/${i}.csv
+
+endloop
+
+loop i 86 99
+
+query I
+PRAGMA tpcds(${i})
+----
+<FILE>:duckdb/extension/tpcds/dsdgen/answers/sf0.01/${i}.csv
+
+endloop

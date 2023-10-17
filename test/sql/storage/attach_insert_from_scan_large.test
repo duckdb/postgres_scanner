@@ -1,0 +1,37 @@
+# name: test/sql/storage/attach_insert_from_scan_large.test
+# description: Test self-referential inserts (inserting from the same table)
+# group: [storage]
+
+require postgres_scanner
+
+statement ok
+ATTACH 'dbname=postgresscanner' AS s (TYPE POSTGRES)
+
+# create a table
+statement ok
+CREATE OR REPLACE TABLE s.tbl(i INT);
+
+query I
+INSERT INTO s.tbl FROM range(100000)
+----
+100000
+
+query I
+INSERT INTO s.tbl FROM s.tbl
+----
+100000
+
+query I
+SELECT COUNT(*) FROM s.tbl
+----
+200000
+
+query I
+INSERT INTO s.tbl FROM s.tbl
+----
+200000
+
+query I
+SELECT COUNT(*) FROM s.tbl
+----
+400000

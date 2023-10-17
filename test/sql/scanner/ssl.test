@@ -1,0 +1,16 @@
+# name: test/sql/scanner/ssl.test
+# description: Connection with SSL
+# group: [scanner]
+
+require postgres_scanner
+
+statement ok
+CALL postgres_attach('dbname=postgresscanner sslmode=require');
+
+query III
+select * from cars;
+----
+ferari	testarosa	red
+aston martin	db2	blue
+bentley	mulsanne	gray
+ford	T	black

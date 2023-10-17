@@ -86,6 +86,10 @@ INSERT INTO daterange VALUES
     (1108, '[2010-01-01 14:30, 2010-01-01 15:30)');
 
 
+CREATE TABLE daterange_array (room int, during tsrange[]);
+INSERT INTO daterange_array VALUES
+    (1108, array['[2010-01-01 14:30, 2010-01-01 15:30)'::tsrange]);
+
 
 
     CREATE DOMAIN my_type_v30 AS VARCHAR(30) NOT NULL;
@@ -126,3 +130,32 @@ insert into some_schema.some_table values ('two');
 CREATE TABLE dum();
 CREATE TABLE dee();
 INSERT INTO dee DEFAULT VALUES;
+
+-- table with duplicate column names
+CREATE TABLE tbl_with_case_sensitive_columns (
+	"MyColumn" INT,
+	"mycolumn" INT
+);
+INSERT INTO tbl_with_case_sensitive_columns VALUES (42, 84);
+
+-- tables with the same name but different case
+CREATE TABLE "SameCaseName" (
+	i INT
+);
+INSERT INTO "SameCaseName" VALUES (42);
+
+CREATE TABLE samecasename (
+	s VARCHAR
+);
+INSERT INTO samecasename VALUES ('hello world');
+
+-- chars
+CREATE TABLE chars(c CHAR(10));
+INSERT INTO chars VALUES ('hello'), ('world'), ('maxlength1'), ('hello     '), ('     '), (NULL);
+
+CREATE TABLE chars_array(c CHAR(10)[]);
+INSERT INTO chars_array VALUES (ARRAY['hello', 'world', 'maxlength1', 'hello     ', '     ', NULL]);
+
+-- varchar with length limit
+CREATE TABLE varchars_fixed_len(c VARCHAR(10));
+INSERT INTO varchars_fixed_len VALUES ('hello'), ('world'), ('maxlength1'), ('hello     '), ('     '), (NULL);

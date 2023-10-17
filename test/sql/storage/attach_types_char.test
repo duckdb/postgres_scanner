@@ -1,0 +1,75 @@
+# name: test/sql/storage/attach_types_char.test
+# description: Test inserting/querying chars
+# group: [storage]
+
+require postgres_scanner
+
+statement ok
+ATTACH 'dbname=postgresscanner' AS s (TYPE POSTGRES)
+
+statement ok
+USE s;
+
+query II
+SELECT c, LENGTH(c) FROM chars
+----
+hello	5
+world	5
+maxlength1	10
+hello	5
+(empty)	0
+NULL	NULL
+
+statement error
+INSERT INTO chars VALUES ('this string is too long')
+----
+value too long
+
+statement ok
+BEGIN
+
+statement ok
+DELETE FROM chars
+
+statement ok
+INSERT INTO chars VALUES ('hello'), ('world'), ('maxlength1'), ('hello     '), ('     '), (NULL);
+
+statement ok
+COMMIT
+
+query II
+SELECT c, LENGTH(c) FROM chars
+----
+hello	5
+world	5
+maxlength1	10
+hello	5
+(empty)	0
+NULL	NULL
+
+# char array
+query II
+SELECT UNNEST(c), LENGTH(UNNEST(c)) FROM chars_array
+----
+hello	5
+world	5
+maxlength1	10
+hello	5
+(empty)	0
+NULL	NULL
+
+# fixed length varchars
+query II
+SELECT c, LENGTH(c) FROM varchars_fixed_len
+----
+hello	5
+world	5
+maxlength1	10
+hello     	10
+     	5
+NULL	NULL
+
+statement error
+INSERT INTO varchars_fixed_len VALUES ('this string is too long')
+----
+value too long

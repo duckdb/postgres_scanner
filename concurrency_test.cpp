@@ -9,8 +9,8 @@ std::mt19937 rng(rd()); // random-number engine used (Mersenne-Twister in this c
 
 using namespace duckdb;
 
-struct PGQueryResult {
-	~PGQueryResult() {
+struct PostgresResult {
+	~PostgresResult() {
 		if (res) {
 			PQclear(res);
 		}
@@ -31,7 +31,7 @@ struct PGQueryResult {
 };
 
 static void PGExec(PGconn *conn, string q) {
-	auto res = make_uniq<PGQueryResult>();
+	auto res = make_uniq<PostgresResult>();
 	res->res = PQexec(conn, q.c_str());
 
 	if (!res->res) {
@@ -42,8 +42,8 @@ static void PGExec(PGconn *conn, string q) {
 	}
 }
 
-static unique_ptr<PGQueryResult> PGQuery(PGconn *conn, string q) {
-	auto res = make_uniq<PGQueryResult>();
+static unique_ptr<PostgresResult> PGQuery(PGconn *conn, string q) {
+	auto res = make_uniq<PostgresResult>();
 	res->res = PQexec(conn, q.c_str());
 
 	if (!res->res) {

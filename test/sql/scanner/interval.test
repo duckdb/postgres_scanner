@@ -1,0 +1,23 @@
+# name: test/sql/scanner/interval.test
+# description: Intervals
+# group: [scanner]
+
+require postgres_scanner
+
+statement ok
+pragma enable_verification
+
+statement ok
+CALL postgres_attach('dbname=postgresscanner');
+
+query I
+select * from intervals
+----
+42 days
+3 years 6 months
+42 years
+00:42:00
+00:00:42
+00:00:00.42
+-42 days
+NULL

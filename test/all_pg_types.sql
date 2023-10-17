@@ -88,3 +88,100 @@ VALUES ('{2019-11-26, 2021-03-01, NULL}','{14:42:43, 12:45:01, NULL}','{14:42:43
 
 insert into pg_enumarraytypes (enum_col)
 VALUES ('{}'), ('{foo}'), ('{foo, bar}'), ('{foo, bar, baz}'), ('{foo, bar, baz, NULL}'), (NULL); 
+
+
+CREATE TABLE pg_macaddr (
+	macaddr_col macaddr
+);
+insert into pg_macaddr values ('08:00:2b:01:02:03');
+
+CREATE TABLE pg_complex_types_mix (
+	id int,
+	macaddr_col macaddr[],
+	str varchar,
+	str_list varchar[],
+	b bytea
+);
+
+-- unbounded numerics
+CREATE TABLE pg_giant_numeric (
+	n NUMERIC
+);
+INSERT INTO pg_giant_numeric
+VALUES  (0), (99999999999999999999999999999999.99999999999999999999999999999999), (-123456789123456789123456789.123456789123456789123456789);
+
+CREATE TABLE pg_giant_numeric_array (
+	n NUMERIC[]
+);
+INSERT INTO pg_giant_numeric_array
+VALUES  (ARRAY[0, 99999999999999999999999999999999.99999999999999999999999999999999, -123456789123456789123456789.123456789123456789123456789]), (ARRAY[]::NUMERIC[]);
+
+CREATE TABLE pg_numeric_empty (
+	n NUMERIC
+);
+CREATE TABLE pg_numeric_array_empty (
+	n NUMERIC[]
+);
+
+-- json
+CREATE TABLE pg_json (
+	regular_json JSON
+);
+INSERT INTO pg_json VALUES ('{"a": 42, "b": "string"}');
+
+-- composite type example
+CREATE TYPE inventory_item AS (
+    name            text,
+    supplier_id     integer,
+    price           numeric
+);
+CREATE TABLE on_hand (
+    item      inventory_item,
+    count     integer
+);
+INSERT INTO on_hand VALUES (ROW('fuzzy dice', 42, 1.99), 1000);
+
+-- complex composite types
+CREATE TYPE composite_with_arrays AS (
+    names            text[],
+    ids              integer[]
+);
+CREATE TYPE pg_mood AS ENUM ('sad', 'ok', 'happy');
+CREATE TYPE composite_with_enums AS (
+    current_mood            pg_mood,
+    past_moods              pg_mood[]
+);
+CREATE TABLE composite_with_arrays_tbl (
+    item      composite_with_arrays
+);
+INSERT INTO composite_with_arrays_tbl VALUES (ROW(array['Name 1', 'Name 2'], array[42, 84, 100, 120]));
+
+CREATE TABLE composite_with_enums_tbl (
+    item      composite_with_enums
+);
+INSERT INTO composite_with_enums_tbl VALUES (ROW('happy', ARRAY['ok', 'happy', 'sad', 'happy', 'ok']::pg_mood[]));
+
+CREATE TABLE array_of_composites_tbl (
+	items inventory_item[]
+);
+INSERT INTO array_of_composites_tbl VALUES (ARRAY[ROW('fuzzy dice', 42, 1.99), ROW('fuzzy mice', 84, 0.5)]::inventory_item[]);
+
+CREATE TABLE many_multidimensional_arrays (
+	i int[][][],
+	s varchar[][]
+);
+INSERT INTO many_multidimensional_arrays VALUES (
+	ARRAY[ARRAY[[1, 2, 3]], ARRAY[[4, 5, 6]], ARRAY[[7, 8, 9]]],
+	ARRAY[ARRAY['hello world', 'abc'], ARRAY['this is', 'an array']]);
+
+-- postgres allows mixing array dimensions (for some reason)
+-- duckdb does not, so we need to catch this error
+CREATE TABLE mixed_arrays (
+	i int[]
+);
+INSERT INTO mixed_arrays VALUES (
+	ARRAY[ARRAY[[1, 2, 3]], ARRAY[[4, 5, 6]], ARRAY[[7, 8, 9]]]
+);
+INSERT INTO mixed_arrays VALUES (
+	ARRAY[1, 2, 3]
+);

@@ -1,0 +1,110 @@
+# name: test/sql/storage/attach_constraints.test
+# description: Test various constraints (PRIMARY KEY, UNIQUE, etc)
+# group: [storage]
+
+require postgres_scanner
+
+statement ok
+ATTACH 'dbname=postgresscanner' AS s1 (TYPE POSTGRES)
+
+# FIXME:
+#statement ok
+#PRAGMA enable_verification
+
+# primary keys
+statement ok
+CREATE OR REPLACE TABLE s1.test(i INTEGER PRIMARY KEY);
+
+statement ok
+INSERT INTO s1.test VALUES (42);
+
+statement error
+INSERT INTO s1.test VALUES (42);
+----
+duplicate key
+
+statement error
+INSERT INTO s1.test VALUES (NULL);
+----
+not-null
+
+query I
+SELECT * FROM s1.test
+----
+42
+
+# unique constraint
+statement ok
+CREATE OR REPLACE TABLE s1.test2(i INTEGER UNIQUE);
+
+statement ok
+INSERT INTO s1.test2 VALUES (42);
+
+statement error
+INSERT INTO s1.test2 VALUES (42);
+----
+duplicate key
+
+statement ok
+INSERT INTO s1.test2 VALUES (NULL);
+
+query I
+SELECT * FROM s1.test2
+----
+42
+NULL
+
+# compound primary key/ constraints
+statement ok
+CREATE OR REPLACE TABLE s1.test3(i INTEGER, j INTEGER, PRIMARY KEY(i, j));
+
+statement ok
+INSERT INTO s1.test3 VALUES (1, 1);
+
+statement ok
+INSERT INTO s1.test3 VALUES (1, 2);
+
+statement error
+INSERT INTO s1.test3 VALUES (1, 1);
+----
+duplicate key
+
+query II
+SELECT * FROM s1.test3
+----
+1	1
+1	2
+
+# check constraints
+statement ok
+CREATE OR REPLACE TABLE s1.test4(i INTEGER CHECK(i < 100));
+
+statement ok
+INSERT INTO s1.test4 VALUES (42);
+
+statement error
+INSERT INTO s1.test4 VALUES (142);
+----
+check constraint
+
+query I
+SELECT * FROM s1.test4
+----
+42
+
+# NOT NULL constraints
+statement ok
+CREATE OR REPLACE TABLE s1.test5(i INTEGER NOT NULL);
+
+statement ok
+INSERT INTO s1.test5 VALUES (42);
+
+statement error
+INSERT INTO s1.test5 VALUES (NULL);
+----
+not-null constraint
+
+query I
+SELECT * FROM s1.test5
+----
+42

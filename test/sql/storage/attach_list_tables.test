@@ -1,0 +1,14 @@
+# name: test/sql/storage/attach_list_tables.test
+# description: Test listing all tables in a database
+# group: [storage]
+
+require postgres_scanner
+
+statement ok
+ATTACH 'dbname=postgresscanner' AS s1 (TYPE POSTGRES)
+
+statement ok
+USE s1;
+
+statement ok
+SHOW TABLES;

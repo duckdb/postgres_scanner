@@ -1,0 +1,153 @@
+# name: test/sql/storage/attach_types_multidimensional_array.test
+# description: Test inserting/querying multidimensional arrays
+# group: [storage]
+
+require postgres_scanner
+
+statement ok
+ATTACH 'dbname=postgresscanner' AS s (TYPE POSTGRES)
+
+statement ok
+USE s;
+
+# 2-dimensional array
+statement ok
+CREATE OR REPLACE TABLE two_dimensional_array(i INT[][]);
+
+statement ok
+INSERT INTO two_dimensional_array VALUES ([[1, 2, 3], [4, 5, 6], [7, 8, 9]]);
+
+statement ok
+INSERT INTO two_dimensional_array VALUES ([]);
+
+statement ok
+INSERT INTO two_dimensional_array VALUES (NULL);
+
+statement ok
+INSERT INTO two_dimensional_array VALUES ([[NULL], [42]]);
+
+# postgres requires multi-dimensional arrays to have matching dimensions
+statement error
+INSERT INTO two_dimensional_array VALUES ([[1, 2, 3], [4, 5]]);
+----
+matching dimensions
+
+query I
+SELECT * FROM two_dimensional_array
+----
+[[1, 2, 3], [4, 5, 6], [7, 8, 9]]
+[]
+NULL
+[[NULL], [42]]
+
+# 3-dimensional array
+statement ok
+CREATE OR REPLACE TABLE three_dimensional_array(i INT[][][]);
+
+statement ok
+INSERT INTO three_dimensional_array VALUES ([[[1], [2], [3]], [[4], [5], [6]], [[7], [8], [9]]]);
+
+statement ok
+INSERT INTO three_dimensional_array VALUES ([[[1, 1], [2, 2], [3, 3]], [[4, 4], [5, 5], [6, 6]]]);
+
+statement ok
+INSERT INTO three_dimensional_array VALUES ([]);
+
+statement ok
+INSERT INTO three_dimensional_array VALUES (NULL);
+
+query I
+SELECT * FROM three_dimensional_array
+----
+[[[1], [2], [3]], [[4], [5], [6]], [[7], [8], [9]]]
+[[[1, 1], [2, 2], [3, 3]], [[4, 4], [5, 5], [6, 6]]]
+[]
+NULL
+
+# 3-dimensional decimal array
+statement ok
+CREATE OR REPLACE TABLE three_dimensional_decimal_array(i DECIMAL(4,2)[][][]);
+
+statement ok
+INSERT INTO three_dimensional_decimal_array VALUES ([[[1.5], [2.5], [3.5]], [[4.5], [5.5], [6.5]], [[7.5], [8.5], [9.5]]]);
+
+statement ok
+INSERT INTO three_dimensional_decimal_array VALUES ([[[1, 1], [2, 2], [3, 3]], [[4, 4], [5, 5], [6, 6]]]);
+
+statement ok
+INSERT INTO three_dimensional_decimal_array VALUES ([]);
+
+statement ok
+INSERT INTO three_dimensional_decimal_array VALUES (NULL);
+
+query I
+SELECT * FROM three_dimensional_decimal_array
+----
+[[[1.50], [2.50], [3.50]], [[4.50], [5.50], [6.50]], [[7.50], [8.50], [9.50]]]
+[[[1.00, 1.00], [2.00, 2.00], [3.00, 3.00]], [[4.00, 4.00], [5.00, 5.00], [6.00, 6.00]]]
+[]
+NULL
+
+# clear cache, then query again
+# this forces us to load the metadata from postgres itself
+statement ok
+CALL pg_clear_cache();
+
+query I
+SELECT * FROM two_dimensional_array
+----
+[[1, 2, 3], [4, 5, 6], [7, 8, 9]]
+[]
+NULL
+[[NULL], [42]]
+
+query I
+SELECT * FROM three_dimensional_array
+----
+[[[1], [2], [3]], [[4], [5], [6]], [[7], [8], [9]]]
+[[[1, 1], [2, 2], [3, 3]], [[4, 4], [5, 5], [6, 6]]]
+[]
+NULL
+
+query I
+SELECT * FROM three_dimensional_decimal_array
+----
+[[[1.50], [2.50], [3.50]], [[4.50], [5.50], [6.50]], [[7.50], [8.50], [9.50]]]
+[[[1.00, 1.00], [2.00, 2.00], [3.00, 3.00]], [[4.00, 4.00], [5.00, 5.00], [6.00, 6.00]]]
+[]
+NULL
+
+# more complex insertions
+statement ok
+INSERT INTO two_dimensional_array FROM two_dimensional_array
+
+query I
+SELECT * FROM two_dimensional_array
+----
+[[1, 2, 3], [4, 5, 6], [7, 8, 9]]
+[]
+NULL
+[[NULL], [42]]
+[[1, 2, 3], [4, 5, 6], [7, 8, 9]]
+[]
+NULL
+[[NULL], [42]]
+
+statement ok
+INSERT INTO two_dimensional_array FROM two_dimensional_array WHERE length(i)>1
+
+query I
+SELECT * FROM two_dimensional_array
+----
+[[1, 2, 3], [4, 5, 6], [7, 8, 9]]
+[]
+NULL
+[[NULL], [42]]
+[[1, 2, 3], [4, 5, 6], [7, 8, 9]]
+[]
+NULL
+[[NULL], [42]]
+[[1, 2, 3], [4, 5, 6], [7, 8, 9]]
+[[NULL], [42]]
+[[1, 2, 3], [4, 5, 6], [7, 8, 9]]
+[[NULL], [42]]

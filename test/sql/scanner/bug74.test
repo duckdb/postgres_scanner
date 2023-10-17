@@ -1,0 +1,27 @@
+# name: test/sql/scanner/bug74.test
+# description: Issue #74 - Connecting with CALL postgres_attach loads tables, but displays error
+# group: [scanner]
+
+require postgres_scanner
+
+statement ok
+CALL postgres_attach('dbname=postgresscanner');
+
+statement ok
+ATTACH 'dbname=postgresscanner' AS s (TYPE POSTGRES)
+
+statement ok
+USE s;
+
+loop i 0 2
+
+query I
+SELECT * from oids
+----
+42
+43
+
+statement ok
+USE memory
+
+endloop

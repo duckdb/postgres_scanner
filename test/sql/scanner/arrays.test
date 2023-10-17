@@ -1,0 +1,46 @@
+# name: test/sql/scanner/arrays.test
+# description: Read existing postgres arrays
+# group: [scanner]
+
+require postgres_scanner
+
+statement ok
+CALL postgres_attach('dbname=postgresscanner');
+
+statement ok
+ATTACH 'dbname=postgresscanner' AS s (TYPE POSTGRES)
+
+statement ok
+USE s;
+
+loop i 0 2
+
+query IIIIII
+select * exclude (float_col, double_col) from pg_numarraytypes;
+----
+[true, false, NULL]	[-42, 42, NULL]	[-4200, 4200, NULL]	[-420000, 420000, NULL]	[-4.2, 4.2]	[-4.2, 4.2]
+NULL	NULL	NULL	NULL	NULL	NULL
+
+# because of numeric accuracy reasons we verify the floats separately
+query II
+SELECT UNNEST(float_col), ROUND(UNNEST(double_col), 1) FROM pg_numarraytypes
+----
+-4.2	-4.2
+4.2	4.2
+
+query IIIIIIII
+select * from pg_bytearraytypes;
+----
+[a, Z, NULL]	[a, Z, NULL]	[aaaa, ZZZZ, NULL]	[aaaa, ZZZZ, NULL]	[aaaa, ZZZZ, NULL]	[x00, xff, NULL]	[{"a":42}, NULL]	[a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11, NULL]
+NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL
+
+query IIIII
+select * from pg_datearraytypes;
+----
+[2019-11-26, 2021-03-01, NULL]	[14:42:43, 12:45:01, NULL]	[14:42:43+05:45, 12:45:01+05:45, NULL]	[2019-11-26 12:45:01, 2021-03-01 12:45:01, NULL]	[2019-11-26 07:00:01+00, 2021-03-01 07:00:01+00, NULL]
+NULL	NULL	NULL	NULL	NULL
+
+statement ok
+USE memory
+
+endloop

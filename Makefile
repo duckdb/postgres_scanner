@@ -43,15 +43,23 @@ clean:
 	rm -rf testext
 	cd duckdb && make clean
 
+postgres:
+	sh pgconfigure
+
 # Main build
-debug:
+debug: postgres
 	mkdir -p  build/debug && \
-	cmake $(GENERATOR) $(FORCE_COLOR) $(EXTENSION_FLAGS) ${CLIENT_FLAGS} -DEXTENSION_STATIC_BUILD=1 -DCMAKE_BUILD_TYPE=Debug ${BUILD_FLAGS} -S ./duckdb/ -B build/debug && \
+	cmake $(GENERATOR) $(FORCE_COLOR) $(EXTENSION_FLAGS) ${BUILD_FLAGS} ${CLIENT_FLAGS} -DCMAKE_BUILD_TYPE=Debug -S ./duckdb/ -B build/debug && \
 	cmake --build build/debug --config Debug
 
-release:
+reldebug: postgres
+	mkdir -p build/reldebug && \
+	cmake $(GENERATOR) $(FORCE_COLOR) $(EXTENSION_FLAGS) ${BUILD_FLAGS} ${CLIENT_FLAGS} -DCMAKE_BUILD_TYPE=RelWithDebInfo -S ./duckdb/ -B build/reldebug && \
+	cmake --build build/reldebug --config RelWithDebInfo
+
+release: postgres
 	mkdir -p build/release && \
-	cmake $(GENERATOR) $(FORCE_COLOR) $(EXTENSION_FLAGS) ${CLIENT_FLAGS} -DEXTENSION_STATIC_BUILD=1 -DCMAKE_BUILD_TYPE=Release ${BUILD_FLAGS} -S ./duckdb/ -B build/release && \
+	cmake $(GENERATOR) $(FORCE_COLOR) $(EXTENSION_FLAGS) ${BUILD_FLAGS} ${CLIENT_FLAGS} -DCMAKE_BUILD_TYPE=Release -S ./duckdb/ -B build/release && \
 	cmake --build build/release --config Release
 
 # Main tests
@@ -64,8 +72,10 @@ test_debug: debug
 	./build/debug/test/unittest "$(PROJ_DIR)test/*"
 
 format:
+	cp duckdb/.clang-format .
 	find src/ -iname *.hpp -o -iname *.cpp | xargs clang-format --sort-includes=0 -style=file -i
 	cmake-format -i CMakeLists.txt
+	rm .clang-format
 
 update:
 	git submodule update --remote --merge

@@ -1,0 +1,34 @@
+# name: test/sql/storage/attach_types_varchar.test
+# description: Test inserting/querying VARCHAR
+# group: [storage]
+
+require postgres_scanner
+
+statement ok
+ATTACH 'dbname=postgresscanner' AS s (TYPE POSTGRES)
+
+statement ok
+USE s;
+
+statement ok
+CREATE OR REPLACE TABLE varchars(v VARCHAR);
+
+statement ok
+INSERT INTO varchars VALUES ('');
+
+statement ok
+INSERT INTO varchars VALUES ('this is a long string');
+
+statement ok
+INSERT INTO varchars VALUES ('🦆🦆🦆🦆🦆🦆🦆🦆');
+
+statement ok
+INSERT INTO varchars VALUES (NULL);
+
+query I
+SELECT * FROM varchars
+----
+(empty)
+this is a long string
+🦆🦆🦆🦆🦆🦆🦆🦆
+NULL

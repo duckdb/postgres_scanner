@@ -17,6 +17,9 @@
 #ifndef ntohll
 #define ntohll(x) ((((uint64_t)ntohl(x & 0xFFFFFFFF)) << 32) + ntohl(x >> 32))
 #endif
+#ifndef htonll
+#define htonll(x) ((((uint64_t)htonl(x)) << 32) + htonl((x) >> 32))
+#endif
 
 #define POSTGRES_EPOCH_JDATE 2451545 /* == date2j(2000, 1, 1) */
 #define DUCKDB_EPOCH_DATE    2440588

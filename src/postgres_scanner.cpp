@@ -49,8 +49,8 @@ void PostgresScanFunction::PrepareBind(ClientContext &context, PostgresBindData 
 	// we create a transaction here, and get the snapshot id so the parallel
 	// reader threads can use the same snapshot
 	auto &con = bind_data.connection;
-	auto result = con.Query("SELECT pg_is_in_recovery(), pg_export_snapshot()");
-	bind_data.in_recovery = result->GetBool(0, 0);
+	auto result = con.Query("SELECT pg_is_in_recovery(), pg_export_snapshot(), (select count(*) from pg_stat_wal_receiver)");
+	bind_data.in_recovery = result->GetBool(0, 0) || result->GetInt64(0, 2) > 0;
 	bind_data.snapshot = "";
 
 	if (!bind_data.in_recovery) {

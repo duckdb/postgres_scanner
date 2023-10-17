@@ -43,18 +43,21 @@ clean:
 	rm -rf testext
 	cd duckdb && make clean
 
+postgres:
+	sh pgconfigure
+
 # Main build
-debug:
+debug: postgres
 	mkdir -p  build/debug && \
 	cmake $(GENERATOR) $(FORCE_COLOR) $(EXTENSION_FLAGS) ${BUILD_FLAGS} ${CLIENT_FLAGS} -DCMAKE_BUILD_TYPE=Debug -S ./duckdb/ -B build/debug && \
 	cmake --build build/debug --config Debug
 
-reldebug:
+reldebug: postgres
 	mkdir -p build/reldebug && \
 	cmake $(GENERATOR) $(FORCE_COLOR) $(EXTENSION_FLAGS) ${BUILD_FLAGS} ${CLIENT_FLAGS} -DCMAKE_BUILD_TYPE=RelWithDebInfo -S ./duckdb/ -B build/reldebug && \
 	cmake --build build/reldebug --config RelWithDebInfo
 
-release:
+release: postgres
 	mkdir -p build/release && \
 	cmake $(GENERATOR) $(FORCE_COLOR) $(EXTENSION_FLAGS) ${BUILD_FLAGS} ${CLIENT_FLAGS} -DCMAKE_BUILD_TYPE=Release -S ./duckdb/ -B build/release && \
 	cmake --build build/release --config Release

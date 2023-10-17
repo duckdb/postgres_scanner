@@ -260,14 +260,15 @@ public:
 		return (config.is_negative ? -base_res : base_res);
 	}
 
-	void ReadArray(const LogicalType &type, const PostgresType &postgres_type, Vector &out_vec, idx_t output_offset, uint32_t current_count, uint32_t dimensions[], uint32_t ndim) {
+	void ReadArray(const LogicalType &type, const PostgresType &postgres_type, Vector &out_vec, idx_t output_offset,
+	               uint32_t current_count, uint32_t dimensions[], uint32_t ndim) {
 		auto list_entries = FlatVector::GetData<list_entry_t>(out_vec);
 		auto child_offset = ListVector::GetListSize(out_vec);
 		auto child_dimension = dimensions[0];
 		auto child_count = current_count * child_dimension;
 		// set up the list entries for this dimension
 		auto current_offset = child_offset;
-		for(idx_t c = 0; c < current_count; c++) {
+		for (idx_t c = 0; c < current_count; c++) {
 			auto &list_entry = list_entries[output_offset + c];
 			list_entry.offset = current_offset;
 			list_entry.length = child_dimension;
@@ -443,7 +444,7 @@ public:
 			D_ASSERT(value_len >= 3 * sizeof(uint32_t));
 			auto array_dim = ReadInteger<uint32_t>();
 			auto array_has_null = ReadInteger<uint32_t>(); // whether or not the array has nulls - ignore
-			auto value_oid = ReadInteger<uint32_t>(); // value_oid - not necessary
+			auto value_oid = ReadInteger<uint32_t>();      // value_oid - not necessary
 			if (array_dim == 0) {
 				list_entry.offset = child_offset;
 				list_entry.length = 0;
@@ -452,15 +453,21 @@ public:
 			// verify the number of dimensions matches the expected number of dimensions
 			idx_t expected_dimensions = 0;
 			const_reference<LogicalType> current_type = type;
-			while(current_type.get().id() == LogicalTypeId::LIST) {
+			while (current_type.get().id() == LogicalTypeId::LIST) {
 				current_type = ListType::GetChildType(current_type.get());
 				expected_dimensions++;
 			}
 			if (expected_dimensions != array_dim) {
-				throw InvalidInputException("Expected an array with %llu dimensions, but this array has %llu dimensions. The array stored in Postgres does not match the schema. Postgres does not enforce that arrays match the provided schema but DuckDB requires this.\nSet pg_array_as_varchar=true to read the array as a varchar instead. Note that you might have to run CALL pg_clear_cache() to clear cached type information as well.", expected_dimensions, array_dim);
+				throw InvalidInputException(
+				    "Expected an array with %llu dimensions, but this array has %llu dimensions. The array stored in "
+				    "Postgres does not match the schema. Postgres does not enforce that arrays match the provided "
+				    "schema but DuckDB requires this.\nSet pg_array_as_varchar=true to read the array as a varchar "
+				    "instead. Note that you might have to run CALL pg_clear_cache() to clear cached type information "
+				    "as well.",
+				    expected_dimensions, array_dim);
 			}
 			uint32_t dimensions[array_dim];
-			for(idx_t d = 0; d < array_dim; d++) {
+			for (idx_t d = 0; d < array_dim; d++) {
 				dimensions[d] = ReadInteger<uint32_t>();
 				auto lb = ReadInteger<uint32_t>(); // index lower bounds for each dimension -- we don't need them
 			}

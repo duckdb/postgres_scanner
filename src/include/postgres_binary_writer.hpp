@@ -205,10 +205,12 @@ public:
 	void WriteArray(Vector &col, idx_t r, const vector<uint32_t> &dimensions, idx_t depth, uint32_t count) {
 		auto list_data = FlatVector::GetData<list_entry_t>(col);
 		auto &child_vector = ListVector::GetEntry(col);
-		for(idx_t i = 0; i < count; i++) {
+		for (idx_t i = 0; i < count; i++) {
 			auto list_entry = list_data[r + i];
 			if (list_entry.length != dimensions[depth]) {
-				throw InvalidInputException("Postgres multidimensional arrays must all have matching dimensions - found a length mismatch (found %llu entries, expected %llu)", list_entry.length, dimensions[depth]);
+				throw InvalidInputException("Postgres multidimensional arrays must all have matching dimensions - "
+				                            "found a length mismatch (found %llu entries, expected %llu)",
+				                            list_entry.length, dimensions[depth]);
 			}
 			if (child_vector.GetType().id() == LogicalTypeId::LIST) {
 				// multidimensional array - recurse
@@ -351,7 +353,7 @@ public:
 			vector<uint32_t> dimensions;
 			const_reference<Vector> current_vector = col;
 			idx_t current_position = r;
-			while(current_vector.get().GetType().id() == LogicalTypeId::LIST) {
+			while (current_vector.get().GetType().id() == LogicalTypeId::LIST) {
 				auto current_entry = FlatVector::GetData<list_entry_t>(current_vector.get())[current_position];
 				dimensions.push_back(current_entry.length);
 				current_vector = ListVector::GetEntry(current_vector.get());
@@ -366,9 +368,9 @@ public:
 			WriteRawInteger<uint32_t>(1);                 // has nulls
 			WriteRawInteger<uint32_t>(value_oid);         // value_oid
 			// write the dimensions of the arrays
-			for(auto &dim : dimensions) {
-				WriteRawInteger<uint32_t>(dim);           // array length
-				WriteRawInteger<uint32_t>(1);             // index lower bounds
+			for (auto &dim : dimensions) {
+				WriteRawInteger<uint32_t>(dim); // array length
+				WriteRawInteger<uint32_t>(1);   // index lower bounds
 			}
 			// now recursively write the actual values
 			WriteArray(col, r, dimensions, 0, 1);

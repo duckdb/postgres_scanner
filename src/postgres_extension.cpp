@@ -15,8 +15,6 @@
 
 using namespace duckdb;
 
-extern "C" {
-
 static void SetPostgresConnectionLimit(ClientContext &context, SetScope scope, Value &parameter) {
 	if (scope == SetScope::LOCAL) {
 		throw InvalidInputException("pg_connection_limit can only be set globally");
@@ -66,6 +64,8 @@ static void LoadInternal(DatabaseInstance &db) {
 void PostgresScannerExtension::Load(DuckDB &db) {
         LoadInternal(*db.instance);
 }
+
+extern "C" {
 
 DUCKDB_EXTENSION_API void postgres_scanner_init(duckdb::DatabaseInstance &db) {
 	LoadInternal(db);

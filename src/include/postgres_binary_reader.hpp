@@ -473,13 +473,13 @@ public:
 				    "as well.",
 				    expected_dimensions, array_dim);
 			}
-			uint32_t dimensions[array_dim];
+			auto dimensions = unique_ptr<uint32_t[]>(new uint32_t[array_dim]);
 			for (idx_t d = 0; d < array_dim; d++) {
 				dimensions[d] = ReadInteger<uint32_t>();
 				auto lb = ReadInteger<uint32_t>(); // index lower bounds for each dimension -- we don't need them
 			}
 			// read the arrays recursively
-			ReadArray(type, postgres_type, out_vec, output_offset, 1, dimensions, array_dim);
+			ReadArray(type, postgres_type, out_vec, output_offset, 1, dimensions.get(), array_dim);
 			break;
 		}
 		case LogicalTypeId::STRUCT: {

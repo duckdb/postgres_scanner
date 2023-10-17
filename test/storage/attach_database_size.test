@@ -1,0 +1,11 @@
+# name: test/storage/attach_database_size.test
+# description:
+# group: [postgres_storage]
+
+require postgres_scanner
+
+statement ok
+ATTACH 'dbname=postgresscanner' AS s1 (TYPE POSTGRES)
+
+statement ok
+PRAGMA database_size

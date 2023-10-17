@@ -69,7 +69,16 @@ string PostgresCatalog::GetDBPath() {
 }
 
 DatabaseSize PostgresCatalog::GetDatabaseSize(ClientContext &context) {
-	throw InternalException("GetDatabaseSize");
+	auto &postgres_transaction = PostgresTransaction::Get(context, *this);
+	auto result = postgres_transaction.Query("SELECT pg_database_size(current_database());");
+	DatabaseSize size;
+	size.free_blocks = 0;
+	size.total_blocks = 0;
+	size.used_blocks = 0;
+	size.wal_size = 0;
+	size.block_size = 0;
+	size.bytes = result->GetInt64(0, 0);
+	return size;
 }
 
 void PostgresCatalog::ClearCache() {

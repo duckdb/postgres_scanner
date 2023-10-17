@@ -11,6 +11,7 @@
 #include "duckdb.hpp"
 #include "duckdb/common/types/interval.hpp"
 
+#include <cmath>
 #include <arpa/inet.h>
 // htonll is not available on Linux it seems
 #ifndef ntohll

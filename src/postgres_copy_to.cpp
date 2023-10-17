@@ -89,23 +89,13 @@ void PostgresConnection::FinishCopyTo(PostgresCopyState &state) {
 	}
 }
 
-bool TypeRequiresQuotes(const LogicalType &input) {
-	switch(input.id()) {
-	case LogicalTypeId::STRUCT:
-	case LogicalTypeId::LIST:
-		return true;
-	default:
-		return false;
-	}
-}
-
 void CastToPostgresVarchar(ClientContext &context, Vector &input, Vector &result, idx_t size, idx_t depth = 1);
 
 void CastListToPostgresArray(ClientContext &context, Vector &input, Vector &varchar_vector, idx_t size, idx_t depth) {
 	// cast child list
 	auto &child_data = ListVector::GetEntry(input);
 	auto child_count = ListVector::GetListSize(input);
-	bool requires_quotes = TypeRequiresQuotes(child_data.GetType());
+	bool requires_quotes = child_data.GetType().id() == LogicalTypeId::STRUCT;
 	Vector child_varchar(LogicalType::VARCHAR, child_count);
 	CastToPostgresVarchar(context, child_data, child_varchar, child_count, depth + 1);
 
@@ -140,6 +130,16 @@ void CastListToPostgresArray(ClientContext &context, Vector &input, Vector &varc
 		}
 		result += "}";
 		result_entries[r] = StringVector::AddString(varchar_vector, result);
+	}
+}
+
+bool TypeRequiresQuotes(const LogicalType &input) {
+	switch(input.id()) {
+	case LogicalTypeId::STRUCT:
+	case LogicalTypeId::LIST:
+		return true;
+	default:
+		return false;
 	}
 }
 

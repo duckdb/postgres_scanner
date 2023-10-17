@@ -65,14 +65,28 @@ LogicalType PostgresUtils::RemoveAlias(const LogicalType &type) {
 LogicalType PostgresUtils::TypeToLogicalType(optional_ptr<PostgresTransaction> transaction, optional_ptr<PostgresSchemaEntry> schema, const PostgresTypeData &type_info, PostgresType &postgres_type) {
 	auto &pgtypename = type_info.type_name;
 
-	// TODO better check, does the typtyp say something here?
 	// postgres array types start with an _
 	if (StringUtil::StartsWith(pgtypename, "_")) {
+		// get the array dimension information
+		idx_t dimensions = type_info.array_dimensions;
+		if (dimensions == 0) {
+			dimensions = 1;
+		}
+		// fetch the child type of the array
 		PostgresTypeData child_type_info;
 		child_type_info.type_name = pgtypename.substr(1);
-		PostgresType child_type;
-		auto result = LogicalType::LIST(PostgresUtils::TypeToLogicalType(transaction, schema, child_type_info, child_type));
-		postgres_type.children.push_back(std::move(child_type));
+		child_type_info.type_modifier = type_info.type_modifier;
+		PostgresType child_pg_type;
+		auto child_type = PostgresUtils::TypeToLogicalType(transaction, schema, child_type_info, child_pg_type);
+		// construct the child type based on the number of dimensions
+		for(idx_t i = 1; i < dimensions; i++) {
+			PostgresType new_pg_type;
+			new_pg_type.children.push_back(std::move(child_pg_type));
+			child_pg_type = std::move(new_pg_type);
+			child_type = LogicalType::LIST(child_type);
+		}
+		auto result = LogicalType::LIST(child_type);
+		postgres_type.children.push_back(std::move(child_pg_type));
 		return result;
 	}
 

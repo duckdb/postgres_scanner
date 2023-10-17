@@ -260,6 +260,35 @@ public:
 		return (config.is_negative ? -base_res : base_res);
 	}
 
+	void ReadArray(const LogicalType &type, const PostgresType &postgres_type, Vector &out_vec, idx_t output_offset, uint32_t current_count, uint32_t dimensions[], uint32_t ndim) {
+		auto list_entries = FlatVector::GetData<list_entry_t>(out_vec);
+		auto child_offset = ListVector::GetListSize(out_vec);
+		auto child_dimension = dimensions[0];
+		auto child_count = current_count * child_dimension;
+		// set up the list entries for this dimension
+		auto current_offset = child_offset;
+		for(idx_t c = 0; c < current_count; c++) {
+			auto &list_entry = list_entries[output_offset + c];
+			list_entry.offset = current_offset;
+			list_entry.length = child_dimension;
+			current_offset += child_dimension;
+		}
+		ListVector::Reserve(out_vec, child_offset + child_count);
+		auto &child_vec = ListVector::GetEntry(out_vec);
+		auto &child_type = ListType::GetChildType(type);
+		auto &child_pg_type = postgres_type.children[0];
+		if (ndim > 1) {
+			// there are more dimensions to read - recurse into child list
+			ReadArray(child_type, child_pg_type, child_vec, child_offset, child_count, dimensions + 1, ndim - 1);
+		} else {
+			// this is the last level - read the actual values
+			for (idx_t child_idx = 0; child_idx < child_count; child_idx++) {
+				ReadValue(child_type, child_pg_type, child_vec, child_offset + child_idx);
+			}
+		}
+		ListVector::SetListSize(out_vec, child_offset + child_count);
+	}
+
 	void ReadValue(const LogicalType &type, const PostgresType &postgres_type, Vector &out_vec, idx_t output_offset) {
 		auto value_len = ReadInteger<int32_t>();
 		if (value_len == -1) { // NULL
@@ -397,7 +426,6 @@ public:
 			FlatVector::GetData<interval_t>(out_vec)[output_offset] = ReadInterval();
 			break;
 		}
-
 		case LogicalTypeId::UUID: {
 			D_ASSERT(value_len == 2 * sizeof(int64_t));
 			FlatVector::GetData<hugeint_t>(out_vec)[output_offset] = ReadUUID();
@@ -413,31 +441,31 @@ public:
 				break;
 			}
 			D_ASSERT(value_len >= 3 * sizeof(uint32_t));
-			auto flag_one = ReadInteger<uint32_t>();
-			auto flag_two = ReadInteger<uint32_t>();
+			auto array_dim = ReadInteger<uint32_t>();
+			auto array_has_null = ReadInteger<uint32_t>(); // whether or not the array has nulls - ignore
 			auto value_oid = ReadInteger<uint32_t>();
-			if (flag_one == 0) {
+			if (array_dim == 0) {
 				list_entry.offset = child_offset;
 				list_entry.length = 0;
 				return;
 			}
-			// D_ASSERT(flag_two == 1); // TODO what is this?!
-			auto array_length = ReadInteger<uint32_t>();
-			auto array_dim = ReadInteger<uint32_t>();
-			if (array_dim != 1) {
-				throw NotImplementedException("Only one-dimensional Postgres arrays are supported %u %u ", array_length,
-				                              array_dim);
+			// verify the number of dimensions matches the expected number of dimensions
+			idx_t expected_dimensions = 0;
+			const_reference<LogicalType> current_type = type;
+			while(current_type.get().id() == LogicalTypeId::LIST) {
+				current_type = ListType::GetChildType(current_type.get());
+				expected_dimensions++;
 			}
-
-			auto &child_vec = ListVector::GetEntry(out_vec);
-			ListVector::Reserve(out_vec, child_offset + array_length);
-			for (idx_t child_idx = 0; child_idx < array_length; child_idx++) {
-				ReadValue(ListType::GetChildType(type), postgres_type.children[0], child_vec, child_offset + child_idx);
+			if (expected_dimensions != array_dim) {
+				throw InvalidInputException("Expected an array with %llu dimensions, but this array has %llu dimensions. The array stored in Postgres does not match the schema. Postgres does not enforce that arrays match the provided schema but DuckDB requires this.", expected_dimensions, array_dim);
 			}
-			ListVector::SetListSize(out_vec, child_offset + array_length);
-
-			list_entry.offset = child_offset;
-			list_entry.length = array_length;
+			uint32_t dimensions[array_dim];
+			for(idx_t d = 0; d < array_dim; d++) {
+				dimensions[d] = ReadInteger<uint32_t>();
+				auto lb = ReadInteger<uint32_t>(); // index lower bounds for each dimension -- we don't need them
+			}
+			// read the arrays recursively
+			ReadArray(type, postgres_type, out_vec, output_offset, 1, dimensions, array_dim);
 			break;
 		}
 		case LogicalTypeId::STRUCT: {

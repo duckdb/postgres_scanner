@@ -55,7 +55,6 @@ public:
 	void Execute(const string &query);
 	unique_ptr<PostgresResult> Query(const string &query);
 
-	vector<string> GetEntries(string entry_type);
 	vector<IndexInfo> GetIndexInfo(const string &table_name);
 
 	void BeginCopyTo(ClientContext &context, PostgresCopyState &state, PostgresCopyFormat format,

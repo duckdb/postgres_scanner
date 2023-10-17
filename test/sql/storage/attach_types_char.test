@@ -66,6 +66,8 @@ hello	5
 world	5
 maxlength1	10
 hello     	10
+     	5
+NULL	NULL
 
 statement error
 INSERT INTO varchars_fixed_len VALUES ('this string is too long')

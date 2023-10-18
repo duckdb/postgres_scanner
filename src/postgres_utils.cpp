@@ -346,13 +346,13 @@ PostgresVersion PostgresUtils::ExtractPostgresVersion(const string &version_str)
 		auto digit = std::strtoll(digit_str.c_str(), 0, 10);
 		switch(version_idx) {
 		case 0:
-			result.major = digit;
+			result.major_v = digit;
 			break;
 		case 1:
-			result.minor = digit;
+			result.minor_v = digit;
 			break;
 		default:
-			result.patch = digit;
+			result.patch_v = digit;
 			break;
 		}
 

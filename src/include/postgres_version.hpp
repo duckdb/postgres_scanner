@@ -15,27 +15,27 @@ namespace duckdb {
 struct PostgresVersion {
 	PostgresVersion() {
 	}
-	PostgresVersion(idx_t major, idx_t minor, idx_t patch = 0) : major(major), minor(minor), patch(patch) {
+	PostgresVersion(idx_t major_v, idx_t minor_v, idx_t patch_v = 0) : major_v(major_v), minor_v(minor_v), patch_v(patch_v) {
 	}
 
-	idx_t major = 0;
-	idx_t minor = 0;
-	idx_t patch = 0;
+	idx_t major_v = 0;
+	idx_t minor_v = 0;
+	idx_t patch_v = 0;
 
 	inline bool operator<(const PostgresVersion &rhs) const {
-		if (major < rhs.major) {
+		if (major_v < rhs.major_v) {
 			return true;
 		}
-		if (major > rhs.major) {
+		if (major_v > rhs.major_v) {
 			return false;
 		}
-		if (minor < rhs.minor) {
+		if (minor_v < rhs.minor_v) {
 			return true;
 		}
-		if (minor > rhs.minor) {
+		if (minor_v > rhs.minor_v) {
 			return false;
 		}
-		return patch < rhs.patch;
+		return patch_v < rhs.patch_v;
 	};
 	inline bool operator<=(const PostgresVersion &rhs) const {
 		return !(rhs < *this);

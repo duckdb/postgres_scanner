@@ -212,7 +212,7 @@ static unique_ptr<GlobalTableFunctionState> PostgresInitGlobalState(ClientContex
 		result->collection = std::move(materialized);
 		result->collection->InitializeScan(result->scan_state);
 	}
-	return result;
+	return std::move(result);
 }
 
 static bool PostgresParallelStateNext(ClientContext &context, const FunctionData *bind_data_p,
@@ -241,7 +241,7 @@ static unique_ptr<LocalTableFunctionState> GetLocalState(ClientContext &context,
 
 	auto local_state = make_uniq<PostgresLocalState>();
 	if (gstate.collection) {
-		return local_state;
+		return std::move(local_state);
 	}
 	local_state->column_ids = input.column_ids;
 

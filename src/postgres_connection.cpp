@@ -66,6 +66,12 @@ void PostgresConnection::Execute(const string &query) {
 	Query(query);
 }
 
+PostgresVersion PostgresConnection::GetPostgresVersion() {
+	auto result = Query("SHOW server_version;");
+	auto version = PostgresUtils::ExtractPostgresVersion(result->GetString(0, 0));
+	return version;
+}
+
 bool PostgresConnection::IsOpen() {
 	return connection.get();
 }

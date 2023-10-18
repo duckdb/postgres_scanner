@@ -35,6 +35,7 @@ void PostgresTableEntry::BindUpdateConstraints(LogicalGet &, LogicalProjection &
 }
 
 TableFunction PostgresTableEntry::GetScanFunction(ClientContext &context, unique_ptr<FunctionData> &bind_data) {
+	auto &pg_catalog = catalog.Cast<PostgresCatalog>();
 	auto &transaction = Transaction::Get(context, catalog).Cast<PostgresTransaction>();
 	auto &conn = transaction.GetConnection();
 
@@ -46,7 +47,7 @@ TableFunction PostgresTableEntry::GetScanFunction(ClientContext &context, unique
 	result->transaction = &transaction;
 	result->connection = PostgresConnection(conn.GetConnection());
 
-	PostgresScanFunction::PrepareBind(context, *result);
+	PostgresScanFunction::PrepareBind(pg_catalog.GetPostgresVersion(), context, *result);
 	for(auto &col : columns.Logical()) {
 		result->types.push_back(col.GetType());
 	}
@@ -57,7 +58,7 @@ TableFunction PostgresTableEntry::GetScanFunction(ClientContext &context, unique
 
 	// check how many threads we can actually use
 	if (result->max_threads > 1) {
-		auto &connection_pool = catalog.Cast<PostgresCatalog>().GetConnectionPool();
+		auto &connection_pool = pg_catalog.GetConnectionPool();
 		result->connection_reservation = connection_pool.AllocateConnections(result->max_threads);
 		result->max_threads = result->connection_reservation.GetConnectionCount();
 	}

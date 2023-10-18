@@ -9,8 +9,8 @@
 
 namespace duckdb {
 
-PostgresCatalog::PostgresCatalog(AttachedDatabase &db_p, const string &path, AccessMode access_mode)
-    : Catalog(db_p), path(path), access_mode(access_mode), schemas(*this) {
+PostgresCatalog::PostgresCatalog(PostgresVersion version, AttachedDatabase &db_p, const string &path, AccessMode access_mode)
+    : Catalog(db_p), path(path), access_mode(access_mode), version(version), schemas(*this) {
 	Value connection_limit;
 	auto &db_instance = db_p.GetDatabase();
 	if (db_instance.TryGetCurrentSetting("pg_connection_limit", connection_limit)) {

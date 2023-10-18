@@ -10,6 +10,7 @@
 
 #include "duckdb.hpp"
 #include <libpq-fe.h>
+#include "postgres_version.hpp"
 
 namespace duckdb {
 class PostgresSchemaEntry;
@@ -44,6 +45,8 @@ public:
 	static bool SupportedPostgresOid(const LogicalType &input);
 	static LogicalType RemoveAlias(const LogicalType &type);
 	static PostgresType CreateEmptyPostgresType(const LogicalType &type);
+
+	static PostgresVersion ExtractPostgresVersion(const string &version);
 };
 
 } // namespace duckdb

@@ -60,7 +60,7 @@ class PostgresScanFunction : public TableFunction {
 public:
 	PostgresScanFunction();
 
-	static void PrepareBind(ClientContext &context, PostgresBindData &bind);
+	static void PrepareBind(PostgresVersion version, ClientContext &context, PostgresBindData &bind);
 };
 
 class PostgresScanFunctionFilterPushdown : public TableFunction {

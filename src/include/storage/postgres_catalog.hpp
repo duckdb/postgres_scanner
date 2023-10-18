@@ -19,7 +19,8 @@ class PostgresSchemaEntry;
 
 class PostgresCatalog : public Catalog {
 public:
-	explicit PostgresCatalog(AttachedDatabase &db_p, const string &path, AccessMode access_mode);
+	explicit PostgresCatalog(PostgresVersion version, AttachedDatabase &db_p, const string &path,
+	                         AccessMode access_mode);
 	~PostgresCatalog();
 
 	string path;
@@ -52,6 +53,10 @@ public:
 
 	DatabaseSize GetDatabaseSize(ClientContext &context) override;
 
+	PostgresVersion GetPostgresVersion() const {
+		return version;
+	}
+
 	//! Label all postgres scans in the sub-tree as requiring materialization
 	//! This is used for e.g. insert queries that have both (1) a scan from a postgres table, and (2) a sink into one
 	static void MaterializePostgresScans(PhysicalOperator &op);
@@ -70,6 +75,7 @@ private:
 	void DropSchema(ClientContext &context, DropInfo &info) override;
 
 private:
+	PostgresVersion version;
 	PostgresSchemaSet schemas;
 	PostgresConnectionPool connection_pool;
 };

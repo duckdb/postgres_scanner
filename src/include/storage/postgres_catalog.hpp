@@ -19,7 +19,8 @@ class PostgresSchemaEntry;
 
 class PostgresCatalog : public Catalog {
 public:
-	explicit PostgresCatalog(PostgresVersion version, AttachedDatabase &db_p, const string &path, AccessMode access_mode);
+	explicit PostgresCatalog(PostgresVersion version, AttachedDatabase &db_p, const string &path,
+	                         AccessMode access_mode);
 	~PostgresCatalog();
 
 	string path;

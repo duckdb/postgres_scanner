@@ -45,16 +45,25 @@ struct PostgresGlobalState : public GlobalTableFunctionState {
 	}
 };
 
-void PostgresScanFunction::PrepareBind(ClientContext &context, PostgresBindData &bind_data) {
+void PostgresScanFunction::PrepareBind(PostgresVersion version, ClientContext &context, PostgresBindData &bind_data) {
 	// we create a transaction here, and get the snapshot id so the parallel
 	// reader threads can use the same snapshot
 	auto &con = bind_data.connection;
-	auto result = con.Query("SELECT pg_is_in_recovery(), pg_export_snapshot(), (select count(*) from pg_stat_wal_receiver)");
-	bind_data.in_recovery = result->GetBool(0, 0) || result->GetInt64(0, 2) > 0;
-	bind_data.snapshot = "";
-
-	if (!bind_data.in_recovery) {
-		bind_data.snapshot = result->GetString(0, 1);
+	// pg_stat_wal_receiver was introduced in PostgreSQL 9.6
+	if (version >= PostgresVersion(9, 6, 0)) {
+		auto result = con.Query("SELECT pg_is_in_recovery(), pg_export_snapshot(), (select count(*) from pg_stat_wal_receiver)");
+		bind_data.in_recovery = result->GetBool(0, 0) || result->GetInt64(0, 2) > 0;
+		bind_data.snapshot = "";
+		if (!bind_data.in_recovery) {
+			bind_data.snapshot = result->GetString(0, 1);
+		}
+	} else {
+		auto result = con.Query("SELECT pg_is_in_recovery(), pg_export_snapshot()");
+		bind_data.in_recovery = result->GetBool(0, 0);
+		bind_data.snapshot = "";
+		if (!bind_data.in_recovery) {
+			bind_data.snapshot = result->GetString(0, 1);
+		}
 	}
 
 	Value pages_per_task;
@@ -85,7 +94,8 @@ static unique_ptr<FunctionData> PostgresBind(ClientContext &context, TableFuncti
 
 	bind_data->connection = PostgresConnection::Open(bind_data->dsn);
 	bind_data->connection.Execute("BEGIN TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY");
-	PostgresScanFunction::PrepareBind(context, *bind_data);
+	auto version = bind_data->connection.GetPostgresVersion();
+	PostgresScanFunction::PrepareBind(version, context, *bind_data);
 
 	// query the table schema so we can interpret the bits in the pages
 	auto info = PostgresTableSet::GetTableInfo(bind_data->connection, bind_data->schema_name, bind_data->table_name);

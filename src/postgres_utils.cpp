@@ -325,4 +325,44 @@ uint32_t PostgresUtils::ToPostgresOid(const LogicalType &input) {
 	}
 }
 
+PostgresVersion PostgresUtils::ExtractPostgresVersion(const string &version_str) {
+	PostgresVersion result;
+	idx_t pos = 0;
+	// scan for the first digit
+	while(pos < version_str.size() && !StringUtil::CharacterIsDigit(version_str[pos])) {
+		pos++;
+	}
+	for(idx_t version_idx = 0; version_idx < 3; version_idx++) {
+		idx_t digit_start = pos;
+		while(pos < version_str.size() && StringUtil::CharacterIsDigit(version_str[pos])) {
+			pos++;
+		}
+		if (digit_start == pos) {
+			// no digits
+			break;
+		}
+		// our version is at [digit_start..pos)
+		auto digit_str = version_str.substr(digit_start, pos - digit_start);
+		auto digit = std::strtoll(digit_str.c_str(), 0, 10);
+		switch(version_idx) {
+		case 0:
+			result.major = digit;
+			break;
+		case 1:
+			result.minor = digit;
+			break;
+		default:
+			result.patch = digit;
+			break;
+		}
+
+		// check if the next character is a dot, if not we stop
+		if (pos >= version_str.size() || version_str[pos] != '.') {
+			break;
+		}
+		pos++;
+	}
+	return result;
+}
+
 }

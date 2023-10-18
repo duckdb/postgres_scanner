@@ -1,0 +1,10 @@
+# name: test/sql/storage/attach_non_existent.test
+# description: Test attaching to a database that does not exist
+# group: [storage]
+
+require postgres_scanner
+
+statement error
+ATTACH 'dbname=dbdoesnotexistx' AS s1 (TYPE POSTGRES)
+----
+does not exist

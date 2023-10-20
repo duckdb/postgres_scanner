@@ -4,6 +4,8 @@
 
 require postgres_scanner
 
+require-env POSTGRES_TEST_DATABASE_AVAILABLE
+
 statement ok
 SET pg_connection_limit=1000
 

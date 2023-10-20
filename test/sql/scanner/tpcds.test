@@ -6,6 +6,8 @@ require tpcds
 
 require postgres_scanner
 
+require-env POSTGRES_TEST_DATABASE_AVAILABLE
+
 # TODO: currently fails with out of storage on CI?
 mode skip
 

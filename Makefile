@@ -5,10 +5,19 @@ all: release
 MKFILE_PATH := $(abspath $(lastword $(MAKEFILE_LIST)))
 PROJ_DIR := $(dir $(MKFILE_PATH))
 
-OSX_BUILD_UNIVERSAL_FLAG=
-ifneq (${OSX_BUILD_ARCH}, "")
-	OSX_BUILD_UNIVERSAL_FLAG=-DOSX_BUILD_ARCH=${OSX_BUILD_ARCH}
+ifeq ($(OS),Windows_NT)
+	TEST_PATH="/test/Release/unittest.exe"
+else
+	TEST_PATH="/test/unittest"
 endif
+
+#### OSX config
+OSX_BUILD_FLAG=
+ifneq (${OSX_BUILD_ARCH}, "")
+	OSX_BUILD_FLAG=-DOSX_BUILD_ARCH=${OSX_BUILD_ARCH}
+endif
+
+#### VCPKG config
 VCPKG_TOOLCHAIN_PATH?=
 ifneq ("${VCPKG_TOOLCHAIN_PATH}", "")
 	TOOLCHAIN_FLAGS:=${TOOLCHAIN_FLAGS} -DVCPKG_MANIFEST_DIR='${PROJ_DIR}' -DVCPKG_BUILD=1 -DCMAKE_TOOLCHAIN_FILE='${VCPKG_TOOLCHAIN_PATH}'
@@ -17,22 +26,24 @@ ifneq ("${VCPKG_TARGET_TRIPLET}", "")
 	TOOLCHAIN_FLAGS:=${TOOLCHAIN_FLAGS} -DVCPKG_TARGET_TRIPLET='${VCPKG_TARGET_TRIPLET}'
 endif
 
+#### Enable Ninja as generator
 ifeq ($(GEN),ninja)
-	GENERATOR=-G "Ninja"
-	FORCE_COLOR=-DFORCE_COLORED_OUTPUT=1
+	GENERATOR=-G "Ninja" -DFORCE_COLORED_OUTPUT=1
 endif
 
-BUILD_FLAGS=-DEXTENSION_STATIC_BUILD=1 -DBUILD_EXTENSIONS="tpch;tpcds" ${OSX_BUILD_UNIVERSAL_FLAG} ${STATIC_LIBCPP} ${TOOLCHAIN_FLAGS}
-
-CLIENT_FLAGS :=
-
-# These flags will make DuckDB build the extension
+#### Configuration for this extension
+EXTENSION_NAME=POSTGRES_SCANNER
 EXTENSION_FLAGS=\
 -DDUCKDB_EXTENSION_NAMES="postgres_scanner" \
--DDUCKDB_EXTENSION_POSTGRES_SCANNER_PATH="$(PROJ_DIR)" \
--DDUCKDB_EXTENSION_POSTGRES_SCANNER_SHOULD_LINK=0 \
--DDUCKDB_EXTENSION_POSTGRES_SCANNER_LOAD_TESTS=1 \
--DDUCKDB_EXTENSION_POSTGRES_SCANNER_TEST_PATH="$(PROJ_DIR)test"
+-DDUCKDB_EXTENSION_${EXTENSION_NAME}_PATH="$(PROJ_DIR)" \
+-DDUCKDB_EXTENSION_${EXTENSION_NAME}_SHOULD_LINK=0 \
+-DDUCKDB_EXTENSION_${EXTENSION_NAME}_LOAD_TESTS=1 \
+-DDUCKDB_EXTENSION_${EXTENSION_NAME}_TEST_PATH="$(PROJ_DIR)test/sql"
+
+EXTRA_EXTENSIONS_FLAG=-DBUILD_EXTENSIONS="tpch;tpcds"
+
+BUILD_FLAGS=-DEXTENSION_STATIC_BUILD=1 $(EXTENSION_FLAGS) ${EXTRA_EXTENSIONS_FLAG} $(OSX_BUILD_FLAG) $(TOOLCHAIN_FLAGS)
+
 
 pull:
 	git submodule init
@@ -49,27 +60,24 @@ postgres:
 # Main build
 debug: postgres
 	mkdir -p  build/debug && \
-	cmake $(GENERATOR) $(FORCE_COLOR) $(EXTENSION_FLAGS) ${BUILD_FLAGS} ${CLIENT_FLAGS} -DCMAKE_BUILD_TYPE=Debug -S ./duckdb/ -B build/debug && \
+	cmake $(GENERATOR) $(BUILD_FLAGS) -DCMAKE_BUILD_TYPE=Debug -S ./duckdb/ -B build/debug && \
 	cmake --build build/debug --config Debug
 
 reldebug: postgres
 	mkdir -p build/reldebug && \
-	cmake $(GENERATOR) $(FORCE_COLOR) $(EXTENSION_FLAGS) ${BUILD_FLAGS} ${CLIENT_FLAGS} -DCMAKE_BUILD_TYPE=RelWithDebInfo -S ./duckdb/ -B build/reldebug && \
+	cmake $(GENERATOR) $(BUILD_FLAGS) -DCMAKE_BUILD_TYPE=RelWithDebInfo -S ./duckdb/ -B build/reldebug && \
 	cmake --build build/reldebug --config RelWithDebInfo
 
-release: postgres
+release:
 	mkdir -p build/release && \
-	cmake $(GENERATOR) $(FORCE_COLOR) $(EXTENSION_FLAGS) ${BUILD_FLAGS} ${CLIENT_FLAGS} -DCMAKE_BUILD_TYPE=Release -S ./duckdb/ -B build/release && \
+	cmake $(GENERATOR) $(BUILD_FLAGS) -DCMAKE_BUILD_TYPE=Release -S ./duckdb/ -B build/release && \
 	cmake --build build/release --config Release
 
-# Main tests
 test: test_release
-
 test_release: release
-	./build/release/test/unittest "$(PROJ_DIR)test/*"
-
+	./build/release/$(TEST_PATH) "$(PROJ_DIR)test/*"
 test_debug: debug
-	./build/debug/test/unittest "$(PROJ_DIR)test/*"
+	./build/debug/$(TEST_PATH) "$(PROJ_DIR)test/*"
 
 format:
 	cp duckdb/.clang-format .

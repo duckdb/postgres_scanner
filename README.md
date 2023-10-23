@@ -57,10 +57,3 @@ Then, load the Postgres extension like so:
 ```SQL
 LOAD 'build/release/extension/postgres_scanner/postgres_scanner.duckdb_extension';
 ```
-
-
-## License
-
-Copyright 2022 DuckDB Labs BV [hello@duckdblabs.com].
-
-This project is licensed under the GNU General Public License (LICENSE-GPL). Alternative licensing options are available from DuckDB Labs.

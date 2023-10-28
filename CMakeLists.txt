@@ -115,11 +115,10 @@ add_subdirectory(src)
 prepend(LIBPG_SOURCES_FULLPATH ${CMAKE_CURRENT_SOURCE_DIR} ${LIBPG_SOURCES})
 
 if(EXISTS "postgres")
+
 else()
-  execute_process(
-    COMMAND sh pgconfigure ${LIBPG_SOURCES_FULLPATH}
-    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
-  )
+  execute_process(COMMAND sh pgconfigure ${LIBPG_SOURCES_FULLPATH}
+                  WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
 endif()
 add_custom_command(
   OUTPUT ${LIBPG_SOURCES_FULLPATH}

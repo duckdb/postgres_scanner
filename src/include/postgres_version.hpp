@@ -15,7 +15,8 @@ namespace duckdb {
 struct PostgresVersion {
 	PostgresVersion() {
 	}
-	PostgresVersion(idx_t major_v, idx_t minor_v, idx_t patch_v = 0) : major_v(major_v), minor_v(minor_v), patch_v(patch_v) {
+	PostgresVersion(idx_t major_v, idx_t minor_v, idx_t patch_v = 0)
+	    : major_v(major_v), minor_v(minor_v), patch_v(patch_v) {
 	}
 
 	idx_t major_v = 0;

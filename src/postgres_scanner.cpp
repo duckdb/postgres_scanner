@@ -25,17 +25,19 @@ struct PostgresLocalState : public LocalTableFunctionState {
 	TableFilterSet *filters;
 	string col_names;
 	PostgresConnection connection;
+	idx_t batch_idx = 0;
 
 	void ScanChunk(ClientContext &context, const PostgresBindData &bind_data, PostgresGlobalState &gstate, DataChunk &output);
 };
 
 struct PostgresGlobalState : public GlobalTableFunctionState {
 	explicit PostgresGlobalState(idx_t max_threads)
-	    : page_idx(0), max_threads(max_threads) {
+	    : page_idx(0), batch_idx(0), max_threads(max_threads) {
 	}
 
 	mutex lock;
 	idx_t page_idx;
+	idx_t batch_idx;
 	idx_t max_threads;
 	unique_ptr<ColumnDataCollection> collection;
 	ColumnDataScanState scan_state;
@@ -221,6 +223,7 @@ static bool PostgresParallelStateNext(ClientContext &context, const FunctionData
 	auto bind_data = (const PostgresBindData *)bind_data_p;
 
 	lock_guard<mutex> parallel_lock(gstate.lock);
+	lstate.batch_idx = gstate.batch_idx++;
 	if (gstate.page_idx < bind_data->pages_approx) {
 		auto page_max = gstate.page_idx + bind_data->pages_per_task;
 		if (page_max >= bind_data->pages_approx) {
@@ -335,6 +338,14 @@ static void PostgresScan(ClientContext &context, TableFunctionInput &data, DataC
 	local_state.ScanChunk(context, bind_data, gstate, output);
 }
 
+static idx_t PostgresScanBatchIndex(ClientContext &context, const FunctionData *bind_data_p,
+                                                  LocalTableFunctionState *local_state_p,
+                                                  GlobalTableFunctionState *global_state) {
+	auto &bind_data = bind_data_p->Cast<PostgresBindData>();
+	auto &local_state = local_state_p->Cast<PostgresLocalState>();
+	return local_state.batch_idx;
+}
+
 static string PostgresScanToString(const FunctionData *bind_data_p) {
 	D_ASSERT(bind_data_p);
 
@@ -357,6 +368,7 @@ PostgresScanFunction::PostgresScanFunction()
 	to_string = PostgresScanToString;
 	serialize = PostgresScanSerialize;
 	deserialize = PostgresScanDeserialize;
+	get_batch_index = PostgresScanBatchIndex;
 	projection_pushdown = true;
 }
 
@@ -366,6 +378,7 @@ PostgresScanFunctionFilterPushdown::PostgresScanFunctionFilterPushdown()
 	to_string = PostgresScanToString;
 	serialize = PostgresScanSerialize;
 	deserialize = PostgresScanDeserialize;
+	get_batch_index = PostgresScanBatchIndex;
 	projection_pushdown = true;
 	filter_pushdown = true;
 }

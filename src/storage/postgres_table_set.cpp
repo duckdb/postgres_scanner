@@ -219,7 +219,7 @@ string PostgresColumnsToSQL(const ColumnList &columns, const vector<unique_ptr<C
 	return ss.str();
 }
 
-string GetCreateTableSQL(CreateTableInfo &info) {
+string GetPostgresCreateTable(CreateTableInfo &info) {
 	for (idx_t i = 0; i < info.columns.LogicalColumnCount(); i++) {
 		auto &col = info.columns.GetColumnMutable(LogicalIndex(i));
 		col.SetType(PostgresUtils::ToPostgresType(col.GetType()));
@@ -242,7 +242,7 @@ string GetCreateTableSQL(CreateTableInfo &info) {
 
 optional_ptr<CatalogEntry> PostgresTableSet::CreateTable(ClientContext &context, BoundCreateTableInfo &info) {
 	auto &transaction = PostgresTransaction::Get(context, catalog);
-	auto create_sql = GetCreateTableSQL(info.Base());
+	auto create_sql = GetPostgresCreateTable(info.Base());
 	transaction.Query(create_sql);
 	auto tbl_entry = make_uniq<PostgresTableEntry>(catalog, schema, info.Base());
 	return CreateEntry(std::move(tbl_entry));

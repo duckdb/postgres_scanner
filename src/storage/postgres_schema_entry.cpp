@@ -49,17 +49,17 @@ optional_ptr<CatalogEntry> PostgresSchemaEntry::CreateFunction(CatalogTransactio
 	throw BinderException("Postgres databases do not support creating functions");
 }
 
-void UnqualifyColumnReferences(ParsedExpression &expr) {
+void PGUnqualifyColumnReferences(ParsedExpression &expr) {
 	if (expr.type == ExpressionType::COLUMN_REF) {
 		auto &colref = expr.Cast<ColumnRefExpression>();
 		auto name = std::move(colref.column_names.back());
 		colref.column_names = {std::move(name)};
 		return;
 	}
-	ParsedExpressionIterator::EnumerateChildren(expr, UnqualifyColumnReferences);
+	ParsedExpressionIterator::EnumerateChildren(expr, PGUnqualifyColumnReferences);
 }
 
-string GetCreateIndexSQL(CreateIndexInfo &info, TableCatalogEntry &tbl) {
+string PGGetCreateIndexSQL(CreateIndexInfo &info, TableCatalogEntry &tbl) {
 	string sql;
 	sql = "CREATE";
 	if (info.constraint_type == IndexConstraintType::UNIQUE) {
@@ -74,7 +74,7 @@ string GetCreateIndexSQL(CreateIndexInfo &info, TableCatalogEntry &tbl) {
 		if (i > 0) {
 			sql += ", ";
 		}
-		UnqualifyColumnReferences(*info.parsed_expressions[i]);
+		PGUnqualifyColumnReferences(*info.parsed_expressions[i]);
 		sql += info.parsed_expressions[i]->ToString();
 	}
 	sql += ")";
@@ -84,11 +84,11 @@ string GetCreateIndexSQL(CreateIndexInfo &info, TableCatalogEntry &tbl) {
 optional_ptr<CatalogEntry> PostgresSchemaEntry::CreateIndex(ClientContext &context, CreateIndexInfo &info,
                                                           TableCatalogEntry &table) {
 	auto &postgres_transaction = PostgresTransaction::Get(context, table.catalog);
-	postgres_transaction.Query(GetCreateIndexSQL(info, table));
+	postgres_transaction.Query(PGGetCreateIndexSQL(info, table));
 	return nullptr;
 }
 
-string GetCreateViewSQL(CreateViewInfo &info) {
+string PGGetCreateViewSQL(CreateViewInfo &info) {
 	string sql;
 	sql = "CREATE VIEW ";
 	sql += KeywordHelper::WriteOptionallyQuoted(info.view_name);
@@ -125,7 +125,7 @@ optional_ptr<CatalogEntry> PostgresSchemaEntry::CreateView(CatalogTransaction tr
 		}
 	}
 	auto &postgres_transaction = GetPostgresTransaction(transaction);
-	postgres_transaction.Query(GetCreateViewSQL(info));
+	postgres_transaction.Query(PGGetCreateViewSQL(info));
 	return tables.RefreshTable(transaction.GetContext(), info.view_name);
 }
 

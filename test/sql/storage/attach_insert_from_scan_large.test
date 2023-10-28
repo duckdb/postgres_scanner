@@ -35,3 +35,18 @@ query I
 SELECT COUNT(*) FROM s.tbl
 ----
 400000
+
+query I
+CREATE TABLE duck_tbl AS FROM s.tbl
+----
+400000
+
+query II
+SELECT COUNT(*), SUM(i) FROM duck_tbl
+----
+400000	19999800000
+
+query II
+SELECT COUNT(*), SUM(i) FROM s.tbl
+----
+400000	19999800000

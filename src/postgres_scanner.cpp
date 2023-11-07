@@ -263,9 +263,9 @@ static unique_ptr<LocalTableFunctionState> GetLocalState(ClientContext &context,
 	}
 	local_state->column_ids = input.column_ids;
 
-	if (bind_data.transaction && !bind_data.read_only) {
+	if (!bind_data.read_only) {
 		// if we have made other modifications in this transaction we have to use the main connection
-		local_state->connection = PostgresConnection(bind_data.transaction->GetConnection().GetConnection());
+		local_state->connection = PostgresConnection(bind_data.connection.GetConnection());
 	} else {
 		local_state->connection = PostgresScanConnect(bind_data.dsn, bind_data.in_recovery, bind_data.snapshot);
 	}

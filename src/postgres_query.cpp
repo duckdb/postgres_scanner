@@ -63,8 +63,7 @@ static unique_ptr<FunctionData> PGQueryBind(ClientContext &context, TableFunctio
 	}
 
 	// set up the bind data
-	result->dsn = "xxxxxxxxxxxx"; // dsn should never be used so insert a bogus string
-	result->transaction = &transaction;
+	result->dsn = con.GetDSN();
 	result->connection = PostgresConnection(con.GetConnection());
 	result->types = return_types;
 	result->names = names;

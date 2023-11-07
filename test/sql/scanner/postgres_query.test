@@ -92,3 +92,15 @@ statement error
 select * from postgres_query('ddb', 'SELECT * FROM cars');
 ----
 does not refer to a Postgres database
+
+# syntax error
+statement error
+select count(*) from postgres_query('s1', 'SELEC * FROM cars');
+----
+syntax error
+
+# table does not exist
+statement error
+select count(*) from postgres_query('s1', 'SELECT * FROM nonexistent_table');
+----
+does not exist

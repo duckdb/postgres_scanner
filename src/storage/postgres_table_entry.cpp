@@ -44,7 +44,6 @@ TableFunction PostgresTableEntry::GetScanFunction(ClientContext &context, unique
 	result->schema_name = schema.name;
 	result->table_name = name;
 	result->dsn = conn.GetDSN();
-	result->transaction = &transaction;
 	result->connection = PostgresConnection(conn.GetConnection());
 
 	PostgresScanFunction::PrepareBind(pg_catalog.GetPostgresVersion(), context, *result);

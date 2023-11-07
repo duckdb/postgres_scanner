@@ -38,7 +38,6 @@ struct PostgresBindData : public FunctionData {
 	idx_t max_threads = 1;
 
 	PostgresConnection connection;
-	optional_ptr<PostgresTransaction> transaction;
 	PostgresConnectionReservation connection_reservation;
 
 public:

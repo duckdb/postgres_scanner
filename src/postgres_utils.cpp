@@ -1,6 +1,7 @@
 #include "postgres_utils.hpp"
 #include "storage/postgres_schema_entry.hpp"
 #include "storage/postgres_transaction.hpp"
+#include "postgres_type_oids.hpp"
 
 namespace duckdb {
 
@@ -242,24 +243,6 @@ PostgresType PostgresUtils::CreateEmptyPostgresType(const LogicalType &type) {
 	return result;
 }
 
-// taken from pg_type_d.h
-#define BOOLOID 16
-#define BYTEAOID 17
-#define INT8OID 20
-#define INT2OID 21
-#define INT4OID 23
-#define FLOAT4OID 700
-#define FLOAT8OID 701
-#define VARCHAROID 1043
-#define DATEOID 1082
-#define TIMEOID 1083
-#define TIMESTAMPOID 1114
-#define TIMESTAMPTZOID 1184
-#define INTERVALOID 1186
-#define TIMETZOID 1266
-#define BITOID 1560
-#define UUIDOID 2950
-
 bool PostgresUtils::SupportedPostgresOid(const LogicalType &input) {
 	switch(input.id()) {
 	case LogicalTypeId::BOOLEAN:
@@ -281,6 +264,95 @@ bool PostgresUtils::SupportedPostgresOid(const LogicalType &input) {
 		return true;
 	default:
 		return false;
+	}
+}
+
+string PostgresUtils::PostgresOidToName(uint32_t oid) {
+	switch(oid) {
+	case BOOLOID:
+		return "bool";
+	case INT2OID:
+		return "int2";
+	case INT4OID:
+		return "int4";
+	case INT8OID:
+		return "int8";
+	case FLOAT4OID:
+		return "float4";
+	case FLOAT8OID:
+		return "float8";
+	case CHAROID:
+	case BPCHAROID:
+		return "char";
+	case TEXTOID:
+	case VARCHAROID:
+		return "varchar";
+	case JSONOID:
+		return "json";
+	case BYTEAOID:
+		return "bytea";
+	case DATEOID:
+		return "date";
+	case TIMEOID:
+		return "time";
+	case TIMESTAMPOID:
+		return "timestamp";
+	case INTERVALOID:
+		return "interval";
+	case TIMETZOID:
+		return "timetz";
+	case TIMESTAMPTZOID:
+		return "timestamptz";
+	case BITOID:
+		return "bit";
+	case UUIDOID:
+		return "uuid";
+	case NUMERICOID:
+		return "numeric";
+	case JSONBOID:
+		return "jsonb";
+	case BOOLARRAYOID:
+		return "_bool";
+	case CHARARRAYOID:
+	case BPCHARARRAYOID:
+		return "_char";
+	case INT8ARRAYOID:
+		return "_int8";
+	case INT2ARRAYOID:
+		return "_int2";
+	case INT4ARRAYOID:
+		return "_int4";
+	case FLOAT4ARRAYOID:
+		return "_float4";
+	case FLOAT8ARRAYOID:
+		return "_float8";
+	case TEXTARRAYOID:
+	case VARCHARARRAYOID:
+		return "_varchar";
+	case JSONARRAYOID:
+		return "_json";
+	case JSONBARRAYOID:
+		return "_jsonb";
+	case NUMERICARRAYOID:
+		return "_numeric";
+	case UUIDARRAYOID:
+		return "_uuid";
+	case DATEARRAYOID:
+		return "_date";
+	case TIMEARRAYOID:
+		return "_time";
+	case TIMESTAMPARRAYOID:
+		return "_timestamp";
+	case TIMESTAMPTZARRAYOID:
+		return "_timestamptz";
+	case INTERVALARRAYOID:
+		return "_interval";
+	case TIMETZARRAYOID:
+		return "_timetz";
+	case BITARRAYOID:
+		return "_bit";
+	default:
+		return "unsupported_type";
 	}
 }
 

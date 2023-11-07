@@ -21,6 +21,7 @@ struct PostgresBindData : public FunctionData {
 
 	string schema_name;
 	string table_name;
+	string sql;
 	idx_t pages_approx = 0;
 
 	vector<PostgresType> postgres_types;
@@ -37,7 +38,6 @@ struct PostgresBindData : public FunctionData {
 	idx_t max_threads = 1;
 
 	PostgresConnection connection;
-	optional_ptr<PostgresTransaction> transaction;
 	PostgresConnectionReservation connection_reservation;
 
 public:
@@ -71,6 +71,11 @@ public:
 class PostgresClearCacheFunction : public TableFunction {
 public:
 	PostgresClearCacheFunction();
+};
+
+class PostgresQueryFunction : public TableFunction {
+public:
+	PostgresQueryFunction();
 };
 
 } // namespace duckdb

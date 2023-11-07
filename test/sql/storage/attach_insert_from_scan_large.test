@@ -27,7 +27,7 @@ SELECT COUNT(*) FROM s.tbl
 200000
 
 query I
-INSERT INTO s.tbl FROM s.tbl
+INSERT INTO s.tbl FROM postgres_query('s', 'SELECT * FROM tbl')
 ----
 200000
 

@@ -10,6 +10,7 @@ add_library(
   postgres_copy_to.cpp
   postgres_extension.cpp
   postgres_filter_pushdown.cpp
+  postgres_query.cpp
   postgres_scanner.cpp
   postgres_storage.cpp
   postgres_utils.cpp)

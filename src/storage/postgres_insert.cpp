@@ -188,7 +188,8 @@ unique_ptr<PhysicalOperator> AddCastToPostgresTypes(ClientContext &context, uniq
 void PostgresCatalog::MaterializePostgresScans(PhysicalOperator &op) {
 	if (op.type == PhysicalOperatorType::TABLE_SCAN) {
 		auto &table_scan = op.Cast<PhysicalTableScan>();
-		if (table_scan.function.name == "postgres_scan" || table_scan.function.name == "postgres_scan_pushdown") {
+		if (table_scan.function.name == "postgres_scan" || table_scan.function.name == "postgres_scan_pushdown"
+		    || table_scan.function.name == "postgres_query") {
 			auto &bind_data = table_scan.bind_data->Cast<PostgresBindData>();
 			bind_data.requires_materialization = true;
 			bind_data.max_threads = 1;

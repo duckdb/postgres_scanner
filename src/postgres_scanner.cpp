@@ -127,7 +127,12 @@ static void PostgresInitInternal(ClientContext &context, const PostgresBindData 
 			col_names += ", ";
 		}
 		if (column_id == COLUMN_IDENTIFIER_ROW_ID) {
-			col_names += "ctid";
+			if (bind_data->table_name.empty()) {
+				// count(*) over postgres_query
+				col_names += "NULL";
+			} else {
+				col_names += "ctid";
+			}
 		} else {
 			col_names += KeywordHelper::WriteQuoted(bind_data->names[column_id], '"');
 			if (bind_data->postgres_types[column_id].info == PostgresTypeAnnotation::CAST_TO_VARCHAR) {
@@ -141,7 +146,7 @@ static void PostgresInitInternal(ClientContext &context, const PostgresBindData 
 		}
 	}
 
-	string filter_string= PostgresFilterPushdown::TransformFilters(lstate.column_ids, lstate.filters, bind_data->names);
+	string filter_string = PostgresFilterPushdown::TransformFilters(lstate.column_ids, lstate.filters, bind_data->names);
 
 	string filter;
 	if (bind_data->pages_approx > 0) {
@@ -155,12 +160,22 @@ static void PostgresInitInternal(ClientContext &context, const PostgresBindData 
 		}
 		filter += filter_string;
 	}
-	lstate.sql = StringUtil::Format(
-	    R"(
-COPY (SELECT %s FROM %s.%s %s) TO STDOUT (FORMAT binary);
-)",
-	    col_names, KeywordHelper::WriteQuoted(bind_data->schema_name, '"'), KeywordHelper::WriteQuoted(bind_data->table_name, '"'), filter);
+	if (bind_data->table_name.empty()) {
+		D_ASSERT(!bind_data->sql.empty());
+		lstate.sql = StringUtil::Format(
+			R"(
+	COPY (SELECT %s FROM (%s) AS __unnamed_subquery %s) TO STDOUT (FORMAT binary);
+	)",
+			col_names, bind_data->sql, filter);
 
+	} else {
+		lstate.sql = StringUtil::Format(
+			R"(
+	COPY (SELECT %s FROM %s.%s %s) TO STDOUT (FORMAT binary);
+	)",
+			col_names, KeywordHelper::WriteQuoted(bind_data->schema_name, '"'), KeywordHelper::WriteQuoted(bind_data->table_name, '"'), filter);
+
+	}
 	lstate.exec = false;
 	lstate.done = false;
 }

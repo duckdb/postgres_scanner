@@ -41,6 +41,7 @@ public:
 	                                     optional_ptr<PostgresSchemaEntry> schema, const PostgresTypeData &input,
 	                                     PostgresType &postgres_type);
 	static string TypeToString(const LogicalType &input);
+	static string PostgresOidToName(uint32_t oid);
 	static uint32_t ToPostgresOid(const LogicalType &input);
 	static bool SupportedPostgresOid(const LogicalType &input);
 	static LogicalType RemoveAlias(const LogicalType &type);

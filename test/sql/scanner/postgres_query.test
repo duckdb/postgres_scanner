@@ -1,0 +1,94 @@
+# name: test/sql/scanner/postgres_query.test
+# description: Test running postgres_query
+# group: [scanner]
+
+require postgres_scanner
+
+statement ok
+ATTACH 'dbname=postgresscanner' AS s1 (TYPE POSTGRES)
+
+query III
+select * from postgres_query('s1', 'SELECT * FROM cars');
+----
+ferari	testarosa	red
+aston martin	db2	blue
+bentley	mulsanne	gray
+ford	T	black
+
+# filters
+query III
+select * from postgres_query('s1', 'SELECT * FROM cars WHERE color=''red''');
+----
+ferari	testarosa	red
+
+query III
+select * from postgres_query('s1', 'SELECT * FROM cars') WHERE color='red';
+----
+ferari	testarosa	red
+
+# projection pushdown
+query I
+select color from postgres_query('s1', 'SELECT color, brand FROM cars');
+----
+red
+blue
+gray
+black
+
+# count(*)
+query I
+select count(*) from postgres_query('s1', 'SELECT * FROM cars WHERE color=''red''');
+----
+1
+
+# types
+query IIIIIIII
+SELECT TYPEOF(COLUMNS(*)) FROM postgres_query('s1', 'SELECT * FROM pg_numtypes') LIMIT 1
+----
+BOOLEAN	SMALLINT	INTEGER	BIGINT	FLOAT	DOUBLE	DECIMAL(4,1)	DOUBLE
+
+query IIIIIIIII
+SELECT TYPEOF(COLUMNS(*)) FROM postgres_query('s1', 'SELECT * FROM pg_bytetypes') LIMIT 1
+----
+VARCHAR	VARCHAR	VARCHAR	VARCHAR	VARCHAR	VARCHAR	BLOB	VARCHAR	UUID
+
+query IIIII
+SELECT TYPEOF(COLUMNS(*)) FROM postgres_query('s1', 'SELECT * FROM pg_datetypes') LIMIT 1
+----
+DATE	TIME	TIME WITH TIME ZONE	TIMESTAMP	TIMESTAMP WITH TIME ZONE
+
+# arrays
+query IIIIIIII
+SELECT TYPEOF(COLUMNS(*)) FROM postgres_query('s1', 'SELECT * FROM pg_numarraytypes') LIMIT 1
+----
+BOOLEAN[]	SMALLINT[]	INTEGER[]	BIGINT[]	FLOAT[]	DOUBLE[]	DECIMAL(4,1)[]	DOUBLE[]
+
+query IIIIIIII
+SELECT TYPEOF(COLUMNS(*)) FROM postgres_query('s1', 'SELECT * FROM pg_bytearraytypes') LIMIT 1
+----
+VARCHAR[]	VARCHAR[]	VARCHAR[]	VARCHAR[]	VARCHAR[]	VARCHAR	VARCHAR[]	UUID[]
+
+query IIIII
+SELECT TYPEOF(COLUMNS(*)) FROM postgres_query('s1', 'SELECT * FROM pg_datearraytypes') LIMIT 1
+----
+DATE[]	TIME[]	TIME WITH TIME ZONE[]	TIMESTAMP[]	TIMESTAMP WITH TIME ZONE[]
+
+# incorrect usage
+statement error
+select * from postgres_query('s1', 'CREATE TABLE my_table(i INT)');
+----
+No fields returned by query
+
+statement error
+select * from postgres_query('xx', 'SELECT * FROM cars');
+----
+Failed to find attached database
+
+# what if the database is not a postgres database
+statement ok
+ATTACH ':memory:' AS ddb
+
+statement error
+select * from postgres_query('ddb', 'SELECT * FROM cars');
+----
+does not refer to a Postgres database

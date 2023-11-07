@@ -49,6 +49,9 @@ static void LoadInternal(DatabaseInstance &db) {
 	PostgresClearCacheFunction clear_cache_func;
 	ExtensionUtil::RegisterFunction(db, clear_cache_func);
 
+	PostgresQueryFunction query_func;
+	ExtensionUtil::RegisterFunction(db, query_func);
+
 	auto &config = DBConfig::GetConfig(db);
 	config.storage_extensions["postgres_scanner"] = make_uniq<PostgresStorageExtension>();
 

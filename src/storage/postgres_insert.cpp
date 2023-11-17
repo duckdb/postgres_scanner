@@ -193,6 +193,7 @@ void PostgresCatalog::MaterializePostgresScans(PhysicalOperator &op) {
 			auto &bind_data = table_scan.bind_data->Cast<PostgresBindData>();
 			bind_data.requires_materialization = true;
 			bind_data.max_threads = 1;
+			bind_data.emit_ctid = true;
 		}
 	}
 	for(auto &child : op.children) {

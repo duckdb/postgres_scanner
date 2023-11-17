@@ -34,6 +34,7 @@ struct PostgresBindData : public FunctionData {
 	string snapshot;
 	bool requires_materialization = false;
 	bool read_only = true;
+	bool emit_ctid = false;
 	idx_t max_threads = 1;
 
 	PostgresConnection connection;

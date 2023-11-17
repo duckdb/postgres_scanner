@@ -139,7 +139,7 @@ static void PostgresInitInternal(ClientContext &context, const PostgresBindData 
 			col_names += ", ";
 		}
 		if (column_id == COLUMN_IDENTIFIER_ROW_ID) {
-			if (bind_data->table_name.empty()) {
+			if (bind_data->table_name.empty() || !bind_data->emit_ctid) {
 				// count(*) over postgres_query
 				col_names += "NULL";
 			} else {

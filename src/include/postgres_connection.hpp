@@ -53,6 +53,7 @@ public:
 public:
 	static PostgresConnection Open(const string &connection_string);
 	void Execute(const string &query);
+	unique_ptr<PostgresResult> TryQuery(const string &query, optional_ptr<string> error_message = nullptr);
 	unique_ptr<PostgresResult> Query(const string &query);
 
 	PostgresVersion GetPostgresVersion();

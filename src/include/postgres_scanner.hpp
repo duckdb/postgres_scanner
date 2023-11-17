@@ -32,7 +32,6 @@ struct PostgresBindData : public FunctionData {
 	string dsn;
 
 	string snapshot;
-	bool in_recovery;
 	bool requires_materialization = false;
 	bool read_only = true;
 	idx_t max_threads = 1;

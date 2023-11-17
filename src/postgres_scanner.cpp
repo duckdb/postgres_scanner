@@ -47,26 +47,38 @@ struct PostgresGlobalState : public GlobalTableFunctionState {
 	}
 };
 
-void PostgresScanFunction::PrepareBind(PostgresVersion version, ClientContext &context, PostgresBindData &bind_data) {
-	// we create a transaction here, and get the snapshot id so the parallel
+static void PostgresGetSnapshot(PostgresVersion version, PostgresBindData &bind_data) {
+	unique_ptr<PostgresResult> result;
+	// by default disable snapshotting
+	bind_data.snapshot = string();
 	// reader threads can use the same snapshot
 	auto &con = bind_data.connection;
 	// pg_stat_wal_receiver was introduced in PostgreSQL 9.6
-	if (version >= PostgresVersion(9, 6, 0)) {
-		auto result = con.Query("SELECT pg_is_in_recovery(), pg_export_snapshot(), (select count(*) from pg_stat_wal_receiver)");
-		bind_data.in_recovery = result->GetBool(0, 0) || result->GetInt64(0, 2) > 0;
-		bind_data.snapshot = "";
-		if (!bind_data.in_recovery) {
-			bind_data.snapshot = result->GetString(0, 1);
+	if (version < PostgresVersion(9, 6, 0)) {
+		result = con.TryQuery("SELECT pg_is_in_recovery(), pg_export_snapshot()");
+		if (result) {
+			auto in_recovery = result->GetBool(0, 0);
+			if (!in_recovery) {
+				bind_data.snapshot = result->GetString(0, 1);
+			}
 		}
-	} else {
-		auto result = con.Query("SELECT pg_is_in_recovery(), pg_export_snapshot()");
-		bind_data.in_recovery = result->GetBool(0, 0);
-		bind_data.snapshot = "";
-		if (!bind_data.in_recovery) {
-			bind_data.snapshot = result->GetString(0, 1);
-		}
+		return;
 	}
+
+	result = con.TryQuery("SELECT pg_is_in_recovery(), pg_export_snapshot(), (select count(*) from pg_stat_wal_receiver)");
+	if (result) {
+		auto in_recovery = result->GetBool(0, 0) || result->GetInt64(0, 2) > 0;
+		bind_data.snapshot = "";
+		if (!in_recovery) {
+			bind_data.snapshot = result->GetString(0, 1);
+		}
+		return;
+	}
+}
+
+void PostgresScanFunction::PrepareBind(PostgresVersion version, ClientContext &context, PostgresBindData &bind_data) {
+	// we create a transaction here, and get the snapshot id so the parallel
+	PostgresGetSnapshot(version, bind_data);
 
 	Value pages_per_task;
 	if (context.TryGetCurrentSetting("pg_pages_per_task", pages_per_task)) {
@@ -180,11 +192,11 @@ static void PostgresInitInternal(ClientContext &context, const PostgresBindData 
 	lstate.done = false;
 }
 
-static PostgresConnection PostgresScanConnect(string dsn, bool in_recovery, string snapshot) {
+static PostgresConnection PostgresScanConnect(string dsn, string snapshot) {
 	auto conn = PostgresConnection::Open(dsn);
 	conn.Execute("BEGIN TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY");
-	if (!in_recovery) {
-		conn.Execute(StringUtil::Format("SET TRANSACTION SNAPSHOT '%s'", snapshot));
+	if (!snapshot.empty()) {
+		conn.TryQuery(StringUtil::Format("SET TRANSACTION SNAPSHOT '%s'", snapshot));
 	}
 	return conn;
 }
@@ -267,7 +279,7 @@ static unique_ptr<LocalTableFunctionState> GetLocalState(ClientContext &context,
 		// if we have made other modifications in this transaction we have to use the main connection
 		local_state->connection = PostgresConnection(bind_data.connection.GetConnection());
 	} else {
-		local_state->connection = PostgresScanConnect(bind_data.dsn, bind_data.in_recovery, bind_data.snapshot);
+		local_state->connection = PostgresScanConnect(bind_data.dsn, bind_data.snapshot);
 	}
 	local_state->filters = input.filters.get();
 	if (bind_data.pages_approx == 0 || bind_data.requires_materialization) {

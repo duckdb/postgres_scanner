@@ -36,7 +36,7 @@ public:
 		return atoll(GetValueInternal(row, col));
 	}
 	bool GetBool(idx_t row, idx_t col) {
-		return strcmp(GetValueInternal(row, col), "t");
+		return strcmp(GetValueInternal(row, col), "t") == 0;
 	}
 	bool IsNull(idx_t row, idx_t col) {
 		return PQgetisnull(res, row, col);

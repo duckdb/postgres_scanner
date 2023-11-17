@@ -54,12 +54,25 @@ PGresult *PostgresConnection::PQExecute(const string &query) {
 	return PQexec(GetConn(), query.c_str());
 }
 
-unique_ptr<PostgresResult> PostgresConnection::Query(const string &query) {
+
+unique_ptr<PostgresResult> PostgresConnection::TryQuery(const string &query, optional_ptr<string> error_message) {
 	auto result = PQExecute(query.c_str());
 	if (ResultHasError(result)) {
-		throw std::runtime_error("Failed to execute query \"" + query + "\": " + string(PQresultErrorMessage(result)));
+		if (error_message) {
+			*error_message = StringUtil::Format("Failed to execute query \"" + query + "\": " + string(PQresultErrorMessage(result)));
+		}
+		return nullptr;
 	}
 	return make_uniq<PostgresResult>(result);
+}
+
+unique_ptr<PostgresResult> PostgresConnection::Query(const string &query) {
+	string error_msg;
+	auto result = TryQuery(query, &error_msg);
+	if (!result) {
+		throw std::runtime_error(error_msg);
+	}
+	return result;
 }
 
 void PostgresConnection::Execute(const string &query) {

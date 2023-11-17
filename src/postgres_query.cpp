@@ -68,7 +68,7 @@ static unique_ptr<FunctionData> PGQueryBind(ClientContext &context, TableFunctio
 	result->types = return_types;
 	result->names = names;
 	result->read_only = false;
-	result->in_recovery = true;
+	result->snapshot = string();
 	result->SetTablePages(0);
 	result->sql = std::move(sql);
 	return std::move(result);

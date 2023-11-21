@@ -15,9 +15,9 @@ jobs:
   duckdb-stable-build:
     name: Build extension binaries
 #    if: startsWith(github.ref, 'refs/tags/v') || github.ref == 'refs/heads/main'
-    uses: duckdb/duckdb/.github/workflows/_extension_distribution.yml@v0.9.1
+    uses: duckdb/duckdb/.github/workflows/_extension_distribution.yml@v0.9.2
     with:
-      duckdb_version: v0.9.1
+      duckdb_version: v0.9.2
       extension_name: postgres_scanner
 
   duckdb-stable-deploy:
@@ -26,6 +26,6 @@ jobs:
     uses: ./.github/workflows/_extension_deploy.yml
     secrets: inherit
     with:
-      duckdb_version: v0.9.1
+      duckdb_version: v0.9.2
       extension_name: postgres_scanner
       deploy_latest: ${{ startsWith(github.ref, 'refs/tags/v') || github.ref == 'refs/heads/main' }}

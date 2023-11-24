@@ -29,3 +29,15 @@ jobs:
       duckdb_version: v0.9.2
       extension_name: postgres_scanner
       deploy_latest: ${{ startsWith(github.ref, 'refs/tags/v') || github.ref == 'refs/heads/main' }}
+      deploy_versioned: ${{ startsWith(github.ref, 'refs/tags/v') || github.ref == 'refs/heads/main' }}
+
+  duckdb-wasm-stable-deploy:
+    name: Deploy Wasm extension binaries
+    needs: duckdb-stable-build
+    uses: ./.github/workflows/_extension_deploy_wasm.yml
+    secrets: inherit
+    with:
+      duckdb_version: v0.9.2
+      extension_name: postgres_scanner
+      deploy_latest: ${{ startsWith(github.ref, 'refs/tags/v') || github.ref == 'refs/heads/main' }}
+      deploy_versioned: ${{ startsWith(github.ref, 'refs/tags/v') || github.ref == 'refs/heads/main' }}

@@ -227,8 +227,8 @@ public:
 		// similarly, if trailing zeroes have been suppressed, we have not been multiplying t
 		// the fractional part with NBASE often enough. If so, add additional powers
 		if (config.ndigits > config.weight + 1) {
-			auto fractional_power = (config.ndigits - config.weight - 1) * DEC_DIGITS;
-			auto fractional_power_correction = fractional_power - config.scale;
+			int32_t fractional_power = (config.ndigits - config.weight - 1) * DEC_DIGITS;
+			int32_t fractional_power_correction = fractional_power - config.scale;
 			D_ASSERT(fractional_power_correction < 20);
 			fractional_part = 0;
 			for (int32_t i = MaxValue<int32_t>(0, config.weight + 1); i < config.ndigits; i++) {

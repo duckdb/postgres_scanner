@@ -231,7 +231,7 @@ public:
 			auto fractional_power_correction = fractional_power - config.scale;
 			D_ASSERT(fractional_power_correction < 20);
 			fractional_part = 0;
-			for (auto i = config.weight + 1; i < config.ndigits; i++) {
+			for (int32_t i = MaxValue<int32_t>(0, config.weight + 1); i < config.ndigits; i++) {
 				if (i + 1 < config.ndigits) {
 					// more digits remain - no need to compensate yet
 					fractional_part *= NBASE;

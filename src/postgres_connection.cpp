@@ -80,8 +80,11 @@ void PostgresConnection::Execute(const string &query) {
 }
 
 PostgresVersion PostgresConnection::GetPostgresVersion() {
-	auto result = Query("SHOW server_version;");
+	auto result = Query("SELECT CURRENT_SETTING('server_version'), (SELECT COUNT(*) FROM pg_settings WHERE name LIKE 'rds%')");
 	auto version = PostgresUtils::ExtractPostgresVersion(result->GetString(0, 0));
+	if (result->GetInt64(0, 1) > 0) {
+		version.type_v = PostgresInstanceType::AURORA;
+	}
 	return version;
 }
 

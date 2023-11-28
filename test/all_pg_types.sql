@@ -185,3 +185,30 @@ INSERT INTO mixed_arrays VALUES (
 INSERT INTO mixed_arrays VALUES (
 	ARRAY[1, 2, 3]
 );
+
+-- Issue #136 - Inconsistent results from querying postgres numeric columns
+create TABLE public_amounts (
+    id bigint NOT NULL,
+    rate numeric NOT NULL
+);
+insert into public_amounts values
+   (1, 0.67),
+   (2, 0.067),
+   (3, 0.0067),
+   (4, 0.00067),
+   (5, 0.000067),
+   (6, 0.0000067),
+   (7, 0.00000067),
+   (8, 0.000000067),
+   (9, 0.0000000067),
+   (10, 0.00000000067),
+   (11, 0.000000000067),
+   (12, 0.0000000000067),
+   (13, 0.00000000000067),
+   (14, 0.000000000000067),
+   (15, 0.0000000000000067),
+   (16, 0.00000000000000067),
+   (17, 0.000000000000000067),
+   (18, 0.0000000000000000067),
+   (19, 0.00000000000000000067),
+   (20, 0.000000000000000000067);

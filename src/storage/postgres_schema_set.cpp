@@ -1,6 +1,7 @@
 #include "storage/postgres_schema_set.hpp"
 #include "storage/postgres_index_set.hpp"
 #include "storage/postgres_table_set.hpp"
+#include "storage/postgres_type_set.hpp"
 #include "storage/postgres_transaction.hpp"
 #include "duckdb/parser/parsed_data/create_schema_info.hpp"
 #include "storage/postgres_table_set.hpp"
@@ -38,24 +39,8 @@ ORDER BY oid;
 void PostgresSchemaSet::LoadEntries(ClientContext &context) {
 	string schema_query = PostgresSchemaSet::GetInitializeQuery();
 	string tables_query = PostgresTableSet::GetInitializeQuery();
-	string enum_types_query = R"(
-SELECT n.oid, typname, enumtypid, enumsortorder, enumlabel
-FROM pg_enum e
-JOIN pg_type t ON e.enumtypid = t.oid
-JOIN pg_namespace AS n ON (typnamespace=n.oid)
-ORDER BY n.oid, enumtypid, enumsortorder;
-)";
-	string composite_types_query = R"(
-SELECT n.oid, t.oid AS oid, t.typrelid AS id, t.typname as type, t.typtype as typeid, pg_attribute.attname, sub_type.typname
-FROM pg_type t
-JOIN pg_catalog.pg_namespace n ON n.oid = t.typnamespace
-JOIN pg_class ON pg_class.oid = t.typrelid
-JOIN pg_attribute ON attrelid=t.typrelid
-JOIN pg_type sub_type ON (pg_attribute.atttypid=sub_type.oid)
-WHERE pg_class.relkind = 'c'
-AND t.typtype='c'
-ORDER BY n.oid, t.oid, attrelid, attnum;
-)";
+	string enum_types_query = PostgresTypeSet::GetInitializeEnumsQuery();
+	string composite_types_query = PostgresTypeSet::GetInitializeCompositesQuery();
 	string index_query = PostgresIndexSet::GetInitializeQuery();
 
 	auto full_query = schema_query + tables_query + enum_types_query + composite_types_query + index_query;

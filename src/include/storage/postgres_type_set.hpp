@@ -24,14 +24,20 @@ public:
 public:
 	optional_ptr<CatalogEntry> CreateType(ClientContext &context, CreateTypeInfo &info);
 
+	void Initialize(PostgresTransaction &transaction, PostgresResultSlice &enums, PostgresResultSlice &composite_types);
+
+	static string GetInitializeEnumsQuery();
+	static string GetInitializeCompositesQuery();
+
 protected:
 	void LoadEntries(ClientContext &context) override;
 
-	void LoadEnumTypes(PostgresTransaction &transaction, vector<PGTypeInfo> &enum_info);
 	void CreateEnum(PostgresResult &result, idx_t start_row, idx_t end_row);
-	void LoadCompositeTypes(PostgresTransaction &transaction, vector<PGTypeInfo> &composite_info);
-	void CreateCompositeType(PostgresTransaction &transaction, PostgresResult &result, idx_t start_row, idx_t end_row,
-	                         unordered_map<idx_t, string> &name_map);
+	void CreateCompositeType(PostgresTransaction &transaction, PostgresResult &result, idx_t start_row, idx_t end_row);
+
+	void InitializeEnums(PostgresResultSlice &enums);
+	void InitializeCompositeTypes(PostgresTransaction &transaction, PostgresResultSlice &composite_types);
+
 
 protected:
 	PostgresSchemaEntry &schema;

@@ -21,6 +21,7 @@ PostgresSchemaEntry::PostgresSchemaEntry(Catalog &catalog, string name) :
 PostgresSchemaEntry::PostgresSchemaEntry(PostgresTransaction &transaction, Catalog &catalog, string name, PostgresResultSlice &table_slice, PostgresResultSlice &enums, PostgresResultSlice &composite_types, PostgresResultSlice &index_slice) :
     SchemaCatalogEntry(catalog, std::move(name), true), tables(*this), indexes(*this),
 	types(*this) {
+	types.Initialize(transaction, enums, composite_types);
 	tables.Initialize(transaction, table_slice);
 	indexes.Initialize(index_slice);
 }

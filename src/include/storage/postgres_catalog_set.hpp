@@ -29,13 +29,6 @@ public:
 
 protected:
 	virtual void LoadEntries(ClientContext &context) = 0;
-	void SetLoaded() {
-		is_loaded = true;
-	}
-	bool IsLoaded() {
-		return is_loaded;
-	}
-
 protected:
 	Catalog &catalog;
 
@@ -47,10 +40,14 @@ private:
 };
 
 struct PostgresResultSlice {
-	PostgresResultSlice(PostgresResult &result, idx_t start, idx_t end) : result(result), start(start), end(end) {
+	PostgresResultSlice(shared_ptr<PostgresResult> result_p, idx_t start, idx_t end) : result(std::move(result_p)), start(start), end(end) {
 	}
 
-	PostgresResult &result;
+	PostgresResult &GetResult() {
+		return *result;
+	}
+
+	shared_ptr<PostgresResult> result;
 	idx_t start;
 	idx_t end;
 };

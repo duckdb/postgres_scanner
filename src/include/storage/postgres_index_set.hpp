@@ -16,11 +16,9 @@ class PostgresSchemaEntry;
 
 class PostgresIndexSet : public PostgresCatalogSet {
 public:
-	PostgresIndexSet(PostgresSchemaEntry &schema);
+	PostgresIndexSet(PostgresSchemaEntry &schema, unique_ptr<PostgresResultSlice> index_result = nullptr);
 
 public:
-	void Initialize(PostgresResultSlice &indexes);
-
 	static string GetInitializeQuery();
 
 	optional_ptr<CatalogEntry> CreateIndex(ClientContext &context, CreateIndexInfo &info, TableCatalogEntry &table);
@@ -30,6 +28,7 @@ protected:
 
 protected:
 	PostgresSchemaEntry &schema;
+	unique_ptr<PostgresResultSlice> index_result;
 };
 
 } // namespace duckdb

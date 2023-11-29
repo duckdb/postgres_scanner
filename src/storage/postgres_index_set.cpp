@@ -7,27 +7,9 @@
 
 namespace duckdb {
 
-PostgresIndexSet::PostgresIndexSet(PostgresSchemaEntry &schema) :
-    PostgresCatalogSet(schema.ParentCatalog()), schema(schema) {}
+PostgresIndexSet::PostgresIndexSet(PostgresSchemaEntry &schema, unique_ptr<PostgresResultSlice> index_result_p) :
+    PostgresCatalogSet(schema.ParentCatalog()), schema(schema), index_result(std::move(index_result_p)) {}
 
-
-void PostgresIndexSet::Initialize(PostgresResultSlice &index_slice) {
-	if (IsLoaded()) {
-		throw InternalException("PostgresIndexSet::Initialize cannot be called on a loaded index set");
-	}
-	auto &result = index_slice.result;
-	for(idx_t row = index_slice.start; row < index_slice.end; row++) {
-		auto table_name = result.GetString(row, 1);
-		auto index_name = result.GetString(row, 2);
-		CreateIndexInfo info;
-		info.schema = schema.name;
-		info.table = table_name;
-		info.index_name = index_name;
-		auto index_entry = make_uniq<PostgresIndexEntry>(catalog, schema, info, table_name);
-		CreateEntry(std::move(index_entry));
-	}
-	SetLoaded();
-}
 
 string PostgresIndexSet::GetInitializeQuery() {
 	return R"(
@@ -39,7 +21,21 @@ ORDER BY pg_namespace.oid;
 }
 
 void PostgresIndexSet::LoadEntries(ClientContext &context) {
-	throw InternalException("PostgresIndexSet::LoadEntries not defined");
+	if (!index_result) {
+		throw InternalException("PostgresIndexSet::LoadEntries called without an index result defined");
+	}
+	auto &result = index_result->GetResult();
+	for(idx_t row = index_result->start; row < index_result->end; row++) {
+		auto table_name = result.GetString(row, 1);
+		auto index_name = result.GetString(row, 2);
+		CreateIndexInfo info;
+		info.schema = schema.name;
+		info.table = table_name;
+		info.index_name = index_name;
+		auto index_entry = make_uniq<PostgresIndexEntry>(catalog, schema, info, table_name);
+		CreateEntry(std::move(index_entry));
+	}
+	index_result.reset();
 }
 
 void PGUnqualifyColumnReferences(ParsedExpression &expr) {

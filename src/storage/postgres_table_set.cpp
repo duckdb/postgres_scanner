@@ -14,16 +14,8 @@
 
 namespace duckdb {
 
-PostgresTableSet::PostgresTableSet(PostgresSchemaEntry &schema) :
-    PostgresCatalogSet(schema.ParentCatalog()), schema(schema) {}
-
-void PostgresTableSet::Initialize(PostgresTransaction &transaction, PostgresResultSlice &tables) {
-	if (IsLoaded()) {
-		throw InternalException("PostgresTableSet::Initialize cannot be called on a loaded table set");
-	}
-	CreateEntries(transaction, tables.result, tables.start, tables.end, 1);
-	SetLoaded();
-}
+PostgresTableSet::PostgresTableSet(PostgresSchemaEntry &schema, unique_ptr<PostgresResultSlice> table_result_p) :
+    PostgresCatalogSet(schema.ParentCatalog()), schema(schema), table_result(std::move(table_result_p)) {}
 
 string PostgresTableSet::GetInitializeQuery() {
 	return R"(
@@ -89,22 +81,27 @@ void PostgresTableSet::CreateEntries(PostgresTransaction &transaction, PostgresR
 }
 
 void PostgresTableSet::LoadEntries(ClientContext &context) {
-	auto query = StringUtil::Replace(R"(
-SELECT relname, relpages, attname,
-    pg_type.typname type_name, atttypmod type_modifier, pg_attribute.attndims ndim
-FROM pg_class
-JOIN pg_namespace ON relnamespace = pg_namespace.oid
-JOIN pg_attribute ON pg_class.oid=pg_attribute.attrelid
-JOIN pg_type ON atttypid=pg_type.oid
-WHERE pg_namespace.nspname=${SCHEMA_NAME} AND attnum > 0
-ORDER BY relname, attnum;
-)", "${SCHEMA_NAME}", KeywordHelper::WriteQuoted(schema.name));
-
 	auto &transaction = PostgresTransaction::Get(context, catalog);
-	auto result = transaction.Query(query);
-	auto rows = result->Count();
+	if (table_result) {
+		CreateEntries(transaction, table_result->GetResult(), table_result->start, table_result->end, 1);
+		table_result.reset();
+	} else {
+		auto query = StringUtil::Replace(R"(
+	SELECT relname, relpages, attname,
+		pg_type.typname type_name, atttypmod type_modifier, pg_attribute.attndims ndim
+	FROM pg_class
+	JOIN pg_namespace ON relnamespace = pg_namespace.oid
+	JOIN pg_attribute ON pg_class.oid=pg_attribute.attrelid
+	JOIN pg_type ON atttypid=pg_type.oid
+	WHERE pg_namespace.nspname=${SCHEMA_NAME} AND attnum > 0
+	ORDER BY relname, attnum;
+	)", "${SCHEMA_NAME}", KeywordHelper::WriteQuoted(schema.name));
 
-	CreateEntries(transaction, *result, 0, rows, 0);
+		auto result = transaction.Query(query);
+		auto rows = result->Count();
+
+		CreateEntries(transaction, *result, 0, rows, 0);
+	}
 }
 
 string GetTableInfoQuery(const string &schema_name, const string &table_name) {

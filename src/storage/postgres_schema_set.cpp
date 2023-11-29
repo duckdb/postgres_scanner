@@ -11,8 +11,11 @@ namespace duckdb {
 PostgresSchemaSet::PostgresSchemaSet(Catalog &catalog) :
     PostgresCatalogSet(catalog) {}
 
-vector<PostgresResultSlice> SliceResult(PostgresResult &schemas, PostgresResult &to_slice) {
-	vector<PostgresResultSlice> result;
+vector<unique_ptr<PostgresResultSlice>> SliceResult(PostgresResult &schemas, unique_ptr<PostgresResult> to_slice_ptr) {
+	auto shared_result = shared_ptr<PostgresResult>(to_slice_ptr.release());
+	auto &to_slice = *shared_result;
+
+	vector<unique_ptr<PostgresResultSlice>> result;
 	idx_t current_offset = 0;
 	for(idx_t schema_idx = 0; schema_idx < schemas.Count(); schema_idx++) {
 		auto oid = schemas.GetInt64(schema_idx, 0);
@@ -23,7 +26,7 @@ vector<PostgresResultSlice> SliceResult(PostgresResult &schemas, PostgresResult 
 				break;
 			}
 		}
-		result.emplace_back(to_slice, start, current_offset);
+		result.push_back(make_uniq<PostgresResultSlice>(shared_result, start, current_offset));
 	}
 	return result;
 }
@@ -51,14 +54,14 @@ void PostgresSchemaSet::LoadEntries(ClientContext &context) {
 	results.erase(results.begin());
 	auto rows = result->Count();
 
-	auto tables = SliceResult(*result, *results[0]);
-	auto enums = SliceResult(*result, *results[1]);
-	auto composite_types = SliceResult(*result, *results[2]);
-	auto indexes = SliceResult(*result, *results[3]);
+	auto tables = SliceResult(*result, std::move(results[0]));
+	auto enums = SliceResult(*result, std::move(results[1]));
+	auto composite_types = SliceResult(*result, std::move(results[2]));
+	auto indexes = SliceResult(*result, std::move(results[3]));
 	for(idx_t row = 0; row < rows; row++) {
 		auto oid = result->GetInt64(row, 0);
 		auto schema_name = result->GetString(row, 1);
-		auto schema = make_uniq<PostgresSchemaEntry>(transaction, catalog, schema_name, tables[row], enums[row], composite_types[row], indexes[row]);
+		auto schema = make_uniq<PostgresSchemaEntry>(catalog, schema_name, std::move(tables[row]), std::move(enums[row]), std::move(composite_types[row]), std::move(indexes[row]));
 		CreateEntry(std::move(schema));
 	}
 }

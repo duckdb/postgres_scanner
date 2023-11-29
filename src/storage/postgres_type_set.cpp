@@ -14,8 +14,11 @@ struct PGTypeInfo {
 	string name;
 };
 
-PostgresTypeSet::PostgresTypeSet(PostgresSchemaEntry &schema) :
-    PostgresCatalogSet(schema.ParentCatalog()), schema(schema) {}
+PostgresTypeSet::PostgresTypeSet(PostgresSchemaEntry &schema,
+							 unique_ptr<PostgresResultSlice> enum_result_p,
+							 unique_ptr<PostgresResultSlice> composite_type_result_p) :
+    PostgresCatalogSet(schema.ParentCatalog()), schema(schema), enum_result(std::move(enum_result_p)),
+	composite_type_result(std::move(composite_type_result_p)) {}
 
 string PostgresTypeSet::GetInitializeEnumsQuery() {
 	return R"(
@@ -45,7 +48,7 @@ void PostgresTypeSet::CreateEnum(PostgresResult &result, idx_t start_row, idx_t 
 }
 
 void PostgresTypeSet::InitializeEnums(PostgresResultSlice &enums) {
-	auto &result = enums.result;
+	auto &result = enums.GetResult();
 	idx_t start = enums.start;
 	idx_t end = enums.end;
 	idx_t current_oid = idx_t(-1);
@@ -100,7 +103,7 @@ void PostgresTypeSet::CreateCompositeType(PostgresTransaction &transaction, Post
 }
 
 void PostgresTypeSet::InitializeCompositeTypes(PostgresTransaction &transaction, PostgresResultSlice &composite_types) {
-	auto &result = composite_types.result;
+	auto &result = composite_types.GetResult();
 	idx_t start = composite_types.start;
 	idx_t end = composite_types.end;
 	idx_t current_oid = idx_t(-1);
@@ -119,17 +122,15 @@ void PostgresTypeSet::InitializeCompositeTypes(PostgresTransaction &transaction,
 	}
 }
 
-void PostgresTypeSet::Initialize(PostgresTransaction &transaction, PostgresResultSlice &enums, PostgresResultSlice &composite_types) {
-	if (IsLoaded()) {
-		throw InternalException("PostgresTypeSet::Initialize cannot be called on a loaded type set");
-	}
-	SetLoaded();
-	InitializeEnums(enums);
-	InitializeCompositeTypes(transaction, composite_types);
-}
-
 void PostgresTypeSet::LoadEntries(ClientContext &context) {
-	throw InternalException("PostgresTypeSet::LoadEntries not defined");
+	if (!enum_result || !composite_type_result) {
+		throw InternalException("PostgresTypeSet::LoadEntries not defined without enum/composite type result");
+	}
+	auto &transaction = PostgresTransaction::Get(context, catalog);
+	InitializeEnums(*enum_result);
+	InitializeCompositeTypes(transaction, *composite_type_result);
+	enum_result.reset();
+	composite_type_result.reset();
 }
 
 string GetCreateTypeSQL(CreateTypeInfo &info) {

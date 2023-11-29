@@ -8,6 +8,7 @@
 #include "postgres_scanner.hpp"
 #include "postgres_result.hpp"
 #include "postgres_binary_reader.hpp"
+#include "storage/postgres_catalog.hpp"
 #include "storage/postgres_transaction.hpp"
 #include "storage/postgres_table_set.hpp"
 
@@ -47,15 +48,18 @@ struct PostgresGlobalState : public GlobalTableFunctionState {
 	}
 };
 
-static void PostgresGetSnapshot(PostgresVersion version, PostgresBindData &bind_data) {
+static void PostgresGetSnapshot(PostgresVersion version, ClientContext &context, PostgresBindData &bind_data) {
 	unique_ptr<PostgresResult> result;
 	// by default disable snapshotting
 	bind_data.snapshot = string();
+	if (bind_data.max_threads <= 1) {
+		return;
+	}
 	if (version.type_v == PostgresInstanceType::AURORA) {
 		return;
 	}
 	// reader threads can use the same snapshot
-	auto &con = bind_data.connection;
+	auto &con = bind_data.GetConnection(context);
 	// pg_stat_wal_receiver was introduced in PostgreSQL 9.6
 	if (version < PostgresVersion(9, 6, 0)) {
 		result = con.TryQuery("SELECT pg_is_in_recovery(), pg_export_snapshot()");
@@ -80,9 +84,6 @@ static void PostgresGetSnapshot(PostgresVersion version, PostgresBindData &bind_
 }
 
 void PostgresScanFunction::PrepareBind(PostgresVersion version, ClientContext &context, PostgresBindData &bind_data) {
-	// we create a transaction here, and get the snapshot id so the parallel
-	PostgresGetSnapshot(version, bind_data);
-
 	Value pages_per_task;
 	if (context.TryGetCurrentSetting("pg_pages_per_task", pages_per_task)) {
 		bind_data.pages_per_task = UBigIntValue::Get(pages_per_task);
@@ -90,6 +91,8 @@ void PostgresScanFunction::PrepareBind(PostgresVersion version, ClientContext &c
 			bind_data.pages_per_task = PostgresBindData::DEFAULT_PAGES_PER_TASK;
 		}
 	}
+	// we create a transaction here, and get the snapshot id so the parallel
+	PostgresGetSnapshot(version, context, bind_data);
 }
 
 void PostgresBindData::SetTablePages(idx_t approx_num_pages) {
@@ -101,6 +104,25 @@ void PostgresBindData::SetTablePages(idx_t approx_num_pages) {
 	}
 }
 
+PostgresConnection &PostgresBindData::GetConnection(ClientContext &context) {
+	if (pg_catalog) {
+		return PostgresTransaction::Get(context, *pg_catalog).GetConnection();
+	}
+	return pg_connection;
+}
+
+void PostgresBindData::SetConnection(PostgresConnection connection) {
+	this->pg_connection = std::move(connection);
+}
+
+void PostgresBindData::SetConnection(shared_ptr<OwnedPostgresConnection> connection) {
+	this->pg_connection = PostgresConnection(std::move(connection));
+}
+
+void PostgresBindData::SetCatalog(PostgresCatalog &catalog) {
+	this->pg_catalog = &catalog;
+}
+
 static unique_ptr<FunctionData> PostgresBind(ClientContext &context, TableFunctionBindInput &input,
                                              vector<LogicalType> &return_types, vector<string> &names) {
 	auto bind_data = make_uniq<PostgresBindData>();
@@ -109,13 +131,12 @@ static unique_ptr<FunctionData> PostgresBind(ClientContext &context, TableFuncti
 	bind_data->schema_name = input.inputs[1].GetValue<string>();
 	bind_data->table_name = input.inputs[2].GetValue<string>();
 
-	bind_data->connection = PostgresConnection::Open(bind_data->dsn);
-	bind_data->connection.Execute("BEGIN TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY");
-	auto version = bind_data->connection.GetPostgresVersion();
-	PostgresScanFunction::PrepareBind(version, context, *bind_data);
-
+	bind_data->SetConnection(PostgresConnection::Open(bind_data->dsn));
+	auto &con = bind_data->GetConnection(context);
+	con.Execute("BEGIN TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY");
+	auto version = con.GetPostgresVersion();
 	// query the table schema so we can interpret the bits in the pages
-	auto info = PostgresTableSet::GetTableInfo(bind_data->connection, bind_data->schema_name, bind_data->table_name);
+	auto info = PostgresTableSet::GetTableInfo(con, bind_data->schema_name, bind_data->table_name);
 
 	bind_data->postgres_types = info->postgres_types;
 	for(auto &col : info->create_info->columns.Logical()) {
@@ -126,6 +147,7 @@ static unique_ptr<FunctionData> PostgresBind(ClientContext &context, TableFuncti
 	bind_data->types = return_types;
 	bind_data->SetTablePages(info->approx_num_pages);
 
+	PostgresScanFunction::PrepareBind(version, context, *bind_data);
 	return std::move(bind_data);
 }
 
@@ -283,7 +305,7 @@ static unique_ptr<LocalTableFunctionState> GetLocalState(ClientContext &context,
 	} else {
 		// if we have made other modifications in this transaction we have to use the main connection
 		// alternatively, if we are only using a single thread to scan, we use the current connection as well
-		local_state->connection = PostgresConnection(bind_data.connection.GetConnection());
+		local_state->connection = PostgresConnection(bind_data.GetConnection(context).GetConnection());
 	}
 	local_state->filters = input.filters.get();
 	if (bind_data.pages_approx == 0 || bind_data.requires_materialization) {

@@ -14,6 +14,7 @@
 #include "storage/postgres_connection_pool.hpp"
 
 namespace duckdb {
+class PostgresCatalog;
 class PostgresTransaction;
 
 struct PostgresBindData : public FunctionData {
@@ -37,11 +38,15 @@ struct PostgresBindData : public FunctionData {
 	bool emit_ctid = false;
 	idx_t max_threads = 1;
 
-	PostgresConnection connection;
 	PostgresConnectionReservation connection_reservation;
 
 public:
+	PostgresConnection &GetConnection(ClientContext &context);
 	void SetTablePages(idx_t approx_num_pages);
+
+	void SetConnection(PostgresConnection connection);
+	void SetConnection(shared_ptr<OwnedPostgresConnection> connection);
+	void SetCatalog(PostgresCatalog &catalog);
 
 	unique_ptr<FunctionData> Copy() const override {
 		throw NotImplementedException("");
@@ -49,6 +54,10 @@ public:
 	bool Equals(const FunctionData &other_p) const override {
 		return false;
 	}
+
+private:
+	optional_ptr<PostgresCatalog> pg_catalog;
+	PostgresConnection pg_connection;
 };
 
 class PostgresAttachFunction : public TableFunction {

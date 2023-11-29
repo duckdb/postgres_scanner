@@ -39,7 +39,6 @@ void PostgresTypeSet::LoadEnumTypes(PostgresTransaction &transaction, vector<PGT
 		return;
 	}
 
-	auto &conn = transaction.GetConnection();
 	// compose the query
 	// we create a single big query that uses UNION ALL to get the values of all enums at the same time
 	string query;
@@ -54,7 +53,7 @@ void PostgresTypeSet::LoadEnumTypes(PostgresTransaction &transaction, vector<PGT
 		                            KeywordHelper::WriteQuoted(info.name, '"'));
 	}
 	// now construct the enums
-	auto result = conn.Query(query);
+	auto result = transaction.Query(query);
 	auto count = result->Count();
 	idx_t start = 0;
 	idx_t current_oid = idx_t(-1);
@@ -98,7 +97,6 @@ void PostgresTypeSet::LoadCompositeTypes(PostgresTransaction &transaction, vecto
 	if (composite_info.empty()) {
 		return;
 	}
-	auto &conn = transaction.GetConnection();
 	// compose the query
 	// we create a single big query that uses a big IN list to get the values of all composite types at the same time
 	unordered_map<idx_t, string> name_map;
@@ -116,7 +114,7 @@ FROM pg_attribute JOIN pg_type ON (pg_attribute.atttypid=pg_type.oid)
 WHERE attrelid IN (%s)
 ORDER BY attrelid, attnum;
 )", in_list);
-	auto result = conn.Query(query);
+	auto result = transaction.Query(query);
 	auto count = result->Count();
 	idx_t start = 0;
 	idx_t current_oid = idx_t(-1);
@@ -146,8 +144,7 @@ AND n.nspname=${SCHEMA_NAME};
 )", "${SCHEMA_NAME}", KeywordHelper::WriteQuoted(schema.name));
 
 	auto &transaction = PostgresTransaction::Get(context, catalog);
-	auto &conn = transaction.GetConnection();
-	auto result = conn.Query(query);
+	auto result = transaction.Query(query);
 	auto rows = result->Count();
 	vector<PGTypeInfo> enum_types;
 	vector<PGTypeInfo> composite_types;

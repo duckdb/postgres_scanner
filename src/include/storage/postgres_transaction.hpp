@@ -28,6 +28,9 @@ public:
 	void Rollback();
 
 	PostgresConnection &GetConnection();
+	string GetDSN() {
+		return connection.GetDSN();
+	}
 	unique_ptr<PostgresResult> Query(const string &query);
 	static PostgresTransaction &Get(ClientContext &context, Catalog &catalog);
 

@@ -17,6 +17,27 @@ namespace duckdb {
 PostgresTableSet::PostgresTableSet(PostgresSchemaEntry &schema) :
     PostgresCatalogSet(schema.ParentCatalog()), schema(schema) {}
 
+void PostgresTableSet::Initialize(PostgresTransaction &transaction, PostgresResultSlice &tables) {
+	if (IsLoaded()) {
+		throw InternalException("PostgresTableSet::Initialize cannot be called on a loaded table set");
+	}
+	CreateEntries(transaction, tables.result, tables.start, tables.end, 1);
+	SetLoaded();
+}
+
+string PostgresTableSet::GetInitializeQuery() {
+	return R"(
+SELECT pg_namespace.oid, relname, relpages, attname,
+    pg_type.typname type_name, atttypmod type_modifier, pg_attribute.attndims ndim
+FROM pg_class
+JOIN pg_namespace ON relnamespace = pg_namespace.oid
+JOIN pg_attribute ON pg_class.oid=pg_attribute.attrelid
+JOIN pg_type ON atttypid=pg_type.oid
+WHERE attnum > 0
+ORDER BY pg_namespace.oid, relname, attnum;
+)";
+}
+
 void PostgresTableSet::AddColumn(optional_ptr<PostgresTransaction> transaction, optional_ptr<PostgresSchemaEntry> schema, PostgresResult &result, idx_t row, PostgresTableInfo &table_info, idx_t column_offset) {
 	PostgresTypeData type_info;
 	idx_t column_index = column_offset;
@@ -42,6 +63,31 @@ void PostgresTableSet::AddColumn(optional_ptr<PostgresTransaction> transaction, 
 	create_info.columns.AddColumn(std::move(column));
 }
 
+void PostgresTableSet::CreateEntries(PostgresTransaction &transaction, PostgresResult &result, idx_t start, idx_t end, idx_t col_offset) {
+	vector<unique_ptr<PostgresTableInfo>> tables;
+	unique_ptr<PostgresTableInfo> info;
+
+	for(idx_t row = start; row < end; row++) {
+		auto table_name = result.GetString(row, col_offset);
+		auto approx_num_pages = result.GetInt64(row, col_offset + 1);
+		if (!info || info->GetTableName() != table_name) {
+			if (info) {
+				tables.push_back(std::move(info));
+			}
+			info = make_uniq<PostgresTableInfo>(schema, table_name);
+			info->approx_num_pages = approx_num_pages;
+		}
+		AddColumn(&transaction, &schema, result, row, *info, col_offset + 2);
+	}
+	if (info) {
+		tables.push_back(std::move(info));
+	}
+	for(auto &tbl_info : tables) {
+		auto table_entry = make_uniq<PostgresTableEntry>(catalog, schema, *tbl_info);
+		CreateEntry(std::move(table_entry));
+	}
+}
+
 void PostgresTableSet::LoadEntries(ClientContext &context) {
 	auto query = StringUtil::Replace(R"(
 SELECT relname, relpages, attname,
@@ -58,28 +104,7 @@ ORDER BY relname, attnum;
 	auto result = transaction.Query(query);
 	auto rows = result->Count();
 
-	vector<unique_ptr<PostgresTableInfo>> tables;
-	unique_ptr<PostgresTableInfo> info;
-
-	for(idx_t row = 0; row < rows; row++) {
-		auto table_name = result->GetString(row, 0);
-		auto approx_num_pages = result->GetInt64(row, 1);
-		if (!info || info->GetTableName() != table_name) {
-			if (info) {
-				tables.push_back(std::move(info));
-			}
-			info = make_uniq<PostgresTableInfo>(schema, table_name);
-			info->approx_num_pages = approx_num_pages;
-		}
-		AddColumn(&transaction, &schema, *result, row, *info, 2);
-	}
-	if (info) {
-		tables.push_back(std::move(info));
-	}
-	for(auto &tbl_info : tables) {
-		auto table_entry = make_uniq<PostgresTableEntry>(catalog, schema, *tbl_info);
-		CreateEntry(std::move(table_entry));
-	}
+	CreateEntries(transaction, *result, 0, rows, 0);
 }
 
 string GetTableInfoQuery(const string &schema_name, const string &table_name) {

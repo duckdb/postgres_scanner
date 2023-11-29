@@ -21,6 +21,8 @@ public:
 public:
 	optional_ptr<CatalogEntry> CreateSchema(ClientContext &context, CreateSchemaInfo &info);
 
+	static string GetInitializeQuery();
+
 protected:
 	void LoadEntries(ClientContext &context) override;
 };

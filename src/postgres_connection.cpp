@@ -79,6 +79,32 @@ void PostgresConnection::Execute(const string &query) {
 	Query(query);
 }
 
+vector<unique_ptr<PostgresResult>> PostgresConnection::ExecuteQueries(const string &queries) {
+	if (PostgresConnection::DebugPrintQueries()) {
+		Printer::Print(queries + "\n");
+	}
+	auto res = PQsendQuery(GetConn(), queries.c_str());
+	if (res == 0) {
+		throw std::runtime_error("Failed to execute query \"" + queries + "\": " + string(PQerrorMessage(GetConn())));
+	}
+	vector<unique_ptr<PostgresResult>> results;
+	while(true) {
+		auto res = PQgetResult(GetConn());
+		if (!res) {
+			break;
+		}
+		if (ResultHasError(res)) {
+			throw std::runtime_error("Failed to execute query \"" + queries + "\": " + string(PQresultErrorMessage(res)));
+		}
+		if (PQresultStatus(res) != PGRES_TUPLES_OK) {
+			continue;
+		}
+		auto result = make_uniq<PostgresResult>(res);
+		results.push_back(std::move(result));
+	}
+	return results;
+}
+
 PostgresVersion PostgresConnection::GetPostgresVersion() {
 	auto result = Query("SELECT CURRENT_SETTING('server_version'), (SELECT COUNT(*) FROM pg_settings WHERE name LIKE 'rds%')");
 	auto version = PostgresUtils::ExtractPostgresVersion(result->GetString(0, 0));

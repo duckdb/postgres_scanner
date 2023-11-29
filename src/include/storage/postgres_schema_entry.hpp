@@ -19,6 +19,8 @@ class PostgresTransaction;
 class PostgresSchemaEntry : public SchemaCatalogEntry {
 public:
 	PostgresSchemaEntry(Catalog &catalog, string name);
+	PostgresSchemaEntry(PostgresTransaction &transaction, Catalog &catalog, string name, PostgresResultSlice &tables,
+	                    PostgresResultSlice &enums, PostgresResultSlice &composite_types, PostgresResultSlice &indexes);
 
 public:
 	optional_ptr<CatalogEntry> CreateTable(CatalogTransaction transaction, BoundCreateTableInfo &info) override;

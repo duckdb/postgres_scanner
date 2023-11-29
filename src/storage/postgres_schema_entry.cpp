@@ -18,6 +18,13 @@ PostgresSchemaEntry::PostgresSchemaEntry(Catalog &catalog, string name) :
 	types(*this) {
 }
 
+PostgresSchemaEntry::PostgresSchemaEntry(PostgresTransaction &transaction, Catalog &catalog, string name, PostgresResultSlice &table_slice, PostgresResultSlice &enums, PostgresResultSlice &composite_types, PostgresResultSlice &index_slice) :
+    SchemaCatalogEntry(catalog, std::move(name), true), tables(*this), indexes(*this),
+	types(*this) {
+	tables.Initialize(transaction, table_slice);
+	indexes.Initialize(index_slice);
+}
+
 PostgresTransaction &GetPostgresTransaction(CatalogTransaction transaction) {
 	if (!transaction.transaction) {
 		throw InternalException("No transaction!?");
@@ -49,43 +56,9 @@ optional_ptr<CatalogEntry> PostgresSchemaEntry::CreateFunction(CatalogTransactio
 	throw BinderException("Postgres databases do not support creating functions");
 }
 
-void PGUnqualifyColumnReferences(ParsedExpression &expr) {
-	if (expr.type == ExpressionType::COLUMN_REF) {
-		auto &colref = expr.Cast<ColumnRefExpression>();
-		auto name = std::move(colref.column_names.back());
-		colref.column_names = {std::move(name)};
-		return;
-	}
-	ParsedExpressionIterator::EnumerateChildren(expr, PGUnqualifyColumnReferences);
-}
-
-string PGGetCreateIndexSQL(CreateIndexInfo &info, TableCatalogEntry &tbl) {
-	string sql;
-	sql = "CREATE";
-	if (info.constraint_type == IndexConstraintType::UNIQUE) {
-		sql += " UNIQUE";
-	}
-	sql += " INDEX ";
-	sql += KeywordHelper::WriteOptionallyQuoted(info.index_name);
-	sql += " ON ";
-	sql += KeywordHelper::WriteOptionallyQuoted(tbl.name);
-	sql += "(";
-	for (idx_t i = 0; i < info.parsed_expressions.size(); i++) {
-		if (i > 0) {
-			sql += ", ";
-		}
-		PGUnqualifyColumnReferences(*info.parsed_expressions[i]);
-		sql += info.parsed_expressions[i]->ToString();
-	}
-	sql += ")";
-	return sql;
-}
-
 optional_ptr<CatalogEntry> PostgresSchemaEntry::CreateIndex(ClientContext &context, CreateIndexInfo &info,
                                                           TableCatalogEntry &table) {
-	auto &postgres_transaction = PostgresTransaction::Get(context, table.catalog);
-	postgres_transaction.Query(PGGetCreateIndexSQL(info, table));
-	return nullptr;
+	return indexes.CreateIndex(context, info, table);
 }
 
 string PGGetCreateViewSQL(CreateViewInfo &info) {

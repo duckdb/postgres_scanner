@@ -55,6 +55,20 @@ unique_ptr<PostgresResult> PostgresTransaction::Query(const string &query) {
 	return connection.Query(query);
 }
 
+vector<unique_ptr<PostgresResult>> PostgresTransaction::ExecuteQueries(const string &queries) {
+	if (transaction_state == PostgresTransactionState::TRANSACTION_NOT_YET_STARTED) {
+		transaction_state = PostgresTransactionState::TRANSACTION_STARTED;
+		string transaction_start = "BEGIN TRANSACTION";
+		if (access_mode == AccessMode::READ_ONLY) {
+			transaction_start += " READ ONLY";
+		}
+		transaction_start += ";\n";
+		return connection.ExecuteQueries(transaction_start + queries);
+	}
+	return connection.ExecuteQueries(queries);
+}
+
+
 PostgresTransaction &PostgresTransaction::Get(ClientContext &context, Catalog &catalog) {
 	return Transaction::Get(context, catalog).Cast<PostgresTransaction>();
 }

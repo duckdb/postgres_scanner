@@ -22,6 +22,7 @@ public:
 	explicit PostgresTableSet(PostgresSchemaEntry &schema);
 
 public:
+	void Initialize(PostgresTransaction &transaction, PostgresResultSlice &tables);
 	optional_ptr<CatalogEntry> CreateTable(ClientContext &context, BoundCreateTableInfo &info);
 
 	static unique_ptr<PostgresTableInfo> GetTableInfo(PostgresTransaction &transaction, PostgresSchemaEntry &schema,
@@ -31,6 +32,8 @@ public:
 	optional_ptr<CatalogEntry> RefreshTable(ClientContext &context, const string &table_name);
 
 	void AlterTable(ClientContext &context, AlterTableInfo &info);
+
+	static string GetInitializeQuery();
 
 protected:
 	void LoadEntries(ClientContext &context) override;
@@ -42,6 +45,9 @@ protected:
 
 	static void AddColumn(optional_ptr<PostgresTransaction> transaction, optional_ptr<PostgresSchemaEntry> schema,
 	                      PostgresResult &result, idx_t row, PostgresTableInfo &table_info, idx_t column_offset = 0);
+
+	void CreateEntries(PostgresTransaction &transaction, PostgresResult &result, idx_t start, idx_t end,
+	                   idx_t col_offset);
 
 protected:
 	PostgresSchemaEntry &schema;

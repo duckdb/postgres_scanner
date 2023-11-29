@@ -18,6 +18,13 @@ class PostgresIndexSet : public PostgresCatalogSet {
 public:
 	PostgresIndexSet(PostgresSchemaEntry &schema);
 
+public:
+	void Initialize(PostgresResultSlice &indexes);
+
+	static string GetInitializeQuery();
+
+	optional_ptr<CatalogEntry> CreateIndex(ClientContext &context, CreateIndexInfo &info, TableCatalogEntry &table);
+
 protected:
 	void LoadEntries(ClientContext &context) override;
 

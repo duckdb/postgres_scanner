@@ -14,6 +14,7 @@
 
 namespace duckdb {
 struct DropInfo;
+class PostgresResult;
 class PostgresTransaction;
 
 class PostgresCatalogSet {
@@ -28,6 +29,12 @@ public:
 
 protected:
 	virtual void LoadEntries(ClientContext &context) = 0;
+	void SetLoaded() {
+		is_loaded = true;
+	}
+	bool IsLoaded() {
+		return is_loaded;
+	}
 
 protected:
 	Catalog &catalog;
@@ -37,6 +44,15 @@ private:
 	unordered_map<string, unique_ptr<CatalogEntry>> entries;
 	case_insensitive_map_t<string> entry_map;
 	bool is_loaded;
+};
+
+struct PostgresResultSlice {
+	PostgresResultSlice(PostgresResult &result, idx_t start, idx_t end) : result(result), start(start), end(end) {
+	}
+
+	PostgresResult &result;
+	idx_t start;
+	idx_t end;
 };
 
 } // namespace duckdb

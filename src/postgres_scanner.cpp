@@ -51,6 +51,9 @@ static void PostgresGetSnapshot(PostgresVersion version, PostgresBindData &bind_
 	unique_ptr<PostgresResult> result;
 	// by default disable snapshotting
 	bind_data.snapshot = string();
+	if (version.type_v == PostgresInstanceType::AURORA) {
+		return;
+	}
 	// reader threads can use the same snapshot
 	auto &con = bind_data.connection;
 	// pg_stat_wal_receiver was introduced in PostgreSQL 9.6
@@ -275,11 +278,12 @@ static unique_ptr<LocalTableFunctionState> GetLocalState(ClientContext &context,
 	}
 	local_state->column_ids = input.column_ids;
 
-	if (!bind_data.read_only) {
-		// if we have made other modifications in this transaction we have to use the main connection
-		local_state->connection = PostgresConnection(bind_data.connection.GetConnection());
-	} else {
+	if (bind_data.read_only && bind_data.max_threads > 1) {
 		local_state->connection = PostgresScanConnect(bind_data.dsn, bind_data.snapshot);
+	} else {
+		// if we have made other modifications in this transaction we have to use the main connection
+		// alternatively, if we are only using a single thread to scan, we use the current connection as well
+		local_state->connection = PostgresConnection(bind_data.connection.GetConnection());
 	}
 	local_state->filters = input.filters.get();
 	if (bind_data.pages_approx == 0 || bind_data.requires_materialization) {

@@ -50,15 +50,7 @@ TableFunction PostgresTableEntry::GetScanFunction(ClientContext &context, unique
 	result->names = postgres_names;
 	result->postgres_types = postgres_types;
 	result->read_only = transaction.IsReadOnly();
-	result->SetTablePages(approx_num_pages);
-	PostgresScanFunction::PrepareBind(pg_catalog.GetPostgresVersion(), context, *result);
-
-	// check how many threads we can actually use
-	if (result->max_threads > 1) {
-		auto &connection_pool = pg_catalog.GetConnectionPool();
-		result->connection_reservation = connection_pool.AllocateConnections(result->max_threads);
-		result->max_threads = result->connection_reservation.GetConnectionCount();
-	}
+	PostgresScanFunction::PrepareBind(pg_catalog.GetPostgresVersion(), context, *result, approx_num_pages);
 
 	bind_data = std::move(result);
 	auto function = PostgresScanFunction();

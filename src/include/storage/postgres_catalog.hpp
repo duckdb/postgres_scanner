@@ -15,12 +15,12 @@
 #include "storage/postgres_connection_pool.hpp"
 
 namespace duckdb {
+class PostgresCatalog;
 class PostgresSchemaEntry;
 
 class PostgresCatalog : public Catalog {
 public:
-	explicit PostgresCatalog(PostgresVersion version, AttachedDatabase &db_p, const string &path,
-	                         AccessMode access_mode);
+	explicit PostgresCatalog(AttachedDatabase &db_p, const string &path, AccessMode access_mode);
 	~PostgresCatalog();
 
 	string path;

@@ -21,12 +21,14 @@ struct PostgresGlobalState;
 struct PostgresLocalState : public LocalTableFunctionState {
 	bool done = false;
 	bool exec = false;
+	bool no_connection = false;
 	string sql;
 	vector<column_t> column_ids;
 	TableFilterSet *filters;
 	string col_names;
 	PostgresConnection connection;
 	idx_t batch_idx = 0;
+	PostgresPoolConnection pool_connection;
 
 	void ScanChunk(ClientContext &context, const PostgresBindData &bind_data, PostgresGlobalState &gstate, DataChunk &output);
 };
@@ -42,6 +44,7 @@ struct PostgresGlobalState : public GlobalTableFunctionState {
 	idx_t max_threads;
 	unique_ptr<ColumnDataCollection> collection;
 	ColumnDataScanState scan_state;
+	bool used_main_thread = false;
 
 	idx_t MaxThreads() const override {
 		return max_threads;
@@ -83,7 +86,7 @@ static void PostgresGetSnapshot(PostgresVersion version, ClientContext &context,
 	}
 }
 
-void PostgresScanFunction::PrepareBind(PostgresVersion version, ClientContext &context, PostgresBindData &bind_data) {
+void PostgresScanFunction::PrepareBind(PostgresVersion version, ClientContext &context, PostgresBindData &bind_data, idx_t approx_num_pages) {
 	Value pages_per_task;
 	if (context.TryGetCurrentSetting("pg_pages_per_task", pages_per_task)) {
 		bind_data.pages_per_task = UBigIntValue::Get(pages_per_task);
@@ -91,6 +94,7 @@ void PostgresScanFunction::PrepareBind(PostgresVersion version, ClientContext &c
 			bind_data.pages_per_task = PostgresBindData::DEFAULT_PAGES_PER_TASK;
 		}
 	}
+	bind_data.SetTablePages(approx_num_pages);
 	// we create a transaction here, and get the snapshot id so the parallel
 	PostgresGetSnapshot(version, context, bind_data);
 }
@@ -105,6 +109,13 @@ void PostgresBindData::SetTablePages(idx_t approx_num_pages) {
 }
 
 PostgresConnection &PostgresBindData::GetConnection(ClientContext &context) {
+	if (pg_catalog) {
+		return PostgresTransaction::Get(context, *pg_catalog).GetConnection();
+	}
+	return pg_connection;
+}
+
+PostgresConnection &PostgresBindData::GetConnectionRaw(ClientContext &context) {
 	if (pg_catalog) {
 		return PostgresTransaction::Get(context, *pg_catalog).GetConnectionRaw();
 	}
@@ -145,9 +156,8 @@ static unique_ptr<FunctionData> PostgresBind(ClientContext &context, TableFuncti
 	}
 	bind_data->names = info->postgres_names;
 	bind_data->types = return_types;
-	bind_data->SetTablePages(info->approx_num_pages);
 
-	PostgresScanFunction::PrepareBind(version, context, *bind_data);
+	PostgresScanFunction::PrepareBind(version, context, *bind_data, info->approx_num_pages);
 	return std::move(bind_data);
 }
 
@@ -217,15 +227,6 @@ static void PostgresInitInternal(ClientContext &context, const PostgresBindData 
 	lstate.done = false;
 }
 
-static PostgresConnection PostgresScanConnect(string dsn, string snapshot) {
-	auto conn = PostgresConnection::Open(dsn);
-	conn.Execute("BEGIN TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY");
-	if (!snapshot.empty()) {
-		conn.TryQuery(StringUtil::Format("SET TRANSACTION SNAPSHOT '%s'", snapshot));
-	}
-	return conn;
-}
-
 static idx_t PostgresMaxThreads(ClientContext &context, const FunctionData *bind_data_p) {
 	D_ASSERT(bind_data_p);
 	auto &bind_data = bind_data_p->Cast<PostgresBindData>();
@@ -291,6 +292,35 @@ static bool PostgresParallelStateNext(ClientContext &context, const FunctionData
 	return false;
 }
 
+static void PostgresScanConnect(PostgresConnection &conn, string snapshot) {
+	conn.Execute("BEGIN TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY");
+	if (!snapshot.empty()) {
+		conn.Query(StringUtil::Format("SET TRANSACTION SNAPSHOT '%s'", snapshot));
+	}
+}
+
+bool PostgresBindData::TryOpenNewConnection(ClientContext &context, PostgresLocalState &lstate, PostgresGlobalState &gstate) {
+	{
+		lock_guard<mutex> parallel_lock(gstate.lock);
+		if (!gstate.used_main_thread) {
+			lstate.connection = PostgresConnection(GetConnectionRaw(context).GetConnection());
+			gstate.used_main_thread = true;
+			return true;
+		}
+	}
+
+	if (pg_catalog) {
+		if (!pg_catalog->GetConnectionPool().TryGetConnection(lstate.pool_connection)) {
+			return false;
+		}
+		lstate.connection = PostgresConnection(lstate.pool_connection.GetConnection().GetConnection());
+	} else {
+		lstate.connection = PostgresConnection::Open(dsn);
+	}
+	PostgresScanConnect(lstate.connection, snapshot);
+	return true;
+}
+
 static unique_ptr<LocalTableFunctionState> GetLocalState(ClientContext &context, TableFunctionInitInput &input, PostgresGlobalState &gstate) {
 	auto &bind_data = (PostgresBindData &) *input.bind_data;
 
@@ -300,12 +330,10 @@ static unique_ptr<LocalTableFunctionState> GetLocalState(ClientContext &context,
 	}
 	local_state->column_ids = input.column_ids;
 
-	if (bind_data.read_only && bind_data.max_threads > 1) {
-		local_state->connection = PostgresScanConnect(bind_data.dsn, bind_data.snapshot);
-	} else {
-		// if we have made other modifications in this transaction we have to use the main connection
-		// alternatively, if we are only using a single thread to scan, we use the current connection as well
-		local_state->connection = PostgresConnection(bind_data.GetConnection(context).GetConnection());
+	if (!bind_data.TryOpenNewConnection(context, *local_state, gstate)) {
+		// if the connection pool is exhausted we bail-out
+		local_state->no_connection = true;
+		return std::move(local_state);
 	}
 	local_state->filters = input.filters.get();
 	if (bind_data.pages_approx == 0 || bind_data.requires_materialization) {
@@ -388,6 +416,9 @@ static void PostgresScan(ClientContext &context, TableFunctionInput &data, DataC
 		return;
 	}
 	auto &local_state = data.local_state->Cast<PostgresLocalState>();
+	if (local_state.no_connection) {
+		return;
+	}
 	local_state.ScanChunk(context, bind_data, gstate, output);
 }
 

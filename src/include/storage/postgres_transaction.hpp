@@ -10,6 +10,7 @@
 
 #include "duckdb/transaction/transaction.hpp"
 #include "postgres_connection.hpp"
+#include "storage/postgres_connection_pool.hpp"
 
 namespace duckdb {
 class PostgresCatalog;
@@ -28,9 +29,7 @@ public:
 	void Rollback();
 
 	PostgresConnection &GetConnection();
-	string GetDSN() {
-		return connection.GetDSN();
-	}
+	string GetDSN();
 	//! Retrieves the connection **without** starting a transaction if none is active
 	PostgresConnection &GetConnectionRaw();
 	unique_ptr<PostgresResult> Query(const string &query);
@@ -38,7 +37,7 @@ public:
 	static PostgresTransaction &Get(ClientContext &context, Catalog &catalog);
 
 private:
-	PostgresConnection connection;
+	PostgresPoolConnection connection;
 	PostgresTransactionState transaction_state;
 	AccessMode access_mode;
 };

@@ -19,9 +19,8 @@ struct PGTypeInfo;
 
 class PostgresTypeSet : public PostgresCatalogSet {
 public:
-	explicit PostgresTypeSet(PostgresSchemaEntry &schema,
-							 unique_ptr<PostgresResultSlice> enum_result = nullptr,
-							 unique_ptr<PostgresResultSlice> composite_type_result = nullptr);
+	explicit PostgresTypeSet(PostgresSchemaEntry &schema, unique_ptr<PostgresResultSlice> enum_result = nullptr,
+	                         unique_ptr<PostgresResultSlice> composite_type_result = nullptr);
 
 public:
 	optional_ptr<CatalogEntry> CreateType(ClientContext &context, CreateTypeInfo &info);

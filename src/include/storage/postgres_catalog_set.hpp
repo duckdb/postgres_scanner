@@ -29,6 +29,7 @@ public:
 
 protected:
 	virtual void LoadEntries(ClientContext &context) = 0;
+
 protected:
 	Catalog &catalog;
 
@@ -40,7 +41,8 @@ private:
 };
 
 struct PostgresResultSlice {
-	PostgresResultSlice(shared_ptr<PostgresResult> result_p, idx_t start, idx_t end) : result(std::move(result_p)), start(start), end(end) {
+	PostgresResultSlice(shared_ptr<PostgresResult> result_p, idx_t start, idx_t end)
+	    : result(std::move(result_p)), start(start), end(end) {
 	}
 
 	PostgresResult &GetResult() {

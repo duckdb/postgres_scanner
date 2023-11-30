@@ -11,44 +11,50 @@
 #include "duckdb/common/common.hpp"
 #include "duckdb/common/mutex.hpp"
 #include "duckdb/common/optional_ptr.hpp"
+#include "postgres_connection.hpp"
 
 namespace duckdb {
+class PostgresCatalog;
 class PostgresConnectionPool;
 
-class PostgresConnectionReservation {
+class PostgresPoolConnection {
 public:
-	PostgresConnectionReservation();
-	PostgresConnectionReservation(optional_ptr<PostgresConnectionPool> pool, idx_t reservation_count);
-	~PostgresConnectionReservation();
+	PostgresPoolConnection();
+	PostgresPoolConnection(optional_ptr<PostgresConnectionPool> pool, PostgresConnection connection);
+	~PostgresPoolConnection();
 	// disable copy constructors
-	PostgresConnectionReservation(const PostgresConnectionReservation &other) = delete;
-	PostgresConnectionReservation &operator=(const PostgresConnectionReservation &) = delete;
+	PostgresPoolConnection(const PostgresPoolConnection &other) = delete;
+	PostgresPoolConnection &operator=(const PostgresPoolConnection &) = delete;
 	//! enable move constructors
-	PostgresConnectionReservation(PostgresConnectionReservation &&other) noexcept;
-	PostgresConnectionReservation &operator=(PostgresConnectionReservation &&) noexcept;
+	PostgresPoolConnection(PostgresPoolConnection &&other) noexcept;
+	PostgresPoolConnection &operator=(PostgresPoolConnection &&) noexcept;
 
-	idx_t GetConnectionCount();
+	bool HasConnection();
+	PostgresConnection &GetConnection();
 
 private:
 	optional_ptr<PostgresConnectionPool> pool;
-	idx_t reservation_count;
+	PostgresConnection connection;
 };
 
 class PostgresConnectionPool {
 public:
 	static constexpr const idx_t DEFAULT_MAX_CONNECTIONS = 64;
 
-	PostgresConnectionPool(idx_t maximum_connections = DEFAULT_MAX_CONNECTIONS);
+	PostgresConnectionPool(PostgresCatalog &postgres_catalog, idx_t maximum_connections = DEFAULT_MAX_CONNECTIONS);
 
 public:
-	PostgresConnectionReservation AllocateConnections(idx_t count);
-	void FreeConnections(idx_t count);
+	bool TryGetConnection(PostgresPoolConnection &connection);
+	PostgresPoolConnection GetConnection();
+	void ReturnConnection(PostgresConnection connection);
 	void SetMaximumConnections(idx_t new_max);
 
 private:
+	PostgresCatalog &postgres_catalog;
 	mutex connection_lock;
-	idx_t remaining_connections;
+	idx_t active_connections;
 	idx_t maximum_connections;
+	vector<PostgresConnection> connection_cache;
 };
 
 } // namespace duckdb

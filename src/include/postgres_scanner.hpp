@@ -15,6 +15,8 @@
 
 namespace duckdb {
 class PostgresCatalog;
+struct PostgresLocalState;
+struct PostgresGlobalState;
 class PostgresTransaction;
 
 struct PostgresBindData : public FunctionData {
@@ -38,15 +40,15 @@ struct PostgresBindData : public FunctionData {
 	bool emit_ctid = false;
 	idx_t max_threads = 1;
 
-	PostgresConnectionReservation connection_reservation;
-
 public:
 	PostgresConnection &GetConnection(ClientContext &context);
+	PostgresConnection &GetConnectionRaw(ClientContext &context);
 	void SetTablePages(idx_t approx_num_pages);
 
 	void SetConnection(PostgresConnection connection);
 	void SetConnection(shared_ptr<OwnedPostgresConnection> connection);
 	void SetCatalog(PostgresCatalog &catalog);
+	bool TryOpenNewConnection(ClientContext &context, PostgresLocalState &lstate, PostgresGlobalState &gstate);
 
 	unique_ptr<FunctionData> Copy() const override {
 		throw NotImplementedException("");
@@ -69,7 +71,8 @@ class PostgresScanFunction : public TableFunction {
 public:
 	PostgresScanFunction();
 
-	static void PrepareBind(PostgresVersion version, ClientContext &context, PostgresBindData &bind);
+	static void PrepareBind(PostgresVersion version, ClientContext &context, PostgresBindData &bind,
+	                        idx_t approx_num_pages);
 };
 
 class PostgresScanFunctionFilterPushdown : public TableFunction {

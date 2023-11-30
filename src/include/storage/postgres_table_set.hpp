@@ -21,7 +21,6 @@ class PostgresTableSet : public PostgresCatalogSet {
 public:
 	explicit PostgresTableSet(PostgresSchemaEntry &schema, unique_ptr<PostgresResultSlice> tables = nullptr);
 
-
 public:
 	optional_ptr<CatalogEntry> CreateTable(ClientContext &context, BoundCreateTableInfo &info);
 

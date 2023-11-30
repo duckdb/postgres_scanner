@@ -19,11 +19,9 @@ class PostgresTransaction;
 class PostgresSchemaEntry : public SchemaCatalogEntry {
 public:
 	PostgresSchemaEntry(Catalog &catalog, string name);
-	PostgresSchemaEntry(Catalog &catalog, string name,
-						unique_ptr<PostgresResultSlice> tables,
-	                    unique_ptr<PostgresResultSlice> enums,
-						unique_ptr<PostgresResultSlice> composite_types,
-						unique_ptr<PostgresResultSlice> indexes);
+	PostgresSchemaEntry(Catalog &catalog, string name, unique_ptr<PostgresResultSlice> tables,
+	                    unique_ptr<PostgresResultSlice> enums, unique_ptr<PostgresResultSlice> composite_types,
+	                    unique_ptr<PostgresResultSlice> indexes);
 
 public:
 	optional_ptr<CatalogEntry> CreateTable(CatalogTransaction transaction, BoundCreateTableInfo &info) override;

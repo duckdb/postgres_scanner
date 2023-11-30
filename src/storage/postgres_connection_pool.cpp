@@ -1,68 +1,107 @@
 #include "storage/postgres_connection_pool.hpp"
+#include "storage/postgres_catalog.hpp"
 
 namespace duckdb {
 
-PostgresConnectionReservation::PostgresConnectionReservation() : pool(nullptr), reservation_count(0) {}
+PostgresPoolConnection::PostgresPoolConnection() : pool(nullptr) {}
 
-PostgresConnectionReservation::PostgresConnectionReservation(optional_ptr<PostgresConnectionPool> pool, idx_t reservation_count) :
-	pool(pool), reservation_count(reservation_count) {}
+PostgresPoolConnection::PostgresPoolConnection(optional_ptr<PostgresConnectionPool> pool, PostgresConnection connection_p) :
+	pool(pool), connection(std::move(connection_p)) {}
 
-PostgresConnectionReservation::~PostgresConnectionReservation() {
-	if (pool && reservation_count == 0) {
-		pool->FreeConnections(reservation_count);
+PostgresPoolConnection::~PostgresPoolConnection() {
+	if (pool) {
+		pool->ReturnConnection(std::move(connection));
 	}
 }
 
-PostgresConnectionReservation::PostgresConnectionReservation(PostgresConnectionReservation &&other) noexcept {
+PostgresPoolConnection::PostgresPoolConnection(PostgresPoolConnection &&other) noexcept {
 	std::swap(pool, other.pool);
-	std::swap(reservation_count, other.reservation_count);
+	std::swap(connection, other.connection);
 }
 
-PostgresConnectionReservation &PostgresConnectionReservation::operator=(PostgresConnectionReservation &&other) noexcept {
+PostgresPoolConnection &PostgresPoolConnection::operator=(PostgresPoolConnection &&other) noexcept {
 	std::swap(pool, other.pool);
-	std::swap(reservation_count, other.reservation_count);
+	std::swap(connection, other.connection);
 	return *this;
 }
 
-idx_t PostgresConnectionReservation::GetConnectionCount() {
-	if (reservation_count == 0) {
-		return 1;
-	}
-	return reservation_count;
+bool PostgresPoolConnection::HasConnection() {
+	return pool;
 }
 
-PostgresConnectionPool::PostgresConnectionPool(idx_t maximum_connections_p) :
-	remaining_connections(maximum_connections_p), maximum_connections(maximum_connections_p) {}
-
-PostgresConnectionReservation PostgresConnectionPool::AllocateConnections(idx_t count) {
-	lock_guard<mutex> l(connection_lock);
-	idx_t reserve_connections = MinValue<idx_t>(count, remaining_connections);
-	remaining_connections -= reserve_connections;
-	return PostgresConnectionReservation(this, reserve_connections);
+PostgresConnection &PostgresPoolConnection::GetConnection() {
+	if (!HasConnection()) {
+		throw InternalException("PostgresPoolConnection::GetConnection called without a transaction pool");
+	}
+	return connection;
 }
 
-void PostgresConnectionPool::FreeConnections(idx_t count) {
+PostgresConnectionPool::PostgresConnectionPool(PostgresCatalog &postgres_catalog, idx_t maximum_connections_p) :
+	postgres_catalog(postgres_catalog), active_connections(0), maximum_connections(maximum_connections_p) {}
+
+bool PostgresConnectionPool::TryGetConnection(PostgresPoolConnection &connection) {
 	lock_guard<mutex> l(connection_lock);
-	remaining_connections += count;
-	if (remaining_connections > maximum_connections) {
-		remaining_connections = maximum_connections;
+	if (active_connections >= maximum_connections) {
+		return false;
 	}
+	active_connections++;
+	// check if we have any cached connections left
+	if (!connection_cache.empty()) {
+		connection = PostgresPoolConnection(this, std::move(connection_cache.back()));
+		connection_cache.pop_back();
+		return true;
+	}
+
+	// no cached connections left but there is space to open a new one - open it
+	connection = PostgresPoolConnection(this, PostgresConnection::Open(postgres_catalog.path));
+	return true;
+}
+
+PostgresPoolConnection PostgresConnectionPool::GetConnection() {
+	PostgresPoolConnection result;
+	if (!TryGetConnection(result)) {
+		throw IOException("Failed to get connection from PostgresConnectionPool - maximum connection count exceeded (%llu/%llu max)", active_connections, maximum_connections);
+	}
+	return result;
+}
+
+void PostgresConnectionPool::ReturnConnection(PostgresConnection connection) {
+	lock_guard<mutex> l(connection_lock);
+	if (active_connections <= 0) {
+		throw InternalException("PostgresConnectionPool::ReturnConnection called but active_connections is 0");
+	}
+	active_connections--;
+	if (active_connections >= maximum_connections) {
+		// if the maximum number of connections has been decreased by the user we might need to reclaim the connection immediately
+		return;
+	}
+	// check if the underlying connection is still usable
+	auto pg_con = connection.GetConn();
+	if (PQstatus(connection.GetConn()) != CONNECTION_OK) {
+		// CONNECTION_BAD! try to reset it
+		PQreset(pg_con);
+		if (PQstatus(connection.GetConn()) != CONNECTION_OK) {
+			// still bad - just abandon this one
+			return;
+		}
+	}
+	if (PQtransactionStatus(pg_con) != PQTRANS_IDLE) {
+		return;
+	}
+	connection_cache.push_back(std::move(connection));
 }
 
 void PostgresConnectionPool::SetMaximumConnections(idx_t new_max) {
 	lock_guard<mutex> l(connection_lock);
 	if (new_max < maximum_connections) {
-		idx_t reduced_connections = maximum_connections - new_max;
-		if (remaining_connections >= reduced_connections) {
-			remaining_connections -= reduced_connections;
-		} else {
-			// we can't reclaim all connections because there are outstanding connections left
-			// set the remaining connections to zero and wait to reclaim them
-			remaining_connections = 0;
+		// potentially close connections
+		// note that we can only close connections in the connection cache
+		// we will have to wait for connections to be returned
+		auto total_open_connections = active_connections + connection_cache.size();
+		while(!connection_cache.empty() && total_open_connections > new_max) {
+			total_open_connections--;
+			connection_cache.pop_back();
 		}
-	} else {
-		idx_t additional_connections = new_max - maximum_connections;
-		remaining_connections += additional_connections;
 	}
 	maximum_connections = new_max;
 }

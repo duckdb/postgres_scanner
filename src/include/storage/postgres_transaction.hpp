@@ -31,6 +31,8 @@ public:
 	string GetDSN() {
 		return connection.GetDSN();
 	}
+	//! Retrieves the connection **without** starting a transaction if none is active
+	PostgresConnection &GetConnectionRaw();
 	unique_ptr<PostgresResult> Query(const string &query);
 	vector<unique_ptr<PostgresResult>> ExecuteQueries(const string &queries);
 	static PostgresTransaction &Get(ClientContext &context, Catalog &catalog);

@@ -42,6 +42,10 @@ PostgresConnection &PostgresTransaction::GetConnection() {
 	return connection;
 }
 
+PostgresConnection &PostgresTransaction::GetConnectionRaw() {
+	return connection;
+}
+
 unique_ptr<PostgresResult> PostgresTransaction::Query(const string &query) {
 	if (transaction_state == PostgresTransactionState::TRANSACTION_NOT_YET_STARTED) {
 		transaction_state = PostgresTransactionState::TRANSACTION_STARTED;

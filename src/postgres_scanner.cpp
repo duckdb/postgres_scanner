@@ -106,7 +106,7 @@ void PostgresBindData::SetTablePages(idx_t approx_num_pages) {
 
 PostgresConnection &PostgresBindData::GetConnection(ClientContext &context) {
 	if (pg_catalog) {
-		return PostgresTransaction::Get(context, *pg_catalog).GetConnection();
+		return PostgresTransaction::Get(context, *pg_catalog).GetConnectionRaw();
 	}
 	return pg_connection;
 }

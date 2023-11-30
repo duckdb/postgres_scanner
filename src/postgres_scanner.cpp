@@ -62,7 +62,7 @@ static void PostgresGetSnapshot(PostgresVersion version, ClientContext &context,
 		return;
 	}
 	// reader threads can use the same snapshot
-	auto &con = bind_data.GetConnection(context);
+	auto &con = bind_data.GetConnection();
 	// pg_stat_wal_receiver was introduced in PostgreSQL 9.6
 	if (version < PostgresVersion(9, 6, 0)) {
 		result = con.TryQuery("SELECT pg_is_in_recovery(), pg_export_snapshot()");
@@ -108,26 +108,16 @@ void PostgresBindData::SetTablePages(idx_t approx_num_pages) {
 	}
 }
 
-PostgresConnection &PostgresBindData::GetConnection(ClientContext &context) {
-	if (pg_catalog) {
-		return PostgresTransaction::Get(context, *pg_catalog).GetConnection();
-	}
-	return pg_connection;
-}
-
-PostgresConnection &PostgresBindData::GetConnectionRaw(ClientContext &context) {
-	if (pg_catalog) {
-		return PostgresTransaction::Get(context, *pg_catalog).GetConnectionRaw();
-	}
-	return pg_connection;
+PostgresConnection &PostgresBindData::GetConnection() {
+	return connection;
 }
 
 void PostgresBindData::SetConnection(PostgresConnection connection) {
-	this->pg_connection = std::move(connection);
+	this->connection = std::move(connection);
 }
 
 void PostgresBindData::SetConnection(shared_ptr<OwnedPostgresConnection> connection) {
-	this->pg_connection = PostgresConnection(std::move(connection));
+	this->connection = PostgresConnection(std::move(connection));
 }
 
 void PostgresBindData::SetCatalog(PostgresCatalog &catalog) {
@@ -143,7 +133,7 @@ static unique_ptr<FunctionData> PostgresBind(ClientContext &context, TableFuncti
 	bind_data->table_name = input.inputs[2].GetValue<string>();
 
 	bind_data->SetConnection(PostgresConnection::Open(bind_data->dsn));
-	auto &con = bind_data->GetConnection(context);
+	auto &con = bind_data->GetConnection();
 	con.Execute("BEGIN TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY");
 	auto version = con.GetPostgresVersion();
 	// query the table schema so we can interpret the bits in the pages
@@ -303,7 +293,7 @@ bool PostgresBindData::TryOpenNewConnection(ClientContext &context, PostgresLoca
 	{
 		lock_guard<mutex> parallel_lock(gstate.lock);
 		if (!gstate.used_main_thread) {
-			lstate.connection = PostgresConnection(GetConnectionRaw(context).GetConnection());
+			lstate.connection = PostgresConnection(GetConnection().GetConnection());
 			gstate.used_main_thread = true;
 			return true;
 		}

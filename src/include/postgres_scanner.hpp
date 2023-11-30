@@ -41,13 +41,13 @@ struct PostgresBindData : public FunctionData {
 	idx_t max_threads = 1;
 
 public:
-	PostgresConnection &GetConnection(ClientContext &context);
-	PostgresConnection &GetConnectionRaw(ClientContext &context);
 	void SetTablePages(idx_t approx_num_pages);
 
+	PostgresConnection &GetConnection();
 	void SetConnection(PostgresConnection connection);
 	void SetConnection(shared_ptr<OwnedPostgresConnection> connection);
 	void SetCatalog(PostgresCatalog &catalog);
+
 	bool TryOpenNewConnection(ClientContext &context, PostgresLocalState &lstate, PostgresGlobalState &gstate);
 
 	unique_ptr<FunctionData> Copy() const override {
@@ -58,8 +58,8 @@ public:
 	}
 
 private:
+	PostgresConnection connection;
 	optional_ptr<PostgresCatalog> pg_catalog;
-	PostgresConnection pg_connection;
 };
 
 class PostgresAttachFunction : public TableFunction {

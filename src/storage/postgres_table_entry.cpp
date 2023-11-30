@@ -43,6 +43,7 @@ TableFunction PostgresTableEntry::GetScanFunction(ClientContext &context, unique
 	result->schema_name = schema.name;
 	result->table_name = name;
 	result->dsn = transaction.GetDSN();
+	result->SetConnection(transaction.GetConnection().GetConnection());
 	result->SetCatalog(pg_catalog);
 	for(auto &col : columns.Logical()) {
 		result->types.push_back(col.GetType());

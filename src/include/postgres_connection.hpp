@@ -56,6 +56,9 @@ public:
 	unique_ptr<PostgresResult> TryQuery(const string &query, optional_ptr<string> error_message = nullptr);
 	unique_ptr<PostgresResult> Query(const string &query);
 
+	//! Submits a set of queries to be executed in the connection.
+	vector<unique_ptr<PostgresResult>> ExecuteQueries(const string &queries);
+
 	PostgresVersion GetPostgresVersion();
 
 	vector<IndexInfo> GetIndexInfo(const string &table_name);

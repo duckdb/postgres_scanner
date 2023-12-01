@@ -14,6 +14,7 @@
 
 namespace duckdb {
 struct DropInfo;
+class PostgresResult;
 class PostgresTransaction;
 
 class PostgresCatalogSet {
@@ -37,6 +38,20 @@ private:
 	unordered_map<string, unique_ptr<CatalogEntry>> entries;
 	case_insensitive_map_t<string> entry_map;
 	bool is_loaded;
+};
+
+struct PostgresResultSlice {
+	PostgresResultSlice(shared_ptr<PostgresResult> result_p, idx_t start, idx_t end)
+	    : result(std::move(result_p)), start(start), end(end) {
+	}
+
+	PostgresResult &GetResult() {
+		return *result;
+	}
+
+	shared_ptr<PostgresResult> result;
+	idx_t start;
+	idx_t end;
 };
 
 } // namespace duckdb

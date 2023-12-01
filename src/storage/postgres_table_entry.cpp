@@ -37,30 +37,21 @@ void PostgresTableEntry::BindUpdateConstraints(LogicalGet &, LogicalProjection &
 TableFunction PostgresTableEntry::GetScanFunction(ClientContext &context, unique_ptr<FunctionData> &bind_data) {
 	auto &pg_catalog = catalog.Cast<PostgresCatalog>();
 	auto &transaction = Transaction::Get(context, catalog).Cast<PostgresTransaction>();
-	auto &conn = transaction.GetConnection();
 
 	auto result = make_uniq<PostgresBindData>();
 
 	result->schema_name = schema.name;
 	result->table_name = name;
-	result->dsn = conn.GetDSN();
-	result->connection = PostgresConnection(conn.GetConnection());
-
-	PostgresScanFunction::PrepareBind(pg_catalog.GetPostgresVersion(), context, *result);
+	result->dsn = transaction.GetDSN();
+	result->SetConnection(transaction.GetConnection().GetConnection());
+	result->SetCatalog(pg_catalog);
 	for(auto &col : columns.Logical()) {
 		result->types.push_back(col.GetType());
 	}
 	result->names = postgres_names;
 	result->postgres_types = postgres_types;
 	result->read_only = transaction.IsReadOnly();
-	result->SetTablePages(approx_num_pages);
-
-	// check how many threads we can actually use
-	if (result->max_threads > 1) {
-		auto &connection_pool = pg_catalog.GetConnectionPool();
-		result->connection_reservation = connection_pool.AllocateConnections(result->max_threads);
-		result->max_threads = result->connection_reservation.GetConnectionCount();
-	}
+	PostgresScanFunction::PrepareBind(pg_catalog.GetPostgresVersion(), context, *result, approx_num_pages);
 
 	bind_data = std::move(result);
 	auto function = PostgresScanFunction();

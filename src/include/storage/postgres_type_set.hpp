@@ -19,22 +19,28 @@ struct PGTypeInfo;
 
 class PostgresTypeSet : public PostgresCatalogSet {
 public:
-	explicit PostgresTypeSet(PostgresSchemaEntry &schema);
+	explicit PostgresTypeSet(PostgresSchemaEntry &schema, unique_ptr<PostgresResultSlice> enum_result = nullptr,
+	                         unique_ptr<PostgresResultSlice> composite_type_result = nullptr);
 
 public:
 	optional_ptr<CatalogEntry> CreateType(ClientContext &context, CreateTypeInfo &info);
 
+	static string GetInitializeEnumsQuery();
+	static string GetInitializeCompositesQuery();
+
 protected:
 	void LoadEntries(ClientContext &context) override;
 
-	void LoadEnumTypes(PostgresTransaction &transaction, vector<PGTypeInfo> &enum_info);
 	void CreateEnum(PostgresResult &result, idx_t start_row, idx_t end_row);
-	void LoadCompositeTypes(PostgresTransaction &transaction, vector<PGTypeInfo> &composite_info);
-	void CreateCompositeType(PostgresTransaction &transaction, PostgresResult &result, idx_t start_row, idx_t end_row,
-	                         unordered_map<idx_t, string> &name_map);
+	void CreateCompositeType(PostgresTransaction &transaction, PostgresResult &result, idx_t start_row, idx_t end_row);
+
+	void InitializeEnums(PostgresResultSlice &enums);
+	void InitializeCompositeTypes(PostgresTransaction &transaction, PostgresResultSlice &composite_types);
 
 protected:
 	PostgresSchemaEntry &schema;
+	unique_ptr<PostgresResultSlice> enum_result;
+	unique_ptr<PostgresResultSlice> composite_type_result;
 };
 
 } // namespace duckdb

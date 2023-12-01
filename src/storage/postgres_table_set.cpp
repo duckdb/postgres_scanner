@@ -14,8 +14,21 @@
 
 namespace duckdb {
 
-PostgresTableSet::PostgresTableSet(PostgresSchemaEntry &schema) :
-    PostgresCatalogSet(schema.ParentCatalog()), schema(schema) {}
+PostgresTableSet::PostgresTableSet(PostgresSchemaEntry &schema, unique_ptr<PostgresResultSlice> table_result_p) :
+    PostgresCatalogSet(schema.ParentCatalog()), schema(schema), table_result(std::move(table_result_p)) {}
+
+string PostgresTableSet::GetInitializeQuery() {
+	return R"(
+SELECT pg_namespace.oid, relname, relpages, attname,
+    pg_type.typname type_name, atttypmod type_modifier, pg_attribute.attndims ndim
+FROM pg_class
+JOIN pg_namespace ON relnamespace = pg_namespace.oid
+JOIN pg_attribute ON pg_class.oid=pg_attribute.attrelid
+JOIN pg_type ON atttypid=pg_type.oid
+WHERE attnum > 0
+ORDER BY pg_namespace.oid, relname, attnum;
+)";
+}
 
 void PostgresTableSet::AddColumn(optional_ptr<PostgresTransaction> transaction, optional_ptr<PostgresSchemaEntry> schema, PostgresResult &result, idx_t row, PostgresTableInfo &table_info, idx_t column_offset) {
 	PostgresTypeData type_info;
@@ -42,28 +55,13 @@ void PostgresTableSet::AddColumn(optional_ptr<PostgresTransaction> transaction, 
 	create_info.columns.AddColumn(std::move(column));
 }
 
-void PostgresTableSet::LoadEntries(ClientContext &context) {
-	auto query = StringUtil::Replace(R"(
-SELECT relname, relpages, attname,
-    pg_type.typname type_name, atttypmod type_modifier, pg_attribute.attndims ndim
-FROM pg_class
-JOIN pg_namespace ON relnamespace = pg_namespace.oid
-JOIN pg_attribute ON pg_class.oid=pg_attribute.attrelid
-JOIN pg_type ON atttypid=pg_type.oid
-WHERE pg_namespace.nspname=${SCHEMA_NAME} AND attnum > 0
-ORDER BY relname, attnum;
-)", "${SCHEMA_NAME}", KeywordHelper::WriteQuoted(schema.name));
-
-	auto &transaction = PostgresTransaction::Get(context, catalog);
-	auto result = transaction.Query(query);
-	auto rows = result->Count();
-
+void PostgresTableSet::CreateEntries(PostgresTransaction &transaction, PostgresResult &result, idx_t start, idx_t end, idx_t col_offset) {
 	vector<unique_ptr<PostgresTableInfo>> tables;
 	unique_ptr<PostgresTableInfo> info;
 
-	for(idx_t row = 0; row < rows; row++) {
-		auto table_name = result->GetString(row, 0);
-		auto approx_num_pages = result->GetInt64(row, 1);
+	for(idx_t row = start; row < end; row++) {
+		auto table_name = result.GetString(row, col_offset);
+		auto approx_num_pages = result.GetInt64(row, col_offset + 1);
 		if (!info || info->GetTableName() != table_name) {
 			if (info) {
 				tables.push_back(std::move(info));
@@ -71,7 +69,7 @@ ORDER BY relname, attnum;
 			info = make_uniq<PostgresTableInfo>(schema, table_name);
 			info->approx_num_pages = approx_num_pages;
 		}
-		AddColumn(&transaction, &schema, *result, row, *info, 2);
+		AddColumn(&transaction, &schema, result, row, *info, col_offset + 2);
 	}
 	if (info) {
 		tables.push_back(std::move(info));
@@ -79,6 +77,30 @@ ORDER BY relname, attnum;
 	for(auto &tbl_info : tables) {
 		auto table_entry = make_uniq<PostgresTableEntry>(catalog, schema, *tbl_info);
 		CreateEntry(std::move(table_entry));
+	}
+}
+
+void PostgresTableSet::LoadEntries(ClientContext &context) {
+	auto &transaction = PostgresTransaction::Get(context, catalog);
+	if (table_result) {
+		CreateEntries(transaction, table_result->GetResult(), table_result->start, table_result->end, 1);
+		table_result.reset();
+	} else {
+		auto query = StringUtil::Replace(R"(
+	SELECT relname, relpages, attname,
+		pg_type.typname type_name, atttypmod type_modifier, pg_attribute.attndims ndim
+	FROM pg_class
+	JOIN pg_namespace ON relnamespace = pg_namespace.oid
+	JOIN pg_attribute ON pg_class.oid=pg_attribute.attrelid
+	JOIN pg_type ON atttypid=pg_type.oid
+	WHERE pg_namespace.nspname=${SCHEMA_NAME} AND attnum > 0
+	ORDER BY relname, attnum;
+	)", "${SCHEMA_NAME}", KeywordHelper::WriteQuoted(schema.name));
+
+		auto result = transaction.Query(query);
+		auto rows = result->Count();
+
+		CreateEntries(transaction, *result, 0, rows, 0);
 	}
 }
 

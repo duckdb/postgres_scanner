@@ -19,7 +19,7 @@ class PostgresSchemaEntry;
 
 class PostgresTableSet : public PostgresCatalogSet {
 public:
-	explicit PostgresTableSet(PostgresSchemaEntry &schema);
+	explicit PostgresTableSet(PostgresSchemaEntry &schema, unique_ptr<PostgresResultSlice> tables = nullptr);
 
 public:
 	optional_ptr<CatalogEntry> CreateTable(ClientContext &context, BoundCreateTableInfo &info);
@@ -32,6 +32,8 @@ public:
 
 	void AlterTable(ClientContext &context, AlterTableInfo &info);
 
+	static string GetInitializeQuery();
+
 protected:
 	void LoadEntries(ClientContext &context) override;
 
@@ -43,8 +45,12 @@ protected:
 	static void AddColumn(optional_ptr<PostgresTransaction> transaction, optional_ptr<PostgresSchemaEntry> schema,
 	                      PostgresResult &result, idx_t row, PostgresTableInfo &table_info, idx_t column_offset = 0);
 
+	void CreateEntries(PostgresTransaction &transaction, PostgresResult &result, idx_t start, idx_t end,
+	                   idx_t col_offset);
+
 protected:
 	PostgresSchemaEntry &schema;
+	unique_ptr<PostgresResultSlice> table_result;
 };
 
 } // namespace duckdb

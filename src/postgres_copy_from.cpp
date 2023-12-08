@@ -12,4 +12,4 @@ void PostgresConnection::BeginCopyFrom(PostgresBinaryReader &reader, const strin
 	reader.CheckHeader();
 }
 
-}
+} // namespace duckdb

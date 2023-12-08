@@ -14,7 +14,7 @@ PostgresCreateIndex::PostgresCreateIndex(unique_ptr<CreateIndexInfo> info, Table
 // Source
 //===--------------------------------------------------------------------===//
 SourceResultType PostgresCreateIndex::GetData(ExecutionContext &context, DataChunk &chunk,
-                                            OperatorSourceInput &input) const {
+                                              OperatorSourceInput &input) const {
 	auto &catalog = table.catalog;
 	if (info->catalog == INVALID_CATALOG && info->schema == catalog.GetName()) {
 		info->schema = DEFAULT_SCHEMA;
@@ -51,9 +51,10 @@ public:
 };
 
 unique_ptr<LogicalOperator> PostgresCatalog::BindCreateIndex(Binder &binder, CreateStatement &stmt,
-                                                           TableCatalogEntry &table, unique_ptr<LogicalOperator> plan) {
+                                                             TableCatalogEntry &table,
+                                                             unique_ptr<LogicalOperator> plan) {
 	return make_uniq<LogicalPostgresCreateIndex>(unique_ptr_cast<CreateInfo, CreateIndexInfo>(std::move(stmt.info)),
-	                                           table);
+	                                             table);
 }
 
 } // namespace duckdb

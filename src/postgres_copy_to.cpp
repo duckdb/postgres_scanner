@@ -5,7 +5,9 @@
 
 namespace duckdb {
 
-void PostgresConnection::BeginCopyTo(ClientContext &context, PostgresCopyState &state, PostgresCopyFormat format, const string &schema_name, const string &table_name, const vector<string> &column_names) {
+void PostgresConnection::BeginCopyTo(ClientContext &context, PostgresCopyState &state, PostgresCopyFormat format,
+                                     const string &schema_name, const string &table_name,
+                                     const vector<string> &column_names) {
 	string query = "COPY ";
 	if (!schema_name.empty()) {
 		query += KeywordHelper::WriteQuoted(schema_name, '"') + ".";
@@ -13,7 +15,7 @@ void PostgresConnection::BeginCopyTo(ClientContext &context, PostgresCopyState &
 	query += KeywordHelper::WriteQuoted(table_name, '"') + " ";
 	if (!column_names.empty()) {
 		query += "(";
-		for(idx_t c = 0; c < column_names.size(); c++) {
+		for (idx_t c = 0; c < column_names.size(); c++) {
 			if (c > 0) {
 				query += ", ";
 			}
@@ -23,7 +25,7 @@ void PostgresConnection::BeginCopyTo(ClientContext &context, PostgresCopyState &
 	}
 	query += "FROM STDIN (FORMAT ";
 	state.format = format;
-	switch(state.format) {
+	switch (state.format) {
 	case PostgresCopyFormat::BINARY:
 		query += "BINARY";
 		break;
@@ -50,8 +52,8 @@ void PostgresConnection::BeginCopyTo(ClientContext &context, PostgresCopyState &
 void PostgresConnection::CopyData(data_ptr_t buffer, idx_t size) {
 	int result;
 	do {
-		result = PQputCopyData(GetConn(), (const char *) buffer, int(size));
-	} while(result == 0);
+		result = PQputCopyData(GetConn(), (const char *)buffer, int(size));
+	} while (result == 0);
 	if (result == -1) {
 		throw InternalException("Error during PQputCopyData: %s", PQerrorMessage(GetConn()));
 	}
@@ -103,7 +105,7 @@ void CastListToPostgresArray(ClientContext &context, Vector &input, Vector &varc
 	auto child_entries = FlatVector::GetData<string_t>(child_varchar);
 	auto list_entries = FlatVector::GetData<list_entry_t>(input);
 	auto result_entries = FlatVector::GetData<string_t>(varchar_vector);
-	for(idx_t r = 0; r < size; r++) {
+	for (idx_t r = 0; r < size; r++) {
 		if (FlatVector::IsNull(input, r)) {
 			FlatVector::SetNull(varchar_vector, r, true);
 			continue;
@@ -111,7 +113,7 @@ void CastListToPostgresArray(ClientContext &context, Vector &input, Vector &varc
 		auto list_entry = list_entries[r];
 		string result;
 		result = "{";
-		for(idx_t list_idx = 0; list_idx < list_entry.length; list_idx++) {
+		for (idx_t list_idx = 0; list_idx < list_entry.length; list_idx++) {
 			if (list_idx > 0) {
 				result += ",";
 			}
@@ -134,7 +136,7 @@ void CastListToPostgresArray(ClientContext &context, Vector &input, Vector &varc
 }
 
 bool TypeRequiresQuotes(const LogicalType &input) {
-	switch(input.id()) {
+	switch (input.id()) {
 	case LogicalTypeId::STRUCT:
 	case LogicalTypeId::LIST:
 		return true;
@@ -148,7 +150,7 @@ void CastStructToPostgres(ClientContext &context, Vector &input, Vector &varchar
 	// cast child data of structs
 	vector<Vector> child_varchar_vectors;
 	vector<bool> child_requires_quotes;
-	for(idx_t c = 0; c < child_vectors.size(); c++) {
+	for (idx_t c = 0; c < child_vectors.size(); c++) {
 		Vector child_varchar(LogicalType::VARCHAR, size);
 		CastToPostgresVarchar(context, *child_vectors[c], child_varchar, size, depth + 1);
 		child_varchar_vectors.push_back(std::move(child_varchar));
@@ -157,14 +159,14 @@ void CastStructToPostgres(ClientContext &context, Vector &input, Vector &varchar
 
 	// construct the struct entries
 	auto result_entries = FlatVector::GetData<string_t>(varchar_vector);
-	for(idx_t r = 0; r < size; r++) {
+	for (idx_t r = 0; r < size; r++) {
 		if (FlatVector::IsNull(input, r)) {
 			FlatVector::SetNull(varchar_vector, r, true);
 			continue;
 		}
 		string result;
 		result = "(";
-		for(idx_t c = 0; c < child_varchar_vectors.size(); c++) {
+		for (idx_t c = 0; c < child_varchar_vectors.size(); c++) {
 			if (c > 0) {
 				result += ",";
 			}
@@ -189,7 +191,7 @@ void CastStructToPostgres(ClientContext &context, Vector &input, Vector &varchar
 void CastBlobToPostgres(ClientContext &context, Vector &input, Vector &result, idx_t size) {
 	auto input_data = FlatVector::GetData<string_t>(input);
 	auto result_data = FlatVector::GetData<string_t>(result);
-	for(idx_t r = 0; r < size; r++) {
+	for (idx_t r = 0; r < size; r++) {
 		if (FlatVector::IsNull(input, r)) {
 			FlatVector::SetNull(result, r, true);
 			continue;
@@ -198,7 +200,7 @@ void CastBlobToPostgres(ClientContext &context, Vector &input, Vector &result, i
 		string blob_str = "\\\\x";
 		auto blob_data = const_data_ptr_cast(input_data[r].GetData());
 		auto blob_size = input_data[r].GetSize();
-		for(idx_t c = 0; c < blob_size; c++) {
+		for (idx_t c = 0; c < blob_size; c++) {
 			blob_str += HEX_STRING[blob_data[c] / 16];
 			blob_str += HEX_STRING[blob_data[c] % 16];
 		}
@@ -223,7 +225,8 @@ void CastToPostgresVarchar(ClientContext &context, Vector &input, Vector &result
 	}
 }
 
-void PostgresConnection::CopyChunk(ClientContext &context, PostgresCopyState &state, DataChunk &chunk, DataChunk &varchar_chunk) {
+void PostgresConnection::CopyChunk(ClientContext &context, PostgresCopyState &state, DataChunk &chunk,
+                                   DataChunk &varchar_chunk) {
 	chunk.Flatten();
 
 	if (state.format == PostgresCopyFormat::BINARY) {
@@ -242,14 +245,14 @@ void PostgresConnection::CopyChunk(ClientContext &context, PostgresCopyState &st
 		if (varchar_chunk.ColumnCount() == 0) {
 			// not initialized yet
 			vector<LogicalType> varchar_types;
-			for(idx_t c = 0; c < chunk.ColumnCount(); c++) {
+			for (idx_t c = 0; c < chunk.ColumnCount(); c++) {
 				varchar_types.push_back(LogicalType::VARCHAR);
 			}
 			varchar_chunk.Initialize(Allocator::DefaultAllocator(), varchar_types);
 		}
 		D_ASSERT(chunk.ColumnCount() == varchar_chunk.ColumnCount());
 		// for text format cast to varchar first
-		for(idx_t c = 0; c < chunk.ColumnCount(); c++) {
+		for (idx_t c = 0; c < chunk.ColumnCount(); c++) {
 			CastToPostgresVarchar(context, chunk.data[c], varchar_chunk.data[c], chunk.size());
 		}
 		varchar_chunk.SetCardinality(chunk.size());
@@ -270,5 +273,4 @@ void PostgresConnection::CopyChunk(ClientContext &context, PostgresCopyState &st
 	}
 }
 
-
-}
+} // namespace duckdb

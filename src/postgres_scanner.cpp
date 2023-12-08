@@ -30,12 +30,12 @@ struct PostgresLocalState : public LocalTableFunctionState {
 	idx_t batch_idx = 0;
 	PostgresPoolConnection pool_connection;
 
-	void ScanChunk(ClientContext &context, const PostgresBindData &bind_data, PostgresGlobalState &gstate, DataChunk &output);
+	void ScanChunk(ClientContext &context, const PostgresBindData &bind_data, PostgresGlobalState &gstate,
+	               DataChunk &output);
 };
 
 struct PostgresGlobalState : public GlobalTableFunctionState {
-	explicit PostgresGlobalState(idx_t max_threads)
-	    : page_idx(0), batch_idx(0), max_threads(max_threads) {
+	explicit PostgresGlobalState(idx_t max_threads) : page_idx(0), batch_idx(0), max_threads(max_threads) {
 	}
 
 	mutex lock;
@@ -75,7 +75,8 @@ static void PostgresGetSnapshot(PostgresVersion version, ClientContext &context,
 		return;
 	}
 
-	result = con.TryQuery("SELECT pg_is_in_recovery(), pg_export_snapshot(), (select count(*) from pg_stat_wal_receiver)");
+	result =
+	    con.TryQuery("SELECT pg_is_in_recovery(), pg_export_snapshot(), (select count(*) from pg_stat_wal_receiver)");
 	if (result) {
 		auto in_recovery = result->GetBool(0, 0) || result->GetInt64(0, 2) > 0;
 		bind_data.snapshot = "";
@@ -86,7 +87,8 @@ static void PostgresGetSnapshot(PostgresVersion version, ClientContext &context,
 	}
 }
 
-void PostgresScanFunction::PrepareBind(PostgresVersion version, ClientContext &context, PostgresBindData &bind_data, idx_t approx_num_pages) {
+void PostgresScanFunction::PrepareBind(PostgresVersion version, ClientContext &context, PostgresBindData &bind_data,
+                                       idx_t approx_num_pages) {
 	Value pages_per_task;
 	if (context.TryGetCurrentSetting("pg_pages_per_task", pages_per_task)) {
 		bind_data.pages_per_task = UBigIntValue::Get(pages_per_task);
@@ -140,7 +142,7 @@ static unique_ptr<FunctionData> PostgresBind(ClientContext &context, TableFuncti
 	auto info = PostgresTableSet::GetTableInfo(con, bind_data->schema_name, bind_data->table_name);
 
 	bind_data->postgres_types = info->postgres_types;
-	for(auto &col : info->create_info->columns.Logical()) {
+	for (auto &col : info->create_info->columns.Logical()) {
 		names.push_back(col.GetName());
 		return_types.push_back(col.GetType());
 	}
@@ -159,7 +161,7 @@ static void PostgresInitInternal(ClientContext &context, const PostgresBindData 
 	auto bind_data = (const PostgresBindData *)bind_data_p;
 
 	string col_names;
-	for(auto &column_id : lstate.column_ids) {
+	for (auto &column_id : lstate.column_ids) {
 		if (!col_names.empty()) {
 			col_names += ", ";
 		}
@@ -183,7 +185,8 @@ static void PostgresInitInternal(ClientContext &context, const PostgresBindData 
 		}
 	}
 
-	string filter_string = PostgresFilterPushdown::TransformFilters(lstate.column_ids, lstate.filters, bind_data->names);
+	string filter_string =
+	    PostgresFilterPushdown::TransformFilters(lstate.column_ids, lstate.filters, bind_data->names);
 
 	string filter;
 	if (bind_data->pages_approx > 0) {
@@ -200,18 +203,18 @@ static void PostgresInitInternal(ClientContext &context, const PostgresBindData 
 	if (bind_data->table_name.empty()) {
 		D_ASSERT(!bind_data->sql.empty());
 		lstate.sql = StringUtil::Format(
-			R"(
+		    R"(
 	COPY (SELECT %s FROM (%s) AS __unnamed_subquery %s) TO STDOUT (FORMAT binary);
 	)",
-			col_names, bind_data->sql, filter);
+		    col_names, bind_data->sql, filter);
 
 	} else {
 		lstate.sql = StringUtil::Format(
-			R"(
+		    R"(
 	COPY (SELECT %s FROM %s.%s %s) TO STDOUT (FORMAT binary);
 	)",
-			col_names, KeywordHelper::WriteQuoted(bind_data->schema_name, '"'), KeywordHelper::WriteQuoted(bind_data->table_name, '"'), filter);
-
+		    col_names, KeywordHelper::WriteQuoted(bind_data->schema_name, '"'),
+		    KeywordHelper::WriteQuoted(bind_data->table_name, '"'), filter);
 	}
 	lstate.exec = false;
 	lstate.done = false;
@@ -226,7 +229,8 @@ static idx_t PostgresMaxThreads(ClientContext &context, const FunctionData *bind
 	return bind_data.max_threads;
 }
 
-static unique_ptr<LocalTableFunctionState> GetLocalState(ClientContext &context, TableFunctionInitInput &input, PostgresGlobalState &gstate);
+static unique_ptr<LocalTableFunctionState> GetLocalState(ClientContext &context, TableFunctionInitInput &input,
+                                                         PostgresGlobalState &gstate);
 
 static unique_ptr<GlobalTableFunctionState> PostgresInitGlobalState(ClientContext &context,
                                                                     TableFunctionInitInput &input) {
@@ -235,7 +239,7 @@ static unique_ptr<GlobalTableFunctionState> PostgresInitGlobalState(ClientContex
 	if (bind_data.requires_materialization) {
 		// if requires_materialization is enabled we scan and materialize the table in its entirety up-front
 		vector<LogicalType> types;
-		for(auto column_id : input.column_ids) {
+		for (auto column_id : input.column_ids) {
 			types.push_back(column_id == COLUMN_IDENTIFIER_ROW_ID ? LogicalType::BIGINT : bind_data.types[column_id]);
 		}
 		auto materialized = make_uniq<ColumnDataCollection>(Allocator::Get(context), types);
@@ -246,7 +250,7 @@ static unique_ptr<GlobalTableFunctionState> PostgresInitGlobalState(ClientContex
 		auto &lstate = local_state->Cast<PostgresLocalState>();
 		ColumnDataAppendState append_state;
 		materialized->InitializeAppend(append_state);
-		while(true) {
+		while (true) {
 			scan_chunk.Reset();
 			lstate.ScanChunk(context, bind_data, *result, scan_chunk);
 			if (scan_chunk.size() == 0) {
@@ -289,7 +293,8 @@ static void PostgresScanConnect(PostgresConnection &conn, string snapshot) {
 	}
 }
 
-bool PostgresBindData::TryOpenNewConnection(ClientContext &context, PostgresLocalState &lstate, PostgresGlobalState &gstate) {
+bool PostgresBindData::TryOpenNewConnection(ClientContext &context, PostgresLocalState &lstate,
+                                            PostgresGlobalState &gstate) {
 	{
 		lock_guard<mutex> parallel_lock(gstate.lock);
 		if (!gstate.used_main_thread) {
@@ -311,8 +316,9 @@ bool PostgresBindData::TryOpenNewConnection(ClientContext &context, PostgresLoca
 	return true;
 }
 
-static unique_ptr<LocalTableFunctionState> GetLocalState(ClientContext &context, TableFunctionInitInput &input, PostgresGlobalState &gstate) {
-	auto &bind_data = (PostgresBindData &) *input.bind_data;
+static unique_ptr<LocalTableFunctionState> GetLocalState(ClientContext &context, TableFunctionInitInput &input,
+                                                         PostgresGlobalState &gstate) {
+	auto &bind_data = (PostgresBindData &)*input.bind_data;
 
 	auto local_state = make_uniq<PostgresLocalState>();
 	if (gstate.collection) {
@@ -342,7 +348,8 @@ static unique_ptr<LocalTableFunctionState> PostgresInitLocalState(ExecutionConte
 	return GetLocalState(context.client, input, gstate);
 }
 
-void PostgresLocalState::ScanChunk(ClientContext &context, const PostgresBindData &bind_data, PostgresGlobalState &gstate, DataChunk &output) {
+void PostgresLocalState::ScanChunk(ClientContext &context, const PostgresBindData &bind_data,
+                                   PostgresGlobalState &gstate, DataChunk &output) {
 	idx_t output_offset = 0;
 	PostgresBinaryReader reader(connection);
 	while (true) {
@@ -388,8 +395,7 @@ void PostgresLocalState::ScanChunk(ClientContext &context, const PostgresBindDat
 				ctid_type.info = PostgresTypeAnnotation::CTID;
 				reader.ReadValue(LogicalType::BIGINT, ctid_type, out_vec, output_offset);
 			} else {
-				reader.ReadValue(bind_data.types[col_idx], bind_data.postgres_types[col_idx], out_vec,
-							 output_offset);
+				reader.ReadValue(bind_data.types[col_idx], bind_data.postgres_types[col_idx], out_vec, output_offset);
 			}
 		}
 		reader.Reset();
@@ -413,8 +419,7 @@ static void PostgresScan(ClientContext &context, TableFunctionInput &data, DataC
 }
 
 static idx_t PostgresScanBatchIndex(ClientContext &context, const FunctionData *bind_data_p,
-                                                  LocalTableFunctionState *local_state_p,
-                                                  GlobalTableFunctionState *global_state) {
+                                    LocalTableFunctionState *local_state_p, GlobalTableFunctionState *global_state) {
 	auto &bind_data = bind_data_p->Cast<PostgresBindData>();
 	auto &local_state = local_state_p->Cast<PostgresLocalState>();
 	return local_state.batch_idx;
@@ -428,7 +433,7 @@ static string PostgresScanToString(const FunctionData *bind_data_p) {
 }
 
 static void PostgresScanSerialize(Serializer &serializer, const optional_ptr<FunctionData> bind_data_p,
-								 const TableFunction &function) {
+                                  const TableFunction &function) {
 	throw NotImplementedException("PostgresScanSerialize");
 }
 
@@ -437,8 +442,8 @@ static unique_ptr<FunctionData> PostgresScanDeserialize(Deserializer &deserializ
 }
 
 PostgresScanFunction::PostgresScanFunction()
-	: TableFunction("postgres_scan", {LogicalType::VARCHAR, LogicalType::VARCHAR, LogicalType::VARCHAR},
-					PostgresScan, PostgresBind, PostgresInitGlobalState, PostgresInitLocalState) {
+    : TableFunction("postgres_scan", {LogicalType::VARCHAR, LogicalType::VARCHAR, LogicalType::VARCHAR}, PostgresScan,
+                    PostgresBind, PostgresInitGlobalState, PostgresInitLocalState) {
 	to_string = PostgresScanToString;
 	serialize = PostgresScanSerialize;
 	deserialize = PostgresScanDeserialize;
@@ -447,8 +452,8 @@ PostgresScanFunction::PostgresScanFunction()
 }
 
 PostgresScanFunctionFilterPushdown::PostgresScanFunctionFilterPushdown()
-	: TableFunction("postgres_scan_pushdown", {LogicalType::VARCHAR, LogicalType::VARCHAR, LogicalType::VARCHAR},
-					PostgresScan, PostgresBind, PostgresInitGlobalState, PostgresInitLocalState) {
+    : TableFunction("postgres_scan_pushdown", {LogicalType::VARCHAR, LogicalType::VARCHAR, LogicalType::VARCHAR},
+                    PostgresScan, PostgresBind, PostgresInitGlobalState, PostgresInitLocalState) {
 	to_string = PostgresScanToString;
 	serialize = PostgresScanSerialize;
 	deserialize = PostgresScanDeserialize;
@@ -457,4 +462,4 @@ PostgresScanFunctionFilterPushdown::PostgresScanFunctionFilterPushdown()
 	filter_pushdown = true;
 }
 
-}
+} // namespace duckdb

@@ -44,14 +44,12 @@ void PostgresCatalog::DropSchema(ClientContext &context, DropInfo &info) {
 }
 
 void PostgresCatalog::ScanSchemas(ClientContext &context, std::function<void(SchemaCatalogEntry &)> callback) {
-	schemas.Scan(context, [&](CatalogEntry &schema) {
-		callback(schema.Cast<PostgresSchemaEntry>());
-	});
+	schemas.Scan(context, [&](CatalogEntry &schema) { callback(schema.Cast<PostgresSchemaEntry>()); });
 }
 
 optional_ptr<SchemaCatalogEntry> PostgresCatalog::GetSchema(CatalogTransaction transaction, const string &schema_name,
-                                                          OnEntryNotFound if_not_found,
-                                                          QueryErrorContext error_context) {
+                                                            OnEntryNotFound if_not_found,
+                                                            QueryErrorContext error_context) {
 	if (schema_name == DEFAULT_SCHEMA) {
 		return GetSchema(transaction, "public", if_not_found, error_context);
 	}
@@ -87,6 +85,5 @@ DatabaseSize PostgresCatalog::GetDatabaseSize(ClientContext &context) {
 void PostgresCatalog::ClearCache() {
 	schemas.ClearEntries();
 }
-
 
 } // namespace duckdb

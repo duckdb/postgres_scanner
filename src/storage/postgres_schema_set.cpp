@@ -8,8 +8,8 @@
 
 namespace duckdb {
 
-PostgresSchemaSet::PostgresSchemaSet(Catalog &catalog) :
-    PostgresCatalogSet(catalog) {}
+PostgresSchemaSet::PostgresSchemaSet(Catalog &catalog) : PostgresCatalogSet(catalog) {
+}
 
 vector<unique_ptr<PostgresResultSlice>> SliceResult(PostgresResult &schemas, unique_ptr<PostgresResult> to_slice_ptr) {
 	auto shared_result = shared_ptr<PostgresResult>(to_slice_ptr.release());
@@ -17,10 +17,10 @@ vector<unique_ptr<PostgresResultSlice>> SliceResult(PostgresResult &schemas, uni
 
 	vector<unique_ptr<PostgresResultSlice>> result;
 	idx_t current_offset = 0;
-	for(idx_t schema_idx = 0; schema_idx < schemas.Count(); schema_idx++) {
+	for (idx_t schema_idx = 0; schema_idx < schemas.Count(); schema_idx++) {
 		auto oid = schemas.GetInt64(schema_idx, 0);
 		idx_t start = current_offset;
-		for(; current_offset < to_slice.Count(); current_offset++) {
+		for (; current_offset < to_slice.Count(); current_offset++) {
 			auto current_oid = to_slice.GetInt64(current_offset, 0);
 			if (current_oid != oid) {
 				break;
@@ -58,10 +58,12 @@ void PostgresSchemaSet::LoadEntries(ClientContext &context) {
 	auto enums = SliceResult(*result, std::move(results[1]));
 	auto composite_types = SliceResult(*result, std::move(results[2]));
 	auto indexes = SliceResult(*result, std::move(results[3]));
-	for(idx_t row = 0; row < rows; row++) {
+	for (idx_t row = 0; row < rows; row++) {
 		auto oid = result->GetInt64(row, 0);
 		auto schema_name = result->GetString(row, 1);
-		auto schema = make_uniq<PostgresSchemaEntry>(catalog, schema_name, std::move(tables[row]), std::move(enums[row]), std::move(composite_types[row]), std::move(indexes[row]));
+		auto schema =
+		    make_uniq<PostgresSchemaEntry>(catalog, schema_name, std::move(tables[row]), std::move(enums[row]),
+		                                   std::move(composite_types[row]), std::move(indexes[row]));
 		CreateEntry(std::move(schema));
 	}
 }
@@ -75,4 +77,4 @@ optional_ptr<CatalogEntry> PostgresSchemaSet::CreateSchema(ClientContext &contex
 	return CreateEntry(std::move(schema_entry));
 }
 
-}
+} // namespace duckdb

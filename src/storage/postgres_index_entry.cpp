@@ -4,7 +4,7 @@
 namespace duckdb {
 
 PostgresIndexEntry::PostgresIndexEntry(Catalog &catalog, SchemaCatalogEntry &schema, CreateIndexInfo &info,
-                                   string table_name_p)
+                                       string table_name_p)
     : IndexCatalogEntry(catalog, schema, info), table_name(std::move(table_name_p)) {
 }
 

@@ -3,8 +3,8 @@
 #include "duckdb/parser/parsed_data/drop_info.hpp"
 namespace duckdb {
 
-PostgresCatalogSet::PostgresCatalogSet(Catalog &catalog) :
-    catalog(catalog), is_loaded(false) {}
+PostgresCatalogSet::PostgresCatalogSet(Catalog &catalog) : catalog(catalog), is_loaded(false) {
+}
 
 optional_ptr<CatalogEntry> PostgresCatalogSet::GetEntry(ClientContext &context, const string &name) {
 	if (!is_loaded) {
@@ -55,7 +55,7 @@ void PostgresCatalogSet::Scan(ClientContext &context, const std::function<void(C
 		LoadEntries(context);
 	}
 	lock_guard<mutex> l(entry_lock);
-	for(auto &entry : entries) {
+	for (auto &entry : entries) {
 		callback(*entry.second);
 	}
 }
@@ -77,4 +77,4 @@ void PostgresCatalogSet::ClearEntries() {
 	is_loaded = false;
 }
 
-}
+} // namespace duckdb

@@ -5,8 +5,7 @@
 
 namespace duckdb {
 
-static void
-PGNoticeProcessor(void *arg, const char *message) {
+static void PGNoticeProcessor(void *arg, const char *message) {
 }
 
 PGconn *PostgresUtils::PGConnect(const string &dsn) {
@@ -24,7 +23,7 @@ string PostgresUtils::TypeToString(const LogicalType &input) {
 	if (input.HasAlias()) {
 		return input.GetAlias();
 	}
-	switch(input.id()) {
+	switch (input.id()) {
 	case LogicalTypeId::FLOAT:
 		return "REAL";
 	case LogicalTypeId::DOUBLE:
@@ -34,9 +33,11 @@ string PostgresUtils::TypeToString(const LogicalType &input) {
 	case LogicalTypeId::LIST:
 		return PostgresUtils::TypeToString(ListType::GetChildType(input)) + "[]";
 	case LogicalTypeId::ENUM:
-		throw NotImplementedException("Enums in Postgres must be named - unnamed enums are not supported. Use CREATE TYPE to create a named enum.");
+		throw NotImplementedException("Enums in Postgres must be named - unnamed enums are not supported. Use CREATE "
+		                              "TYPE to create a named enum.");
 	case LogicalTypeId::STRUCT:
-		throw NotImplementedException("Composite types in Postgres must be named - unnamed composite types are not supported. Use CREATE TYPE to create a named composite type.");
+		throw NotImplementedException("Composite types in Postgres must be named - unnamed composite types are not "
+		                              "supported. Use CREATE TYPE to create a named composite type.");
 	case LogicalTypeId::MAP:
 		throw NotImplementedException("MAP type not supported in Postgres");
 	case LogicalTypeId::UNION:
@@ -47,7 +48,7 @@ string PostgresUtils::TypeToString(const LogicalType &input) {
 }
 
 LogicalType PostgresUtils::RemoveAlias(const LogicalType &type) {
-	switch(type.id()) {
+	switch (type.id()) {
 	case LogicalTypeId::STRUCT: {
 		auto child_types = StructType::GetChildTypes(type);
 		return LogicalType::STRUCT(std::move(child_types));
@@ -63,7 +64,9 @@ LogicalType PostgresUtils::RemoveAlias(const LogicalType &type) {
 	}
 }
 
-LogicalType PostgresUtils::TypeToLogicalType(optional_ptr<PostgresTransaction> transaction, optional_ptr<PostgresSchemaEntry> schema, const PostgresTypeData &type_info, PostgresType &postgres_type) {
+LogicalType PostgresUtils::TypeToLogicalType(optional_ptr<PostgresTransaction> transaction,
+                                             optional_ptr<PostgresSchemaEntry> schema,
+                                             const PostgresTypeData &type_info, PostgresType &postgres_type) {
 	auto &pgtypename = type_info.type_name;
 
 	// postgres array types start with an _
@@ -93,7 +96,7 @@ LogicalType PostgresUtils::TypeToLogicalType(optional_ptr<PostgresTransaction> t
 		PostgresType child_pg_type;
 		auto child_type = PostgresUtils::TypeToLogicalType(transaction, schema, child_type_info, child_pg_type);
 		// construct the child type based on the number of dimensions
-		for(idx_t i = 1; i < dimensions; i++) {
+		for (idx_t i = 1; i < dimensions; i++) {
 			PostgresType new_pg_type;
 			new_pg_type.children.push_back(std::move(child_pg_type));
 			child_pg_type = std::move(new_pg_type);
@@ -161,7 +164,8 @@ LogicalType PostgresUtils::TypeToLogicalType(optional_ptr<PostgresTransaction> t
 		if (!context) {
 			throw InternalException("Context is destroyed!?");
 		}
-		auto entry = schema->GetEntry(CatalogTransaction(schema->ParentCatalog(), *context), CatalogType::TYPE_ENTRY, pgtypename);
+		auto entry = schema->GetEntry(CatalogTransaction(schema->ParentCatalog(), *context), CatalogType::TYPE_ENTRY,
+		                              pgtypename);
 		if (!entry) {
 			// unsupported so fallback to varchar
 			postgres_type.info = PostgresTypeAnnotation::CAST_TO_VARCHAR;
@@ -199,7 +203,7 @@ LogicalType PostgresUtils::ToPostgresType(const LogicalType &input) {
 		return LogicalType::LIST(ToPostgresType(ListType::GetChildType(input)));
 	case LogicalTypeId::STRUCT: {
 		child_list_t<LogicalType> new_types;
-		for(idx_t c = 0; c < StructType::GetChildCount(input); c++) {
+		for (idx_t c = 0; c < StructType::GetChildCount(input); c++) {
 			auto &name = StructType::GetChildName(input, c);
 			auto &type = StructType::GetChildType(input, c);
 			new_types.push_back(make_pair(name, ToPostgresType(type)));
@@ -228,9 +232,9 @@ LogicalType PostgresUtils::ToPostgresType(const LogicalType &input) {
 
 PostgresType PostgresUtils::CreateEmptyPostgresType(const LogicalType &type) {
 	PostgresType result;
-	switch(type.id()) {
+	switch (type.id()) {
 	case LogicalTypeId::STRUCT:
-		for(auto &child_type : StructType::GetChildTypes(type)) {
+		for (auto &child_type : StructType::GetChildTypes(type)) {
 			result.children.push_back(CreateEmptyPostgresType(child_type.second));
 		}
 		break;
@@ -244,7 +248,7 @@ PostgresType PostgresUtils::CreateEmptyPostgresType(const LogicalType &type) {
 }
 
 bool PostgresUtils::SupportedPostgresOid(const LogicalType &input) {
-	switch(input.id()) {
+	switch (input.id()) {
 	case LogicalTypeId::BOOLEAN:
 	case LogicalTypeId::SMALLINT:
 	case LogicalTypeId::INTEGER:
@@ -268,7 +272,7 @@ bool PostgresUtils::SupportedPostgresOid(const LogicalType &input) {
 }
 
 string PostgresUtils::PostgresOidToName(uint32_t oid) {
-	switch(oid) {
+	switch (oid) {
 	case BOOLOID:
 		return "bool";
 	case INT2OID:
@@ -357,7 +361,7 @@ string PostgresUtils::PostgresOidToName(uint32_t oid) {
 }
 
 uint32_t PostgresUtils::ToPostgresOid(const LogicalType &input) {
-	switch(input.id()) {
+	switch (input.id()) {
 	case LogicalTypeId::BOOLEAN:
 		return BOOLOID;
 	case LogicalTypeId::SMALLINT:
@@ -401,12 +405,12 @@ PostgresVersion PostgresUtils::ExtractPostgresVersion(const string &version_str)
 	PostgresVersion result;
 	idx_t pos = 0;
 	// scan for the first digit
-	while(pos < version_str.size() && !StringUtil::CharacterIsDigit(version_str[pos])) {
+	while (pos < version_str.size() && !StringUtil::CharacterIsDigit(version_str[pos])) {
 		pos++;
 	}
-	for(idx_t version_idx = 0; version_idx < 3; version_idx++) {
+	for (idx_t version_idx = 0; version_idx < 3; version_idx++) {
 		idx_t digit_start = pos;
-		while(pos < version_str.size() && StringUtil::CharacterIsDigit(version_str[pos])) {
+		while (pos < version_str.size() && StringUtil::CharacterIsDigit(version_str[pos])) {
 			pos++;
 		}
 		if (digit_start == pos) {
@@ -416,7 +420,7 @@ PostgresVersion PostgresUtils::ExtractPostgresVersion(const string &version_str)
 		// our version is at [digit_start..pos)
 		auto digit_str = version_str.substr(digit_start, pos - digit_start);
 		auto digit = std::strtoll(digit_str.c_str(), 0, 10);
-		switch(version_idx) {
+		switch (version_idx) {
 		case 0:
 			result.major_v = digit;
 			break;
@@ -437,4 +441,4 @@ PostgresVersion PostgresUtils::ExtractPostgresVersion(const string &version_str)
 	return result;
 }
 
-}
+} // namespace duckdb

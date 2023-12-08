@@ -3,7 +3,8 @@
 
 namespace duckdb {
 
-string PostgresFilterPushdown::CreateExpression(string &column_name, vector<unique_ptr<TableFilter>> &filters, string op) {
+string PostgresFilterPushdown::CreateExpression(string &column_name, vector<unique_ptr<TableFilter>> &filters,
+                                                string op) {
 	vector<string> filter_entries;
 	for (auto &filter : filters) {
 		filter_entries.push_back(TransformFilter(column_name, *filter));
@@ -55,7 +56,8 @@ string PostgresFilterPushdown::TransformFilter(string &column_name, TableFilter 
 	}
 }
 
-string PostgresFilterPushdown::TransformFilters(const vector<column_t> &column_ids, optional_ptr<TableFilterSet> filters, const vector<string> &names) {
+string PostgresFilterPushdown::TransformFilters(const vector<column_t> &column_ids,
+                                                optional_ptr<TableFilterSet> filters, const vector<string> &names) {
 	if (!filters || filters->filters.empty()) {
 		// no filters
 		return string();
@@ -72,4 +74,4 @@ string PostgresFilterPushdown::TransformFilters(const vector<column_t> &column_i
 	return result;
 }
 
-}
+} // namespace duckdb

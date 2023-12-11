@@ -50,7 +50,7 @@ static void AttachFunction(ClientContext &context, TableFunctionInput &data_p, D
 	auto conn = PostgresConnection::Open(data.dsn);
 	auto dconn = Connection(context.db->GetDatabase(context));
 	auto fetch_table_query = StringUtil::Format(
-	                             R"(
+	    R"(
 SELECT relname
 FROM pg_class JOIN pg_namespace ON pg_class.relnamespace = pg_namespace.oid
 JOIN pg_attribute ON pg_class.oid = pg_attribute.attrelid
@@ -58,7 +58,7 @@ WHERE relkind = 'r' AND attnum > 0 AND nspname = %s
 GROUP BY relname
 ORDER BY relname;
 )",
-	                             KeywordHelper::WriteQuoted(data.source_schema));
+	    KeywordHelper::WriteQuoted(data.source_schema));
 	auto res = conn.Query(fetch_table_query);
 	for (idx_t row = 0; row < PQntuples(res->res); row++) {
 		auto table_name = res->GetString(row, 0);
@@ -93,7 +93,7 @@ ORDER BY relname;
 }
 
 PostgresAttachFunction::PostgresAttachFunction()
-	: TableFunction("postgres_attach", {LogicalType::VARCHAR}, AttachFunction, AttachBind) {
+    : TableFunction("postgres_attach", {LogicalType::VARCHAR}, AttachFunction, AttachBind) {
 	named_parameters["overwrite"] = LogicalType::BOOLEAN;
 	named_parameters["filter_pushdown"] = LogicalType::BOOLEAN;
 
@@ -102,4 +102,4 @@ PostgresAttachFunction::PostgresAttachFunction()
 	named_parameters["suffix"] = LogicalType::VARCHAR;
 }
 
-}
+} // namespace duckdb

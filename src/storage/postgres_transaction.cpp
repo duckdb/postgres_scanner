@@ -7,7 +7,8 @@
 
 namespace duckdb {
 
-PostgresTransaction::PostgresTransaction(PostgresCatalog &postgres_catalog, TransactionManager &manager, ClientContext &context)
+PostgresTransaction::PostgresTransaction(PostgresCatalog &postgres_catalog, TransactionManager &manager,
+                                         ClientContext &context)
     : Transaction(manager, context), access_mode(postgres_catalog.access_mode) {
 	connection = postgres_catalog.GetConnectionPool().GetConnection();
 }
@@ -78,7 +79,6 @@ vector<unique_ptr<PostgresResult>> PostgresTransaction::ExecuteQueries(const str
 	}
 	return con.ExecuteQueries(queries);
 }
-
 
 PostgresTransaction &PostgresTransaction::Get(ClientContext &context, Catalog &catalog) {
 	return Transaction::Get(context, catalog).Cast<PostgresTransaction>();

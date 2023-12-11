@@ -83,7 +83,7 @@ SinkResultType PostgresDelete::Sink(ExecutionContext &context, DataChunk &chunk,
 // Finalize
 //===--------------------------------------------------------------------===//
 SinkFinalizeType PostgresDelete::Finalize(Pipeline &pipeline, Event &event, ClientContext &context,
-						  OperatorSinkFinalizeInput &input) const {
+                                          OperatorSinkFinalizeInput &input) const {
 	auto &gstate = input.global_state.Cast<PostgresDeleteGlobalState>();
 	gstate.Flush(context);
 	return SinkFinalizeType::READY;
@@ -92,7 +92,8 @@ SinkFinalizeType PostgresDelete::Finalize(Pipeline &pipeline, Event &event, Clie
 //===--------------------------------------------------------------------===//
 // GetData
 //===--------------------------------------------------------------------===//
-SourceResultType PostgresDelete::GetData(ExecutionContext &context, DataChunk &chunk, OperatorSourceInput &input) const {
+SourceResultType PostgresDelete::GetData(ExecutionContext &context, DataChunk &chunk,
+                                         OperatorSourceInput &input) const {
 	auto &insert_gstate = sink_state->Cast<PostgresDeleteGlobalState>();
 	chunk.SetCardinality(1);
 	chunk.SetValue(0, 0, Value::BIGINT(insert_gstate.delete_count));
@@ -115,7 +116,7 @@ string PostgresDelete::ParamsToString() const {
 // Plan
 //===--------------------------------------------------------------------===//
 unique_ptr<PhysicalOperator> PostgresCatalog::PlanDelete(ClientContext &context, LogicalDelete &op,
-                                                       unique_ptr<PhysicalOperator> plan) {
+                                                         unique_ptr<PhysicalOperator> plan) {
 	if (op.return_chunk) {
 		throw BinderException("RETURNING clause not yet supported for deletion of a Postgres table");
 	}

@@ -7,9 +7,9 @@
 
 namespace duckdb {
 
-PostgresIndexSet::PostgresIndexSet(PostgresSchemaEntry &schema, unique_ptr<PostgresResultSlice> index_result_p) :
-    PostgresCatalogSet(schema.ParentCatalog()), schema(schema), index_result(std::move(index_result_p)) {}
-
+PostgresIndexSet::PostgresIndexSet(PostgresSchemaEntry &schema, unique_ptr<PostgresResultSlice> index_result_p)
+    : PostgresCatalogSet(schema.ParentCatalog()), schema(schema), index_result(std::move(index_result_p)) {
+}
 
 string PostgresIndexSet::GetInitializeQuery() {
 	return R"(
@@ -25,7 +25,7 @@ void PostgresIndexSet::LoadEntries(ClientContext &context) {
 		throw InternalException("PostgresIndexSet::LoadEntries called without an index result defined");
 	}
 	auto &result = index_result->GetResult();
-	for(idx_t row = index_result->start; row < index_result->end; row++) {
+	for (idx_t row = index_result->start; row < index_result->end; row++) {
 		auto table_name = result.GetString(row, 1);
 		auto index_name = result.GetString(row, 2);
 		CreateIndexInfo info;
@@ -71,11 +71,11 @@ string PGGetCreateIndexSQL(CreateIndexInfo &info, TableCatalogEntry &tbl) {
 }
 
 optional_ptr<CatalogEntry> PostgresIndexSet::CreateIndex(ClientContext &context, CreateIndexInfo &info,
-                                                          TableCatalogEntry &table) {
+                                                         TableCatalogEntry &table) {
 	auto &postgres_transaction = PostgresTransaction::Get(context, table.catalog);
 	postgres_transaction.Query(PGGetCreateIndexSQL(info, table));
 	auto index_entry = make_uniq<PostgresIndexEntry>(schema.ParentCatalog(), schema, info, table.name);
 	return CreateEntry(std::move(index_entry));
 }
 
-}
+} // namespace duckdb

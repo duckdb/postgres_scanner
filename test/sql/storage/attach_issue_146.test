@@ -1,0 +1,22 @@
+# name: test/sql/storage/attach_keywords.test
+# description: Test quoting in ATTACH with keyword identifiers
+# group: [storage]
+
+require postgres_scanner
+
+require-env POSTGRES_TEST_DATABASE_AVAILABLE
+
+statement ok
+ATTACH 'dbname=postgresscanner' AS postgres_db (TYPE POSTGRES)
+
+statement ok
+DROP TABLE IF EXISTS postgres_db.public.test_table_1;
+
+statement ok
+DROP TABLE IF EXISTS postgres_db.public.test_table_2;
+
+statement ok
+create table postgres_db.public.test_table_1 (id int);
+
+statement ok
+create table postgres_db.public.test_table_2 as select * from values ( (1) ) as V(id) where id not in (select id from postgres_db.public.test_table_1);

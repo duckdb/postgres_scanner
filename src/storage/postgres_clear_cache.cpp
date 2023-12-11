@@ -13,7 +13,7 @@ struct ClearCacheFunctionData : public TableFunctionData {
 };
 
 static unique_ptr<FunctionData> ClearCacheBind(ClientContext &context, TableFunctionBindInput &input,
-                                           vector<LogicalType> &return_types, vector<string> &names) {
+                                               vector<LogicalType> &return_types, vector<string> &names) {
 
 	auto result = make_uniq<ClearCacheFunctionData>();
 	return_types.push_back(LogicalType::BOOLEAN);
@@ -27,7 +27,7 @@ static void ClearCacheFunction(ClientContext &context, TableFunctionInput &data_
 		return;
 	}
 	auto databases = DatabaseManager::Get(context).GetDatabases(context);
-	for(auto &db_ref : databases) {
+	for (auto &db_ref : databases) {
 		auto &db = db_ref.get();
 		auto &catalog = db.GetCatalog();
 		if (catalog.GetCatalogType() != "postgres") {
@@ -39,7 +39,6 @@ static void ClearCacheFunction(ClientContext &context, TableFunctionInput &data_
 }
 
 PostgresClearCacheFunction::PostgresClearCacheFunction()
-	: TableFunction("pg_clear_cache", {},
-					ClearCacheFunction, ClearCacheBind) {
+    : TableFunction("pg_clear_cache", {}, ClearCacheFunction, ClearCacheBind) {
 }
-}
+} // namespace duckdb

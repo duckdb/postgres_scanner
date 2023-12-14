@@ -3,10 +3,13 @@
 
 namespace duckdb {
 
-PostgresPoolConnection::PostgresPoolConnection() : pool(nullptr) {}
+PostgresPoolConnection::PostgresPoolConnection() : pool(nullptr) {
+}
 
-PostgresPoolConnection::PostgresPoolConnection(optional_ptr<PostgresConnectionPool> pool, PostgresConnection connection_p) :
-	pool(pool), connection(std::move(connection_p)) {}
+PostgresPoolConnection::PostgresPoolConnection(optional_ptr<PostgresConnectionPool> pool,
+                                               PostgresConnection connection_p)
+    : pool(pool), connection(std::move(connection_p)) {
+}
 
 PostgresPoolConnection::~PostgresPoolConnection() {
 	if (pool) {
@@ -36,8 +39,9 @@ PostgresConnection &PostgresPoolConnection::GetConnection() {
 	return connection;
 }
 
-PostgresConnectionPool::PostgresConnectionPool(PostgresCatalog &postgres_catalog, idx_t maximum_connections_p) :
-	postgres_catalog(postgres_catalog), active_connections(0), maximum_connections(maximum_connections_p) {}
+PostgresConnectionPool::PostgresConnectionPool(PostgresCatalog &postgres_catalog, idx_t maximum_connections_p)
+    : postgres_catalog(postgres_catalog), active_connections(0), maximum_connections(maximum_connections_p) {
+}
 
 bool PostgresConnectionPool::TryGetConnection(PostgresPoolConnection &connection) {
 	lock_guard<mutex> l(connection_lock);
@@ -60,7 +64,9 @@ bool PostgresConnectionPool::TryGetConnection(PostgresPoolConnection &connection
 PostgresPoolConnection PostgresConnectionPool::GetConnection() {
 	PostgresPoolConnection result;
 	if (!TryGetConnection(result)) {
-		throw IOException("Failed to get connection from PostgresConnectionPool - maximum connection count exceeded (%llu/%llu max)", active_connections, maximum_connections);
+		throw IOException(
+		    "Failed to get connection from PostgresConnectionPool - maximum connection count exceeded (%llu/%llu max)",
+		    active_connections, maximum_connections);
 	}
 	return result;
 }
@@ -72,9 +78,11 @@ void PostgresConnectionPool::ReturnConnection(PostgresConnection connection) {
 	}
 	active_connections--;
 	if (active_connections >= maximum_connections) {
-		// if the maximum number of connections has been decreased by the user we might need to reclaim the connection immediately
+		// if the maximum number of connections has been decreased by the user we might need to reclaim the connection
+		// immediately
 		return;
 	}
+	return;
 	// check if the underlying connection is still usable
 	auto pg_con = connection.GetConn();
 	if (PQstatus(connection.GetConn()) != CONNECTION_OK) {
@@ -98,7 +106,7 @@ void PostgresConnectionPool::SetMaximumConnections(idx_t new_max) {
 		// note that we can only close connections in the connection cache
 		// we will have to wait for connections to be returned
 		auto total_open_connections = active_connections + connection_cache.size();
-		while(!connection_cache.empty() && total_open_connections > new_max) {
+		while (!connection_cache.empty() && total_open_connections > new_max) {
 			total_open_connections--;
 			connection_cache.pop_back();
 		}
@@ -106,4 +114,4 @@ void PostgresConnectionPool::SetMaximumConnections(idx_t new_max) {
 	maximum_connections = new_max;
 }
 
-}
+} // namespace duckdb

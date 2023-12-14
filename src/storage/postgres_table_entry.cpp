@@ -8,8 +8,8 @@
 namespace duckdb {
 
 PostgresTableEntry::PostgresTableEntry(Catalog &catalog, SchemaCatalogEntry &schema, CreateTableInfo &info)
-	: TableCatalogEntry(catalog, schema, info) {
-	for(idx_t c = 0; c < columns.LogicalColumnCount(); c++) {
+    : TableCatalogEntry(catalog, schema, info) {
+	for (idx_t c = 0; c < columns.LogicalColumnCount(); c++) {
 		auto &col = columns.GetColumnMutable(LogicalIndex(c));
 		if (col.GetType().HasAlias()) {
 			col.TypeMutable() = PostgresUtils::RemoveAlias(col.GetType());
@@ -22,7 +22,7 @@ PostgresTableEntry::PostgresTableEntry(Catalog &catalog, SchemaCatalogEntry &sch
 
 PostgresTableEntry::PostgresTableEntry(Catalog &catalog, SchemaCatalogEntry &schema, PostgresTableInfo &info)
     : TableCatalogEntry(catalog, schema, *info.create_info), postgres_types(std::move(info.postgres_types)),
-	postgres_names(std::move(info.postgres_names)) {
+      postgres_names(std::move(info.postgres_names)) {
 	D_ASSERT(postgres_types.size() == columns.LogicalColumnCount());
 	approx_num_pages = info.approx_num_pages;
 }
@@ -43,9 +43,8 @@ TableFunction PostgresTableEntry::GetScanFunction(ClientContext &context, unique
 	result->schema_name = schema.name;
 	result->table_name = name;
 	result->dsn = transaction.GetDSN();
-	result->SetConnection(transaction.GetConnection().GetConnection());
 	result->SetCatalog(pg_catalog);
-	for(auto &col : columns.Logical()) {
+	for (auto &col : columns.Logical()) {
 		result->types.push_back(col.GetType());
 	}
 	result->names = postgres_names;
@@ -75,7 +74,7 @@ static bool CopyRequiresText(const LogicalType &type, const PostgresType &pg_typ
 	if (pg_type.info != PostgresTypeAnnotation::STANDARD) {
 		return true;
 	}
-	switch(type.id()) {
+	switch (type.id()) {
 	case LogicalTypeId::LIST: {
 		D_ASSERT(pg_type.children.size() == 1);
 		auto &child_type = ListType::GetChildType(type);
@@ -90,7 +89,7 @@ static bool CopyRequiresText(const LogicalType &type, const PostgresType &pg_typ
 	case LogicalTypeId::STRUCT: {
 		auto &children = StructType::GetChildTypes(type);
 		D_ASSERT(children.size() == pg_type.children.size());
-		for(idx_t c = 0; c < pg_type.children.size(); c++) {
+		for (idx_t c = 0; c < pg_type.children.size(); c++) {
 			if (!PostgresUtils::SupportedPostgresOid(children[c].second)) {
 				return true;
 			}
@@ -113,7 +112,7 @@ PostgresCopyFormat PostgresTableEntry::GetCopyFormat(ClientContext &context) {
 		}
 	}
 	D_ASSERT(postgres_types.size() == columns.LogicalColumnCount());
-	for(idx_t c = 0; c < postgres_types.size(); c++) {
+	for (idx_t c = 0; c < postgres_types.size(); c++) {
 		if (CopyRequiresText(columns.GetColumn(LogicalIndex(c)).GetType(), postgres_types[c])) {
 			return PostgresCopyFormat::TEXT;
 		}

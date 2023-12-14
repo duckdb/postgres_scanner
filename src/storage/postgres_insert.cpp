@@ -15,7 +15,7 @@
 namespace duckdb {
 
 PostgresInsert::PostgresInsert(LogicalOperator &op, TableCatalogEntry &table,
-                           physical_index_vector_t<idx_t> column_index_map_p)
+                               physical_index_vector_t<idx_t> column_index_map_p)
     : PhysicalOperator(PhysicalOperatorType::EXTENSION, op.types, 1), table(&table), schema(nullptr),
       column_index_map(std::move(column_index_map_p)) {
 }
@@ -30,7 +30,8 @@ PostgresInsert::PostgresInsert(LogicalOperator &op, SchemaCatalogEntry &schema, 
 //===--------------------------------------------------------------------===//
 class PostgresInsertGlobalState : public GlobalSinkState {
 public:
-	explicit PostgresInsertGlobalState(ClientContext &context, PostgresTableEntry *table) : table(table), insert_count(0) {
+	explicit PostgresInsertGlobalState(ClientContext &context, PostgresTableEntry *table)
+	    : table(table), insert_count(0) {
 	}
 
 	PostgresTableEntry *table;
@@ -81,7 +82,7 @@ unique_ptr<GlobalSinkState> PostgresInsert::GetGlobalSinkState(ClientContext &co
 	auto format = insert_table->GetCopyFormat(context);
 	vector<string> insert_column_names;
 	if (!insert_columns.empty()) {
-		for(auto &str : insert_columns) {
+		for (auto &str : insert_columns) {
 			auto index = insert_table->GetColumnIndex(str, true);
 			if (!index.IsValid()) {
 				insert_column_names.push_back(str);
@@ -90,7 +91,8 @@ unique_ptr<GlobalSinkState> PostgresInsert::GetGlobalSinkState(ClientContext &co
 			}
 		}
 	}
-	connection.BeginCopyTo(context, result->copy_state, format, insert_table->schema.name, insert_table->name, insert_column_names);
+	connection.BeginCopyTo(context, result->copy_state, format, insert_table->schema.name, insert_table->name,
+	                       insert_column_names);
 	return std::move(result);
 }
 
@@ -110,7 +112,7 @@ SinkResultType PostgresInsert::Sink(ExecutionContext &context, DataChunk &chunk,
 // Finalize
 //===--------------------------------------------------------------------===//
 SinkFinalizeType PostgresInsert::Finalize(Pipeline &pipeline, Event &event, ClientContext &context,
-						  OperatorSinkFinalizeInput &input) const {
+                                          OperatorSinkFinalizeInput &input) const {
 	auto &gstate = sink_state->Cast<PostgresInsertGlobalState>();
 	auto &transaction = PostgresTransaction::Get(context, gstate.table->catalog);
 	auto &connection = transaction.GetConnection();
@@ -126,7 +128,8 @@ SinkFinalizeType PostgresInsert::Finalize(Pipeline &pipeline, Event &event, Clie
 //===--------------------------------------------------------------------===//
 // GetData
 //===--------------------------------------------------------------------===//
-SourceResultType PostgresInsert::GetData(ExecutionContext &context, DataChunk &chunk, OperatorSourceInput &input) const {
+SourceResultType PostgresInsert::GetData(ExecutionContext &context, DataChunk &chunk,
+                                         OperatorSourceInput &input) const {
 	auto &insert_gstate = sink_state->Cast<PostgresInsertGlobalState>();
 	chunk.SetCardinality(1);
 	chunk.SetValue(0, 0, Value::BIGINT(insert_gstate.insert_count));
@@ -176,8 +179,8 @@ unique_ptr<PhysicalOperator> AddCastToPostgresTypes(ClientContext &context, uniq
 			select_list.push_back(std::move(expr));
 		}
 		// we need to cast: add casts
-		auto proj =
-		    make_uniq<PhysicalProjection>(std::move(postgres_types), std::move(select_list), plan->estimated_cardinality);
+		auto proj = make_uniq<PhysicalProjection>(std::move(postgres_types), std::move(select_list),
+		                                          plan->estimated_cardinality);
 		proj->children.push_back(std::move(plan));
 		plan = std::move(proj);
 	}
@@ -188,21 +191,21 @@ unique_ptr<PhysicalOperator> AddCastToPostgresTypes(ClientContext &context, uniq
 void PostgresCatalog::MaterializePostgresScans(PhysicalOperator &op) {
 	if (op.type == PhysicalOperatorType::TABLE_SCAN) {
 		auto &table_scan = op.Cast<PhysicalTableScan>();
-		if (table_scan.function.name == "postgres_scan" || table_scan.function.name == "postgres_scan_pushdown"
-		    || table_scan.function.name == "postgres_query") {
+		if (table_scan.function.name == "postgres_scan" || table_scan.function.name == "postgres_scan_pushdown" ||
+		    table_scan.function.name == "postgres_query") {
 			auto &bind_data = table_scan.bind_data->Cast<PostgresBindData>();
 			bind_data.requires_materialization = true;
 			bind_data.max_threads = 1;
 			bind_data.emit_ctid = true;
 		}
 	}
-	for(auto &child : op.children) {
+	for (auto &child : op.children) {
 		MaterializePostgresScans(*child);
 	}
 }
 
 unique_ptr<PhysicalOperator> PostgresCatalog::PlanInsert(ClientContext &context, LogicalInsert &op,
-                                                       unique_ptr<PhysicalOperator> plan) {
+                                                         unique_ptr<PhysicalOperator> plan) {
 	if (op.return_chunk) {
 		throw BinderException("RETURNING clause not yet supported for insertion into Postgres table");
 	}
@@ -219,7 +222,7 @@ unique_ptr<PhysicalOperator> PostgresCatalog::PlanInsert(ClientContext &context,
 }
 
 unique_ptr<PhysicalOperator> PostgresCatalog::PlanCreateTableAs(ClientContext &context, LogicalCreateTable &op,
-                                                              unique_ptr<PhysicalOperator> plan) {
+                                                                unique_ptr<PhysicalOperator> plan) {
 	plan = AddCastToPostgresTypes(context, std::move(plan));
 
 	auto insert = make_uniq<PostgresInsert>(op, op.schema, std::move(op.info));

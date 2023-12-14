@@ -14,11 +14,11 @@ struct PGTypeInfo {
 	string name;
 };
 
-PostgresTypeSet::PostgresTypeSet(PostgresSchemaEntry &schema,
-							 unique_ptr<PostgresResultSlice> enum_result_p,
-							 unique_ptr<PostgresResultSlice> composite_type_result_p) :
-    PostgresCatalogSet(schema.ParentCatalog()), schema(schema), enum_result(std::move(enum_result_p)),
-	composite_type_result(std::move(composite_type_result_p)) {}
+PostgresTypeSet::PostgresTypeSet(PostgresSchemaEntry &schema, unique_ptr<PostgresResultSlice> enum_result_p,
+                                 unique_ptr<PostgresResultSlice> composite_type_result_p)
+    : PostgresCatalogSet(schema.ParentCatalog()), schema(schema), enum_result(std::move(enum_result_p)),
+      composite_type_result(std::move(composite_type_result_p)) {
+}
 
 string PostgresTypeSet::GetInitializeEnumsQuery() {
 	return R"(
@@ -38,7 +38,7 @@ void PostgresTypeSet::CreateEnum(PostgresResult &result, idx_t start_row, idx_t 
 	// construct the enum
 	idx_t enum_count = end_row - start_row;
 	Vector duckdb_levels(LogicalType::VARCHAR, enum_count);
-	for(idx_t enum_idx = 0; enum_idx < enum_count; enum_idx++) {
+	for (idx_t enum_idx = 0; enum_idx < enum_count; enum_idx++) {
 		duckdb_levels.SetValue(enum_idx, result.GetString(start_row + enum_idx, 3));
 	}
 	info.type = LogicalType::ENUM(duckdb_levels, enum_count);
@@ -81,7 +81,8 @@ ORDER BY n.oid, t.oid, attrelid, attnum;
 )";
 }
 
-void PostgresTypeSet::CreateCompositeType(PostgresTransaction &transaction, PostgresResult &result, idx_t start_row, idx_t end_row) {
+void PostgresTypeSet::CreateCompositeType(PostgresTransaction &transaction, PostgresResult &result, idx_t start_row,
+                                          idx_t end_row) {
 	PostgresType postgres_type;
 	CreateTypeInfo info;
 	postgres_type.oid = result.GetInt64(start_row, 1);
@@ -93,7 +94,8 @@ void PostgresTypeSet::CreateCompositeType(PostgresTransaction &transaction, Post
 		PostgresTypeData type_data;
 		type_data.type_name = result.GetString(row, 4);
 		PostgresType child_type;
-		child_types.push_back(make_pair(type_name, PostgresUtils::TypeToLogicalType(&transaction, &schema, type_data, child_type)));
+		child_types.push_back(
+		    make_pair(type_name, PostgresUtils::TypeToLogicalType(&transaction, &schema, type_data, child_type)));
 		postgres_type.children.push_back(std::move(child_type));
 	}
 	info.type = LogicalType::STRUCT(std::move(child_types));
@@ -141,7 +143,7 @@ string GetCreateTypeSQL(CreateTypeInfo &info) {
 	case LogicalTypeId::ENUM: {
 		sql += "ENUM(";
 		auto enum_size = EnumType::GetSize(info.type);
-		for(idx_t i = 0; i < enum_size; i++) {
+		for (idx_t i = 0; i < enum_size; i++) {
 			if (i > 0) {
 				sql += ", ";
 			}
@@ -154,7 +156,7 @@ string GetCreateTypeSQL(CreateTypeInfo &info) {
 	case LogicalTypeId::STRUCT: {
 		auto child_count = StructType::GetChildCount(info.type);
 		sql += "(";
-		for(idx_t c = 0; c < child_count; c++) {
+		for (idx_t c = 0; c < child_count; c++) {
 			if (c > 0) {
 				sql += ", ";
 			}
@@ -183,5 +185,4 @@ optional_ptr<CatalogEntry> PostgresTypeSet::CreateType(ClientContext &context, C
 	return CreateEntry(std::move(type_entry));
 }
 
-
-}
+} // namespace duckdb

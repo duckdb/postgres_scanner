@@ -68,7 +68,6 @@ string GetUpdateSQL(const string &name, PostgresTableEntry &table, const vector<
 	return result;
 }
 
-
 unique_ptr<GlobalSinkState> PostgresUpdate::GetGlobalSinkState(ClientContext &context) const {
 	auto &postgres_table = table.Cast<PostgresTableEntry>();
 
@@ -92,7 +91,8 @@ unique_ptr<GlobalSinkState> PostgresUpdate::GetGlobalSinkState(ClientContext &co
 	// begin the COPY TO
 	string schema_name;
 	vector<string> column_names;
-	connection.BeginCopyTo(context, result->copy_state, PostgresCopyFormat::TEXT, schema_name, table_name, column_names);
+	connection.BeginCopyTo(context, result->copy_state, PostgresCopyFormat::TEXT, schema_name, table_name,
+	                       column_names);
 	return std::move(result);
 }
 
@@ -104,7 +104,7 @@ SinkResultType PostgresUpdate::Sink(ExecutionContext &context, DataChunk &chunk,
 
 	chunk.Flatten();
 	// reference the data columns directly
-	for(idx_t c = 0; c < columns.size(); c++) {
+	for (idx_t c = 0; c < columns.size(); c++) {
 		gstate.insert_chunk.data[c].Reference(chunk.data[c]);
 	}
 	// convert our row ids back into ctids
@@ -139,7 +139,7 @@ SinkResultType PostgresUpdate::Sink(ExecutionContext &context, DataChunk &chunk,
 // Finalize
 //===--------------------------------------------------------------------===//
 SinkFinalizeType PostgresUpdate::Finalize(Pipeline &pipeline, Event &event, ClientContext &context,
-						  OperatorSinkFinalizeInput &input) const {
+                                          OperatorSinkFinalizeInput &input) const {
 	auto &gstate = input.global_state.Cast<PostgresUpdateGlobalState>();
 	auto &transaction = PostgresTransaction::Get(context, gstate.table.catalog);
 	auto &connection = transaction.GetConnection();
@@ -153,7 +153,8 @@ SinkFinalizeType PostgresUpdate::Finalize(Pipeline &pipeline, Event &event, Clie
 //===--------------------------------------------------------------------===//
 // GetData
 //===--------------------------------------------------------------------===//
-SourceResultType PostgresUpdate::GetData(ExecutionContext &context, DataChunk &chunk, OperatorSourceInput &input) const {
+SourceResultType PostgresUpdate::GetData(ExecutionContext &context, DataChunk &chunk,
+                                         OperatorSourceInput &input) const {
 	auto &insert_gstate = sink_state->Cast<PostgresUpdateGlobalState>();
 	chunk.SetCardinality(1);
 	chunk.SetValue(0, 0, Value::BIGINT(insert_gstate.update_count));
@@ -176,7 +177,7 @@ string PostgresUpdate::ParamsToString() const {
 // Plan
 //===--------------------------------------------------------------------===//
 unique_ptr<PhysicalOperator> PostgresCatalog::PlanUpdate(ClientContext &context, LogicalUpdate &op,
-                                                       unique_ptr<PhysicalOperator> plan) {
+                                                         unique_ptr<PhysicalOperator> plan) {
 	if (op.return_chunk) {
 		throw BinderException("RETURNING clause not yet supported for updates of a Postgres table");
 	}

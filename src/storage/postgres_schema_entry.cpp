@@ -13,20 +13,16 @@
 
 namespace duckdb {
 
-PostgresSchemaEntry::PostgresSchemaEntry(Catalog &catalog, string name) :
-    SchemaCatalogEntry(catalog, std::move(name), true), tables(*this), indexes(*this),
-	types(*this) {
+PostgresSchemaEntry::PostgresSchemaEntry(Catalog &catalog, string name)
+    : SchemaCatalogEntry(catalog, std::move(name), true), tables(*this), indexes(*this), types(*this) {
 }
 
-PostgresSchemaEntry::PostgresSchemaEntry(Catalog &catalog, string name,
-						unique_ptr<PostgresResultSlice> tables,
-	                    unique_ptr<PostgresResultSlice> enums,
-						unique_ptr<PostgresResultSlice> composite_types,
-						unique_ptr<PostgresResultSlice> indexes) :
-    SchemaCatalogEntry(catalog, std::move(name), true),
-	tables(*this, std::move(tables)),
-	indexes(*this, std::move(indexes)),
-	types(*this, std::move(enums), std::move(composite_types)) {
+PostgresSchemaEntry::PostgresSchemaEntry(Catalog &catalog, string name, unique_ptr<PostgresResultSlice> tables,
+                                         unique_ptr<PostgresResultSlice> enums,
+                                         unique_ptr<PostgresResultSlice> composite_types,
+                                         unique_ptr<PostgresResultSlice> indexes)
+    : SchemaCatalogEntry(catalog, std::move(name), true), tables(*this, std::move(tables)),
+      indexes(*this, std::move(indexes)), types(*this, std::move(enums), std::move(composite_types)) {
 }
 
 PostgresTransaction &GetPostgresTransaction(CatalogTransaction transaction) {
@@ -45,7 +41,8 @@ void PostgresSchemaEntry::TryDropEntry(ClientContext &context, CatalogType catal
 	DropEntry(context, info);
 }
 
-optional_ptr<CatalogEntry> PostgresSchemaEntry::CreateTable(CatalogTransaction transaction, BoundCreateTableInfo &info) {
+optional_ptr<CatalogEntry> PostgresSchemaEntry::CreateTable(CatalogTransaction transaction,
+                                                            BoundCreateTableInfo &info) {
 	auto &postgres_transaction = GetPostgresTransaction(transaction);
 	auto &base_info = info.Base();
 	auto table_name = base_info.table;
@@ -56,12 +53,13 @@ optional_ptr<CatalogEntry> PostgresSchemaEntry::CreateTable(CatalogTransaction t
 	return tables.CreateTable(transaction.GetContext(), info);
 }
 
-optional_ptr<CatalogEntry> PostgresSchemaEntry::CreateFunction(CatalogTransaction transaction, CreateFunctionInfo &info) {
+optional_ptr<CatalogEntry> PostgresSchemaEntry::CreateFunction(CatalogTransaction transaction,
+                                                               CreateFunctionInfo &info) {
 	throw BinderException("Postgres databases do not support creating functions");
 }
 
 optional_ptr<CatalogEntry> PostgresSchemaEntry::CreateIndex(ClientContext &context, CreateIndexInfo &info,
-                                                          TableCatalogEntry &table) {
+                                                            TableCatalogEntry &table) {
 	return indexes.CreateIndex(context, info, table);
 }
 
@@ -116,27 +114,28 @@ optional_ptr<CatalogEntry> PostgresSchemaEntry::CreateType(CatalogTransaction tr
 	return types.CreateType(transaction.GetContext(), info);
 }
 
-optional_ptr<CatalogEntry> PostgresSchemaEntry::CreateSequence(CatalogTransaction transaction, CreateSequenceInfo &info) {
+optional_ptr<CatalogEntry> PostgresSchemaEntry::CreateSequence(CatalogTransaction transaction,
+                                                               CreateSequenceInfo &info) {
 	throw BinderException("Postgres databases do not support creating sequences");
 }
 
 optional_ptr<CatalogEntry> PostgresSchemaEntry::CreateTableFunction(CatalogTransaction transaction,
-                                                                  CreateTableFunctionInfo &info) {
+                                                                    CreateTableFunctionInfo &info) {
 	throw BinderException("Postgres databases do not support creating table functions");
 }
 
 optional_ptr<CatalogEntry> PostgresSchemaEntry::CreateCopyFunction(CatalogTransaction transaction,
-                                                                 CreateCopyFunctionInfo &info) {
+                                                                   CreateCopyFunctionInfo &info) {
 	throw BinderException("Postgres databases do not support creating copy functions");
 }
 
 optional_ptr<CatalogEntry> PostgresSchemaEntry::CreatePragmaFunction(CatalogTransaction transaction,
-                                                                   CreatePragmaFunctionInfo &info) {
+                                                                     CreatePragmaFunctionInfo &info) {
 	throw BinderException("Postgres databases do not support creating pragma functions");
 }
 
 optional_ptr<CatalogEntry> PostgresSchemaEntry::CreateCollation(CatalogTransaction transaction,
-                                                              CreateCollationInfo &info) {
+                                                                CreateCollationInfo &info) {
 	throw BinderException("Postgres databases do not support creating collations");
 }
 
@@ -161,7 +160,7 @@ bool CatalogTypeIsSupported(CatalogType type) {
 }
 
 void PostgresSchemaEntry::Scan(ClientContext &context, CatalogType type,
-                             const std::function<void(CatalogEntry &)> &callback) {
+                               const std::function<void(CatalogEntry &)> &callback) {
 	if (!CatalogTypeIsSupported(type)) {
 		return;
 	}
@@ -176,7 +175,7 @@ void PostgresSchemaEntry::DropEntry(ClientContext &context, DropInfo &info) {
 }
 
 optional_ptr<CatalogEntry> PostgresSchemaEntry::GetEntry(CatalogTransaction transaction, CatalogType type,
-                                                       const string &name) {
+                                                         const string &name) {
 	if (!CatalogTypeIsSupported(type)) {
 		return nullptr;
 	}

@@ -10,7 +10,7 @@
 namespace duckdb {
 
 static unique_ptr<FunctionData> PGQueryBind(ClientContext &context, TableFunctionBindInput &input,
-                                           vector<LogicalType> &return_types, vector<string> &names) {
+                                            vector<LogicalType> &return_types, vector<string> &names) {
 	auto result = make_uniq<PostgresBindData>();
 
 	// look up the database to query
@@ -48,9 +48,11 @@ static unique_ptr<FunctionData> PGQueryBind(ClientContext &context, TableFunctio
 	}
 	auto nfields = PQnfields(describe_prepared);
 	if (nfields <= 0) {
-		throw BinderException("No fields returned by query \"%s\" - the query must be a SELECT statement that returns at least one column", sql);
+		throw BinderException("No fields returned by query \"%s\" - the query must be a SELECT statement that returns "
+		                      "at least one column",
+		                      sql);
 	}
-	for(idx_t c = 0; c < nfields; c++) {
+	for (idx_t c = 0; c < nfields; c++) {
 		PostgresType postgres_type;
 		postgres_type.oid = PQftype(describe_prepared, c);
 		PostgresTypeData type_data;
@@ -63,24 +65,22 @@ static unique_ptr<FunctionData> PGQueryBind(ClientContext &context, TableFunctio
 	}
 
 	// set up the bind data
+	result->SetCatalog(pg_catalog);
 	result->dsn = con.GetDSN();
-	result->SetConnection(con.GetConnection());
 	result->types = return_types;
 	result->names = names;
 	result->read_only = false;
-	result->snapshot = string();
 	result->SetTablePages(0);
 	result->sql = std::move(sql);
 	return std::move(result);
 }
 
 PostgresQueryFunction::PostgresQueryFunction()
-	: TableFunction("postgres_query", {LogicalType::VARCHAR, LogicalType::VARCHAR},
-					nullptr, PGQueryBind) {
+    : TableFunction("postgres_query", {LogicalType::VARCHAR, LogicalType::VARCHAR}, nullptr, PGQueryBind) {
 	PostgresScanFunction scan_function;
 	init_global = scan_function.init_global;
 	init_local = scan_function.init_local;
 	function = scan_function.function;
 	projection_pushdown = true;
 }
-}
+} // namespace duckdb

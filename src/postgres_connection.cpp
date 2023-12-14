@@ -38,7 +38,7 @@ static bool ResultHasError(PGresult *result) {
 	if (!result) {
 		return true;
 	}
-	switch(PQresultStatus(result)) {
+	switch (PQresultStatus(result)) {
 	case PGRES_COMMAND_OK:
 	case PGRES_TUPLES_OK:
 		return false;
@@ -54,12 +54,12 @@ PGresult *PostgresConnection::PQExecute(const string &query) {
 	return PQexec(GetConn(), query.c_str());
 }
 
-
 unique_ptr<PostgresResult> PostgresConnection::TryQuery(const string &query, optional_ptr<string> error_message) {
 	auto result = PQExecute(query.c_str());
 	if (ResultHasError(result)) {
 		if (error_message) {
-			*error_message = StringUtil::Format("Failed to execute query \"" + query + "\": " + string(PQresultErrorMessage(result)));
+			*error_message = StringUtil::Format("Failed to execute query \"" + query +
+			                                    "\": " + string(PQresultErrorMessage(result)));
 		}
 		return nullptr;
 	}
@@ -88,13 +88,14 @@ vector<unique_ptr<PostgresResult>> PostgresConnection::ExecuteQueries(const stri
 		throw std::runtime_error("Failed to execute query \"" + queries + "\": " + string(PQerrorMessage(GetConn())));
 	}
 	vector<unique_ptr<PostgresResult>> results;
-	while(true) {
+	while (true) {
 		auto res = PQgetResult(GetConn());
 		if (!res) {
 			break;
 		}
 		if (ResultHasError(res)) {
-			throw std::runtime_error("Failed to execute query \"" + queries + "\": " + string(PQresultErrorMessage(res)));
+			throw std::runtime_error("Failed to execute query \"" + queries +
+			                         "\": " + string(PQresultErrorMessage(res)));
 		}
 		if (PQresultStatus(res) != PGRES_TUPLES_OK) {
 			continue;
@@ -106,7 +107,8 @@ vector<unique_ptr<PostgresResult>> PostgresConnection::ExecuteQueries(const stri
 }
 
 PostgresVersion PostgresConnection::GetPostgresVersion() {
-	auto result = Query("SELECT CURRENT_SETTING('server_version'), (SELECT COUNT(*) FROM pg_settings WHERE name LIKE 'rds%')");
+	auto result =
+	    Query("SELECT CURRENT_SETTING('server_version'), (SELECT COUNT(*) FROM pg_settings WHERE name LIKE 'rds%')");
 	auto version = PostgresUtils::ExtractPostgresVersion(result->GetString(0, 0));
 	if (result->GetInt64(0, 1) > 0) {
 		version.type_v = PostgresInstanceType::AURORA;

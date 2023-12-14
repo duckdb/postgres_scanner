@@ -346,19 +346,16 @@ static unique_ptr<LocalTableFunctionState> GetLocalState(ClientContext &context,
 	local_state->column_ids = input.column_ids;
 
 	local_state->filters = input.filters.get();
+	if (!gstate.TryOpenNewConnection(context, *local_state, bind_data)) {
+		// if the connection pool is exhausted we bail-out
+		local_state->no_connection = true;
+		return std::move(local_state);
+	}
 	if (bind_data.pages_approx == 0 || bind_data.requires_materialization) {
 		PostgresInitInternal(context, &bind_data, *local_state, 0, POSTGRES_TID_MAX);
 		gstate.page_idx = POSTGRES_TID_MAX;
 	} else if (!PostgresParallelStateNext(context, input.bind_data.get(), *local_state, gstate)) {
 		local_state->done = true;
-	}
-	if (local_state->done) {
-		return std::move(local_state);
-	}
-	if (!gstate.TryOpenNewConnection(context, *local_state, bind_data)) {
-		// if the connection pool is exhausted we bail-out
-		local_state->no_connection = true;
-		return std::move(local_state);
 	}
 	return std::move(local_state);
 }

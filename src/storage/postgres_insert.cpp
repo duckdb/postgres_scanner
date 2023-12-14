@@ -225,6 +225,8 @@ unique_ptr<PhysicalOperator> PostgresCatalog::PlanCreateTableAs(ClientContext &c
                                                                 unique_ptr<PhysicalOperator> plan) {
 	plan = AddCastToPostgresTypes(context, std::move(plan));
 
+	MaterializePostgresScans(*plan);
+
 	auto insert = make_uniq<PostgresInsert>(op, op.schema, std::move(op.info));
 	insert->children.push_back(std::move(plan));
 	return std::move(insert);

@@ -99,7 +99,6 @@ static void PostgresGetSnapshot(PostgresVersion version, const PostgresBindData 
 
 void PostgresScanFunction::PrepareBind(PostgresVersion version, ClientContext &context, PostgresBindData &bind_data,
                                        idx_t approx_num_pages) {
-	bind_data.version = version;
 	Value pages_per_task;
 	if (context.TryGetCurrentSetting("pg_pages_per_task", pages_per_task)) {
 		bind_data.pages_per_task = UBigIntValue::Get(pages_per_task);
@@ -108,6 +107,7 @@ void PostgresScanFunction::PrepareBind(PostgresVersion version, ClientContext &c
 		}
 	}
 	bind_data.SetTablePages(approx_num_pages);
+	bind_data.version = version;
 }
 
 void PostgresBindData::SetTablePages(idx_t approx_num_pages) {
@@ -311,8 +311,13 @@ static void PostgresScanConnect(PostgresConnection &conn, string snapshot) {
 	}
 }
 
+<<<<<<< HEAD
 bool PostgresGlobalState::TryOpenNewConnection(ClientContext &context, PostgresLocalState &lstate,
                                                const PostgresBindData &bind_data) {
+=======
+bool PostgresBindData::TryOpenNewConnection(ClientContext &context, PostgresLocalState &lstate,
+                                            PostgresGlobalState &gstate) {
+>>>>>>> main
 	{
 		lock_guard<mutex> parallel_lock(lock);
 		if (!used_main_thread) {

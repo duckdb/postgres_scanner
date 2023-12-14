@@ -311,13 +311,8 @@ static void PostgresScanConnect(PostgresConnection &conn, string snapshot) {
 	}
 }
 
-<<<<<<< HEAD
 bool PostgresGlobalState::TryOpenNewConnection(ClientContext &context, PostgresLocalState &lstate,
                                                const PostgresBindData &bind_data) {
-=======
-bool PostgresBindData::TryOpenNewConnection(ClientContext &context, PostgresLocalState &lstate,
-                                            PostgresGlobalState &gstate) {
->>>>>>> main
 	{
 		lock_guard<mutex> parallel_lock(lock);
 		if (!used_main_thread) {

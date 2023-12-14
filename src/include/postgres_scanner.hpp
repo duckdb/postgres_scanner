@@ -22,6 +22,7 @@ class PostgresTransaction;
 struct PostgresBindData : public FunctionData {
 	static constexpr const idx_t DEFAULT_PAGES_PER_TASK = 1000;
 
+	PostgresVersion version;
 	string schema_name;
 	string table_name;
 	string sql;
@@ -34,7 +35,6 @@ struct PostgresBindData : public FunctionData {
 	idx_t pages_per_task = DEFAULT_PAGES_PER_TASK;
 	string dsn;
 
-	string snapshot;
 	bool requires_materialization = false;
 	bool read_only = true;
 	bool emit_ctid = false;
@@ -43,12 +43,10 @@ struct PostgresBindData : public FunctionData {
 public:
 	void SetTablePages(idx_t approx_num_pages);
 
-	PostgresConnection &GetConnection();
-	void SetConnection(PostgresConnection connection);
-	void SetConnection(shared_ptr<OwnedPostgresConnection> connection);
 	void SetCatalog(PostgresCatalog &catalog);
-
-	bool TryOpenNewConnection(ClientContext &context, PostgresLocalState &lstate, PostgresGlobalState &gstate);
+	optional_ptr<PostgresCatalog> GetCatalog() const {
+		return pg_catalog;
+	}
 
 	unique_ptr<FunctionData> Copy() const override {
 		throw NotImplementedException("");
@@ -58,7 +56,6 @@ public:
 	}
 
 private:
-	PostgresConnection connection;
 	optional_ptr<PostgresCatalog> pg_catalog;
 };
 

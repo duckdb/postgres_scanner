@@ -65,12 +65,11 @@ static unique_ptr<FunctionData> PGQueryBind(ClientContext &context, TableFunctio
 	}
 
 	// set up the bind data
+	result->SetCatalog(pg_catalog);
 	result->dsn = con.GetDSN();
-	result->SetConnection(con.GetConnection());
 	result->types = return_types;
 	result->names = names;
 	result->read_only = false;
-	result->snapshot = string();
 	result->SetTablePages(0);
 	result->sql = std::move(sql);
 	return std::move(result);

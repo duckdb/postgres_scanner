@@ -1,0 +1,22 @@
+# name: test/sql/storage/attach_verify_big_table.test_slow
+# description: Test verifying a query with a large generated table
+# group: [storage]
+
+require postgres_scanner
+
+require-env POSTGRES_TEST_DATABASE_AVAILABLE
+
+statement ok
+ATTACH 'dbname=postgresscanner' AS s1 (TYPE POSTGRES)
+
+statement ok
+PRAGMA enable_verification
+
+loop i 0 10
+
+query II
+SELECT COUNT(*), SUM(generate_series) FROM s1.big_generated_table
+----
+1000000	499999500000
+
+endloop

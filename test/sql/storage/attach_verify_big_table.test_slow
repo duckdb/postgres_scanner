@@ -1,0 +1,22 @@
+# name: test/sql/storage/attach_big_generated_table.test
+# description: Test verifying a query with a large generated table
+# group: [storage]
+
+require postgres_scanner
+
+require-env POSTGRES_TEST_DATABASE_AVAILABLE
+
+statement ok
+ATTACH 'dbname=postgres' AS s1 (TYPE POSTGRES)
+
+statement ok
+PRAGMA enable_verification
+
+loop i 0 10
+
+query II
+SELECT COUNT(*), SUM(generate_series) FROM s1.t_random
+----
+1000001	500000500000
+
+endloop

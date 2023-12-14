@@ -212,3 +212,5 @@ insert into public_amounts values
    (18, 0.0000000000000000067),
    (19, 0.00000000000000000067),
    (20, 0.000000000000000000067);
+
+CREATE TABLE big_generated_table AS SELECT * FROM generate_series(0,999999);

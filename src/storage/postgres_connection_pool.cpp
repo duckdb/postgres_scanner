@@ -82,7 +82,6 @@ void PostgresConnectionPool::ReturnConnection(PostgresConnection connection) {
 		// immediately
 		return;
 	}
-	return;
 	// check if the underlying connection is still usable
 	auto pg_con = connection.GetConn();
 	if (PQstatus(connection.GetConn()) != CONNECTION_OK) {

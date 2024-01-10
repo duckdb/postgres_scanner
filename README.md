@@ -209,6 +209,13 @@ The extension exposes the following configuration parameters.
 
 ## Building & Loading the Extension
 
+The DuckDB submodule must be initialized prior to building.
+
+```bash
+git submodule init
+git pull --recurse-submodules
+```
+
 To build, type 
 ```
 make

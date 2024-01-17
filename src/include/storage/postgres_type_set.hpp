@@ -29,6 +29,10 @@ public:
 	static string GetInitializeCompositesQuery();
 
 protected:
+	bool HasInternalDependencies() const override {
+		// composite types can refer to other types
+		return true;
+	}
 	void LoadEntries(ClientContext &context) override;
 
 	void CreateEnum(PostgresResult &result, idx_t start_row, idx_t end_row);

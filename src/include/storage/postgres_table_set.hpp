@@ -28,7 +28,7 @@ public:
 	                                                  const string &table_name);
 	static unique_ptr<PostgresTableInfo> GetTableInfo(PostgresConnection &connection, const string &schema_name,
 	                                                  const string &table_name);
-	optional_ptr<CatalogEntry> RefreshTable(ClientContext &context, const string &table_name);
+	optional_ptr<CatalogEntry> ReloadEntry(ClientContext &context, const string &table_name) override;
 
 	void AlterTable(ClientContext &context, AlterTableInfo &info);
 
@@ -36,6 +36,9 @@ public:
 
 protected:
 	void LoadEntries(ClientContext &context) override;
+	bool SupportReload() const override {
+		return true;
+	}
 
 	void AlterTable(ClientContext &context, RenameTableInfo &info);
 	void AlterTable(ClientContext &context, RenameColumnInfo &info);
@@ -45,8 +48,7 @@ protected:
 	static void AddColumn(optional_ptr<PostgresTransaction> transaction, optional_ptr<PostgresSchemaEntry> schema,
 	                      PostgresResult &result, idx_t row, PostgresTableInfo &table_info, idx_t column_offset = 0);
 
-	void CreateEntries(PostgresTransaction &transaction, PostgresResult &result, idx_t start, idx_t end,
-	                   idx_t col_offset);
+	void CreateEntries(PostgresTransaction &transaction, PostgresResult &result, idx_t start, idx_t end);
 
 protected:
 	PostgresSchemaEntry &schema;

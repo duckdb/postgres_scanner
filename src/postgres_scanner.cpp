@@ -239,6 +239,13 @@ static idx_t PostgresMaxThreads(ClientContext &context, const FunctionData *bind
 static unique_ptr<LocalTableFunctionState> GetLocalState(ClientContext &context, TableFunctionInitInput &input,
                                                          PostgresGlobalState &gstate);
 
+static void PostgresScanConnect(PostgresConnection &conn, string snapshot) {
+	conn.Execute("BEGIN TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY");
+	if (!snapshot.empty()) {
+		conn.Query(StringUtil::Format("SET TRANSACTION SNAPSHOT '%s'", snapshot));
+	}
+}
+
 static unique_ptr<GlobalTableFunctionState> PostgresInitGlobalState(ClientContext &context,
                                                                     TableFunctionInitInput &input) {
 	auto &bind_data = input.bind_data->Cast<PostgresBindData>();
@@ -249,7 +256,9 @@ static unique_ptr<GlobalTableFunctionState> PostgresInitGlobalState(ClientContex
 		auto &con = transaction.GetConnection();
 		result->SetConnection(con.GetConnection());
 	} else {
-		result->SetConnection(PostgresConnection::Open(bind_data.dsn));
+		auto con = PostgresConnection::Open(bind_data.dsn);
+		PostgresScanConnect(con, string());
+		result->SetConnection(std::move(con));
 	}
 	if (bind_data.requires_materialization) {
 		// if requires_materialization is enabled we scan and materialize the table in its entirety up-front
@@ -302,13 +311,6 @@ static bool PostgresParallelStateNext(ClientContext &context, const FunctionData
 	}
 	lstate.done = true;
 	return false;
-}
-
-static void PostgresScanConnect(PostgresConnection &conn, string snapshot) {
-	conn.Execute("BEGIN TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY");
-	if (!snapshot.empty()) {
-		conn.Query(StringUtil::Format("SET TRANSACTION SNAPSHOT '%s'", snapshot));
-	}
 }
 
 bool PostgresGlobalState::TryOpenNewConnection(ClientContext &context, PostgresLocalState &lstate,

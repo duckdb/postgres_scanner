@@ -8,6 +8,17 @@ namespace duckdb {
 
 static bool debug_postgres_print_queries = false;
 
+OwnedPostgresConnection::OwnedPostgresConnection(PGconn *conn) : connection(conn) {
+}
+
+OwnedPostgresConnection::~OwnedPostgresConnection() {
+	if (!connection) {
+		return;
+	}
+	PQfinish(connection);
+	connection = nullptr;
+}
+
 PostgresConnection::PostgresConnection(shared_ptr<OwnedPostgresConnection> connection_p)
     : connection(std::move(connection_p)) {
 }

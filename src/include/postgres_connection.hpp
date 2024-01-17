@@ -22,15 +22,8 @@ class PostgresResult;
 struct IndexInfo;
 
 struct OwnedPostgresConnection {
-	explicit OwnedPostgresConnection(PGconn *conn = nullptr) : connection(conn) {
-	}
-	~OwnedPostgresConnection() {
-		if (!connection) {
-			return;
-		}
-		PQfinish(connection);
-		connection = nullptr;
-	}
+	explicit OwnedPostgresConnection(PGconn *conn = nullptr);
+	~OwnedPostgresConnection();
 
 	PGconn *connection;
 };

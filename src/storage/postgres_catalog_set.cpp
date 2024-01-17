@@ -7,28 +7,54 @@ PostgresCatalogSet::PostgresCatalogSet(Catalog &catalog) : catalog(catalog), is_
 }
 
 optional_ptr<CatalogEntry> PostgresCatalogSet::GetEntry(ClientContext &context, const string &name) {
-	if (!is_loaded) {
-		is_loaded = true;
-		LoadEntries(context);
+	TryLoadEntries(context);
+	{
+		lock_guard<mutex> l(entry_lock);
+		auto entry = entries.find(name);
+		if (entry != entries.end()) {
+			// entry found
+			return entry->second.get();
+		}
 	}
-	lock_guard<mutex> l(entry_lock);
-	auto entry = entries.find(name);
+	// entry not found
+	if (SupportReload()) {
+		// try loading entries again - maybe there has been a change remotely
+		auto entry = ReloadEntry(context, name);
+		if (entry) {
+			return entry;
+		}
+	}
+	// check the case insensitive map if there are any entries
+	auto name_entry = entry_map.find(name);
+	if (name_entry == entry_map.end()) {
+		// no entry found
+		return nullptr;
+	}
+	// try again with the entry we found in the case insensitive map
+	auto entry = entries.find(name_entry->second);
 	if (entry == entries.end()) {
-		// entry not found
-		// check the case insensitive map if there are any entries
-		auto name_entry = entry_map.find(name);
-		if (name_entry == entry_map.end()) {
-			// no entry found
-			return nullptr;
-		}
-		// try again with the entry we found in the case insensitive map
-		entry = entries.find(name_entry->second);
-		if (entry == entries.end()) {
-			// still not found
-			return nullptr;
-		}
+		// still not found
+		return nullptr;
 	}
 	return entry->second.get();
+}
+
+void PostgresCatalogSet::TryLoadEntries(ClientContext &context) {
+	if (HasInternalDependencies()) {
+		if (is_loaded) {
+			return;
+		}
+	}
+	lock_guard<mutex> lock(load_lock);
+	if (is_loaded) {
+		return;
+	}
+	is_loaded = true;
+	LoadEntries(context);
+}
+
+optional_ptr<CatalogEntry> PostgresCatalogSet::ReloadEntry(ClientContext &context, const string &name) {
+	throw InternalException("PostgresCatalogSet does not support ReloadEntry");
 }
 
 void PostgresCatalogSet::DropEntry(ClientContext &context, DropInfo &info) {
@@ -50,10 +76,7 @@ void PostgresCatalogSet::DropEntry(ClientContext &context, DropInfo &info) {
 }
 
 void PostgresCatalogSet::Scan(ClientContext &context, const std::function<void(CatalogEntry &)> &callback) {
-	if (!is_loaded) {
-		is_loaded = true;
-		LoadEntries(context);
-	}
+	TryLoadEntries(context);
 	lock_guard<mutex> l(entry_lock);
 	for (auto &entry : entries) {
 		callback(*entry.second);

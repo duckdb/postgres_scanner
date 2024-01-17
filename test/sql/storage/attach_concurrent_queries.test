@@ -9,8 +9,13 @@ require-env POSTGRES_TEST_DATABASE_AVAILABLE
 statement ok
 ATTACH 'dbname=postgresscanner' AS s (TYPE POSTGRES)
 
+# concurrent table creation
+concurrentloop i 0 10
+
 statement ok
 CREATE OR REPLACE TABLE s.concurrent(i INTEGER);
+
+endloop
 
 # just run a bunch of queries - these may or may not work but they at least should not crash
 concurrentloop i 0 10
@@ -28,3 +33,13 @@ query II
 SELECT SUM(i), COUNT(*) FROM s.concurrent
 ----
 900	100
+
+# query a non-existent table concurrently
+concurrentloop i 0 10
+
+statement error
+SELECT * FROM s.xxxxxxzzz
+----
+xxxxxxzzz
+
+endloop

@@ -58,14 +58,13 @@ void PostgresTableSet::AddColumn(optional_ptr<PostgresTransaction> transaction,
 	create_info.columns.AddColumn(std::move(column));
 }
 
-void PostgresTableSet::CreateEntries(PostgresTransaction &transaction, PostgresResult &result, idx_t start, idx_t end,
-                                     idx_t col_offset) {
+void PostgresTableSet::CreateEntries(PostgresTransaction &transaction, PostgresResult &result, idx_t start, idx_t end) {
 	vector<unique_ptr<PostgresTableInfo>> tables;
 	unique_ptr<PostgresTableInfo> info;
 
 	for (idx_t row = start; row < end; row++) {
-		auto table_name = result.GetString(row, col_offset);
-		auto approx_num_pages = result.GetInt64(row, col_offset + 1);
+		auto table_name = result.GetString(row, 1);
+		auto approx_num_pages = result.GetInt64(row, 2);
 		if (!info || info->GetTableName() != table_name) {
 			if (info) {
 				tables.push_back(std::move(info));
@@ -73,7 +72,7 @@ void PostgresTableSet::CreateEntries(PostgresTransaction &transaction, PostgresR
 			info = make_uniq<PostgresTableInfo>(schema, table_name);
 			info->approx_num_pages = approx_num_pages;
 		}
-		AddColumn(&transaction, &schema, result, row, *info, col_offset + 2);
+		AddColumn(&transaction, &schema, result, row, *info, 3);
 	}
 	if (info) {
 		tables.push_back(std::move(info));
@@ -87,11 +86,11 @@ void PostgresTableSet::CreateEntries(PostgresTransaction &transaction, PostgresR
 void PostgresTableSet::LoadEntries(ClientContext &context) {
 	auto &transaction = PostgresTransaction::Get(context, catalog);
 	if (table_result) {
-		CreateEntries(transaction, table_result->GetResult(), table_result->start, table_result->end, 1);
+		CreateEntries(transaction, table_result->GetResult(), table_result->start, table_result->end);
 		table_result.reset();
 	} else {
 		auto query = StringUtil::Replace(R"(
-	SELECT relname, relpages, attname,
+	SELECT 0, relname, relpages, attname,
 		pg_type.typname type_name, atttypmod type_modifier, pg_attribute.attndims ndim
 	FROM pg_class
 	JOIN pg_namespace ON relnamespace = pg_namespace.oid
@@ -105,7 +104,7 @@ void PostgresTableSet::LoadEntries(ClientContext &context) {
 		auto result = transaction.Query(query);
 		auto rows = result->Count();
 
-		CreateEntries(transaction, *result, 0, rows, 0);
+		CreateEntries(transaction, *result, 0, rows);
 	}
 }
 
@@ -130,7 +129,7 @@ unique_ptr<PostgresTableInfo> PostgresTableSet::GetTableInfo(PostgresTransaction
 	auto result = transaction.Query(query);
 	auto rows = result->Count();
 	if (rows == 0) {
-		throw InvalidInputException("Table %s does not contain any columns.", table_name);
+		return nullptr;
 	}
 	auto table_info = make_uniq<PostgresTableInfo>(schema, table_name);
 	for (idx_t row = 0; row < rows; row++) {

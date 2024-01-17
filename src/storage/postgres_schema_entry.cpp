@@ -101,7 +101,7 @@ optional_ptr<CatalogEntry> PostgresSchemaEntry::CreateView(CatalogTransaction tr
 	}
 	auto &postgres_transaction = GetPostgresTransaction(transaction);
 	postgres_transaction.Query(PGGetCreateViewSQL(info));
-	return tables.RefreshTable(transaction.GetContext(), info.view_name);
+	return tables.ReloadEntry(transaction.GetContext(), info.view_name);
 }
 
 optional_ptr<CatalogEntry> PostgresSchemaEntry::CreateType(CatalogTransaction transaction, CreateTypeInfo &info) {

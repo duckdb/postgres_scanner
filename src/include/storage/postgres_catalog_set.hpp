@@ -26,18 +26,29 @@ public:
 	void Scan(ClientContext &context, const std::function<void(CatalogEntry &)> &callback);
 	optional_ptr<CatalogEntry> CreateEntry(unique_ptr<CatalogEntry> entry);
 	void ClearEntries();
+	virtual bool SupportReload() const {
+		return false;
+	}
+	virtual optional_ptr<CatalogEntry> ReloadEntry(ClientContext &context, const string &name);
 
 protected:
 	virtual void LoadEntries(ClientContext &context) = 0;
+	//! Whether or not the catalog set contains dependencies to itself that have
+	//! to be resolved WHILE loading
+	virtual bool HasInternalDependencies() const {
+		return false;
+	}
+	void TryLoadEntries(ClientContext &context);
 
 protected:
 	Catalog &catalog;
 
 private:
 	mutex entry_lock;
+	mutex load_lock;
 	unordered_map<string, unique_ptr<CatalogEntry>> entries;
 	case_insensitive_map_t<string> entry_map;
-	bool is_loaded;
+	atomic<bool> is_loaded;
 };
 
 struct PostgresResultSlice {

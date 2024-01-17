@@ -48,6 +48,12 @@ string PostgresUtils::TypeToString(const LogicalType &input) {
 }
 
 LogicalType PostgresUtils::RemoveAlias(const LogicalType &type) {
+	if (!type.HasAlias()) {
+		return type;
+	}
+	if (StringUtil::CIEquals(type.GetAlias(), "json")) {
+		return type;
+	}
 	switch (type.id()) {
 	case LogicalTypeId::STRUCT: {
 		auto child_types = StructType::GetChildTypes(type);

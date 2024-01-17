@@ -63,6 +63,9 @@ void PostgresCatalogSet::DropEntry(ClientContext &context, DropInfo &info) {
 	if (info.if_not_found == OnEntryNotFound::RETURN_NULL) {
 		drop_query += " IF EXISTS ";
 	}
+	if (!info.schema.empty()) {
+		drop_query += KeywordHelper::WriteQuoted(info.schema, '"') + ".";
+	}
 	drop_query += KeywordHelper::WriteQuoted(info.name, '"');
 	if (info.cascade) {
 		drop_query += "CASCADE";

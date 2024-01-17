@@ -1,0 +1,25 @@
+# name: test/sql/storage/attach_drop_table_in_schema.test
+# description: Test DROP TABLE within a schema
+# group: [storage]
+
+require postgres_scanner
+
+require-env POSTGRES_TEST_DATABASE_AVAILABLE
+
+statement ok
+ATTACH 'dbname=postgresscanner' AS simple (TYPE POSTGRES)
+
+statement ok
+DROP SCHEMA IF EXISTS simple.new_schema CASCADE
+
+statement ok
+create schema simple.new_schema;
+
+statement ok
+create table simple.new_schema.newtable(i int);
+
+statement ok
+drop table simple.new_schema.newtable;
+
+statement ok
+drop schema simple.new_schema

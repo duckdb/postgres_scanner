@@ -171,6 +171,7 @@ void PostgresSchemaEntry::Scan(CatalogType type, const std::function<void(Catalo
 }
 
 void PostgresSchemaEntry::DropEntry(ClientContext &context, DropInfo &info) {
+	info.schema = name;
 	GetCatalogSet(info.type).DropEntry(context, info);
 }
 

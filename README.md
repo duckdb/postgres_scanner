@@ -207,6 +207,14 @@ The extension exposes the following configuration parameters.
 | pg_use_binary_copy              | Whether or not to use BINARY copy to read data                             | true    |
 
 
+## Schema Cache
+
+To avoid having to continuously fetch schema data from Postgres, DuckDB keeps schema information - such as the names of tables, their columns, etc -  cached. If changes are made to the schema through a different connection to the Postgres instance, such as new columns being added to a table, the cached schema information might be outdated. In this case, the function `pg_clear_cache` can be executed to clear the internal caches.
+
+```sql
+CALL pg_clear_cache();
+```
+
 ## Building & Loading the Extension
 
 The DuckDB submodule must be initialized prior to building.

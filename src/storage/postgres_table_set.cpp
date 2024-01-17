@@ -155,9 +155,12 @@ unique_ptr<PostgresTableInfo> PostgresTableSet::GetTableInfo(PostgresConnection 
 	return table_info;
 }
 
-optional_ptr<CatalogEntry> PostgresTableSet::RefreshTable(ClientContext &context, const string &table_name) {
+optional_ptr<CatalogEntry> PostgresTableSet::ReloadEntry(ClientContext &context, const string &table_name) {
 	auto &transaction = PostgresTransaction::Get(context, catalog);
 	auto table_info = GetTableInfo(transaction, schema, table_name);
+	if (!table_info) {
+		return nullptr;
+	}
 	auto table_entry = make_uniq<PostgresTableEntry>(catalog, schema, *table_info);
 	auto table_ptr = table_entry.get();
 	CreateEntry(std::move(table_entry));
@@ -170,7 +173,8 @@ string PostgresColumnsToSQL(const ColumnList &columns, const vector<unique_ptr<C
 
 	ss << "(";
 
-	// find all columns that have NOT NULL specified, but are NOT primary key columns
+	// find all columns that have NOT NULL specified, but are NOT primary key
+	// columns
 	logical_index_set_t not_null_columns;
 	logical_index_set_t unique_columns;
 	logical_index_set_t pk_columns;
@@ -191,7 +195,8 @@ string PostgresColumnsToSQL(const ColumnList &columns, const vector<unique_ptr<C
 					unique_columns.insert(pk.index);
 				}
 			} else {
-				// multi-column constraint, this constraint needs to go at the end after all columns
+				// multi-column constraint, this constraint needs to go at the end after
+				// all columns
 				if (pk.is_primary_key) {
 					// multi key pk column: insert set of columns into multi_key_pks
 					for (auto &col : pk.columns) {
@@ -340,9 +345,9 @@ void PostgresTableSet::AlterTable(ClientContext &context, AlterTableInfo &alter)
 		AlterTable(context, alter.Cast<RemoveColumnInfo>());
 		break;
 	default:
-		throw BinderException(
-		    "Unsupported ALTER TABLE type - Postgres tables only support RENAME TABLE, RENAME COLUMN, "
-		    "ADD COLUMN and DROP COLUMN");
+		throw BinderException("Unsupported ALTER TABLE type - Postgres tables only "
+		                      "support RENAME TABLE, RENAME COLUMN, "
+		                      "ADD COLUMN and DROP COLUMN");
 	}
 	ClearEntries();
 }

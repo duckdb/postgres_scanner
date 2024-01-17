@@ -1,0 +1,20 @@
+# name: test/sql/storage/attach_json.test
+# description: Test ATTACH with JSON type
+# group: [storage]
+
+require json
+
+require postgres_scanner
+
+require-env POSTGRES_TEST_DATABASE_AVAILABLE
+
+statement ok
+ATTACH 'dbname=postgresscanner' AS postgres_db (TYPE POSTGRES)
+
+statement ok
+CREATE OR REPLACE TABLE postgres_db.json_tbl AS SELECT '{"a": 42}'::JSON AS json_col
+
+query II
+SELECT json_col, typeof(json_col) FROM postgres_db.json_tbl
+----
+{"a": 42}	JSON

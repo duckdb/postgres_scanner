@@ -24,7 +24,7 @@ SourceResultType PostgresCreateIndex::GetData(ExecutionContext &context, DataChu
 			case OnCreateConflict::IGNORE_ON_CONFLICT:
 				return SourceResultType::FINISHED;
 			case OnCreateConflict::ERROR_ON_CONFLICT:
-				throw BinderException("Index with name \"%s\" already exists in schema \"%s\"", info->index_name, table.schema.name->schema);
+				throw BinderException("Index with name \"%s\" already exists in schema \"%s\"", info->index_name, table.schema.name);
 			case OnCreateConflict::REPLACE_ON_CONFLICT: {
 				DropInfo drop_info;
 				drop_info.type = CatalogType::INDEX_ENTRY;

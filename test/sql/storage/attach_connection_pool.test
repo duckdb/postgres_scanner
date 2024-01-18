@@ -7,6 +7,9 @@ require postgres_scanner
 require-env POSTGRES_TEST_DATABASE_AVAILABLE
 
 statement ok
+SET pg_experimental_connection_cache=true
+
+statement ok
 SET pg_connection_limit=1000
 
 statement ok

@@ -49,6 +49,8 @@ public:
 	void ReturnConnection(PostgresConnection connection);
 	void SetMaximumConnections(idx_t new_max);
 
+	static void PostgresSetConnectionCache(ClientContext &context, SetScope scope, Value &parameter);
+
 private:
 	PostgresCatalog &postgres_catalog;
 	mutex connection_lock;

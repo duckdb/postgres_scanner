@@ -64,6 +64,9 @@ static void LoadInternal(DatabaseInstance &db) {
 	config.AddExtensionOption("pg_array_as_varchar",
 	                          "Read Postgres arrays as varchar - enables reading mixed dimensional arrays",
 	                          LogicalType::BOOLEAN, Value::BOOLEAN(false));
+	config.AddExtensionOption("pg_experimental_connection_cache",
+							  "Whether or not to use the connection cache (currently experimental)", LogicalType::BOOLEAN,
+							  Value::BOOLEAN(false), PostgresConnectionPool::PostgresSetConnectionCache);
 	config.AddExtensionOption("pg_experimental_filter_pushdown",
 	                          "Whether or not to use filter pushdown (currently experimental)", LogicalType::BOOLEAN,
 	                          Value::BOOLEAN(false));

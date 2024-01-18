@@ -4,6 +4,8 @@
 
 require postgres_scanner
 
+require-env POSTGRES_TEST_DATABASE_AVAILABLE
+
 statement ok
 ATTACH 'dbname=postgresscanner' AS s1 (TYPE POSTGRES)
 
@@ -73,16 +75,50 @@ SELECT TYPEOF(COLUMNS(*)) FROM postgres_query('s1', 'SELECT * FROM pg_datearrayt
 ----
 DATE[]	TIME[]	TIME WITH TIME ZONE[]	TIMESTAMP[]	TIMESTAMP WITH TIME ZONE[]
 
+# semicolons
+query III
+select * from postgres_query('s1', 'SELECT * FROM cars;') WHERE color='red';
+----
+ferari	testarosa	red
+
+query III
+select * from postgres_query('s1', 'SELECT * FROM cars; ;   ') WHERE color='red';
+----
+ferari	testarosa	red
+
 # incorrect usage
 statement error
 select * from postgres_query('s1', 'CREATE TABLE my_table(i INT)');
 ----
 No fields returned by query
 
+# database not found
 statement error
 select * from postgres_query('xx', 'SELECT * FROM cars');
 ----
 Failed to find attached database
+
+# empty statements
+statement error
+select * from postgres_query('s1', '') WHERE color='red';
+----
+must be a SELECT statement
+
+statement error
+select * from postgres_query('s1', ';;') WHERE color='red';
+----
+must be a SELECT statement
+
+# NULL parameters
+statement error
+select * from postgres_query(NULL, 'SELECT 42');
+----
+cannot be NULL
+
+statement error
+select * from postgres_query('s1', NULL);
+----
+cannot be NULL
 
 # what if the database is not a postgres database
 statement ok

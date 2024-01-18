@@ -1,0 +1,96 @@
+# name: test/sql/storage/attach_explicit_schema.test
+# description: Test various DDL operations in an explicit schema
+# group: [storage]
+
+require postgres_scanner
+
+require-env POSTGRES_TEST_DATABASE_AVAILABLE
+
+statement ok
+ATTACH 'dbname=postgresscanner' AS simple (TYPE POSTGRES)
+
+statement ok
+DROP SCHEMA IF EXISTS simple.new_schema CASCADE
+
+statement ok
+create schema simple.new_schema;
+
+statement ok
+create table simple.new_schema.newtable(i int);
+
+statement ok
+insert into simple.new_schema.newtable values (42)
+
+query I
+SELECT * FROM simple.new_schema.newtable
+----
+42
+
+statement ok
+update simple.new_schema.newtable set i=84
+
+query I
+SELECT * FROM simple.new_schema.newtable
+----
+84
+
+statement ok
+ALTER TABLE simple.new_schema.newtable ADD COLUMN j INTEGER
+
+query II
+SELECT * FROM simple.new_schema.newtable
+----
+84	NULL
+
+statement ok
+ALTER TABLE simple.new_schema.newtable RENAME COLUMN j TO k
+
+query I
+SELECT k FROM simple.new_schema.newtable
+----
+NULL
+
+statement ok
+ALTER TABLE simple.new_schema.newtable DROP COLUMN k
+
+query I
+SELECT * FROM simple.new_schema.newtable
+----
+84
+
+statement ok
+ALTER TABLE simple.new_schema.newtable RENAME TO newtable2
+
+query I
+SELECT * FROM simple.new_schema.newtable2
+----
+84
+
+statement ok
+CREATE INDEX i_index ON simple.new_schema.newtable2(i)
+
+statement error
+CREATE INDEX i_index ON simple.new_schema.newtable2(i)
+----
+already exists
+
+statement ok
+CREATE INDEX IF NOT EXISTS i_index ON simple.new_schema.newtable2(i)
+
+statement ok
+DROP INDEX simple.new_schema.i_index
+
+statement ok
+delete from simple.new_schema.newtable2
+
+statement ok
+create view simple.new_schema.newview as select 42
+
+statement ok
+drop table simple.new_schema.newtable2;
+
+statement ok
+drop view simple.new_schema.newview
+
+statement ok
+drop schema simple.new_schema

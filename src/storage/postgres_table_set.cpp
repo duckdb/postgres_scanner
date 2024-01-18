@@ -15,7 +15,7 @@
 namespace duckdb {
 
 PostgresTableSet::PostgresTableSet(PostgresSchemaEntry &schema, unique_ptr<PostgresResultSlice> table_result_p)
-    : PostgresCatalogSet(schema.ParentCatalog()), schema(schema), table_result(std::move(table_result_p)) {
+    : PostgresCatalogSet(schema.ParentCatalog(), !table_result_p), schema(schema), table_result(std::move(table_result_p)) {
 }
 
 string PostgresTableSet::GetInitializeQuery() {
@@ -286,6 +286,7 @@ optional_ptr<CatalogEntry> PostgresTableSet::CreateTable(ClientContext &context,
 void PostgresTableSet::AlterTable(ClientContext &context, RenameTableInfo &info) {
 	auto &transaction = PostgresTransaction::Get(context, catalog);
 	string sql = "ALTER TABLE ";
+	sql += KeywordHelper::WriteOptionallyQuoted(schema.name) + ".";
 	sql += KeywordHelper::WriteOptionallyQuoted(info.name);
 	sql += " RENAME TO ";
 	sql += KeywordHelper::WriteOptionallyQuoted(info.new_table_name);
@@ -295,6 +296,7 @@ void PostgresTableSet::AlterTable(ClientContext &context, RenameTableInfo &info)
 void PostgresTableSet::AlterTable(ClientContext &context, RenameColumnInfo &info) {
 	auto &transaction = PostgresTransaction::Get(context, catalog);
 	string sql = "ALTER TABLE ";
+	sql += KeywordHelper::WriteOptionallyQuoted(schema.name) + ".";
 	sql += KeywordHelper::WriteOptionallyQuoted(info.name);
 	sql += " RENAME COLUMN  ";
 	sql += KeywordHelper::WriteOptionallyQuoted(info.old_name);
@@ -307,6 +309,7 @@ void PostgresTableSet::AlterTable(ClientContext &context, RenameColumnInfo &info
 void PostgresTableSet::AlterTable(ClientContext &context, AddColumnInfo &info) {
 	auto &transaction = PostgresTransaction::Get(context, catalog);
 	string sql = "ALTER TABLE ";
+	sql += KeywordHelper::WriteOptionallyQuoted(schema.name) + ".";
 	sql += KeywordHelper::WriteOptionallyQuoted(info.name);
 	sql += " ADD COLUMN  ";
 	if (info.if_column_not_exists) {
@@ -321,6 +324,7 @@ void PostgresTableSet::AlterTable(ClientContext &context, AddColumnInfo &info) {
 void PostgresTableSet::AlterTable(ClientContext &context, RemoveColumnInfo &info) {
 	auto &transaction = PostgresTransaction::Get(context, catalog);
 	string sql = "ALTER TABLE ";
+	sql += KeywordHelper::WriteOptionallyQuoted(schema.name) + ".";
 	sql += KeywordHelper::WriteOptionallyQuoted(info.name);
 	sql += " DROP COLUMN  ";
 	if (info.if_column_exists) {

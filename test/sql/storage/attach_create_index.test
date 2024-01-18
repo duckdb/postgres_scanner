@@ -16,6 +16,9 @@ statement ok
 INSERT INTO s.test VALUES (1), (2), (3);
 
 statement ok
+DROP INDEX IF EXISTS s.i_index
+
+statement ok
 CREATE INDEX i_index ON s.test(i);
 
 query I
@@ -58,7 +61,10 @@ SELECT * FROM s.test WHERE i=2 AND j=20
 2	20
 
 statement ok
-DROP TABLE s.test CASCADE
+DROP INDEX s.i_index
+
+statement ok
+DROP TABLE s.test
 
 # index with a function
 statement ok

@@ -8,7 +8,7 @@
 namespace duckdb {
 
 PostgresIndexSet::PostgresIndexSet(PostgresSchemaEntry &schema, unique_ptr<PostgresResultSlice> index_result_p)
-    : PostgresCatalogSet(schema.ParentCatalog()), schema(schema), index_result(std::move(index_result_p)) {
+    : PostgresCatalogSet(schema.ParentCatalog(), !index_result_p), schema(schema), index_result(std::move(index_result_p)) {
 }
 
 string PostgresIndexSet::GetInitializeQuery() {
@@ -57,6 +57,7 @@ string PGGetCreateIndexSQL(CreateIndexInfo &info, TableCatalogEntry &tbl) {
 	sql += " INDEX ";
 	sql += KeywordHelper::WriteOptionallyQuoted(info.index_name);
 	sql += " ON ";
+	sql += KeywordHelper::WriteOptionallyQuoted(tbl.schema.name) + ".";
 	sql += KeywordHelper::WriteOptionallyQuoted(tbl.name);
 	sql += "(";
 	for (idx_t i = 0; i < info.parsed_expressions.size(); i++) {

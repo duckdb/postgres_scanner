@@ -63,9 +63,10 @@ optional_ptr<CatalogEntry> PostgresSchemaEntry::CreateIndex(ClientContext &conte
 	return indexes.CreateIndex(context, info, table);
 }
 
-string PGGetCreateViewSQL(CreateViewInfo &info) {
+string PGGetCreateViewSQL(PostgresSchemaEntry &schema, CreateViewInfo &info) {
 	string sql;
 	sql = "CREATE VIEW ";
+	sql += KeywordHelper::WriteOptionallyQuoted(schema.name) + ".";
 	sql += KeywordHelper::WriteOptionallyQuoted(info.view_name);
 	sql += " ";
 	if (!info.aliases.empty()) {
@@ -100,7 +101,7 @@ optional_ptr<CatalogEntry> PostgresSchemaEntry::CreateView(CatalogTransaction tr
 		}
 	}
 	auto &postgres_transaction = GetPostgresTransaction(transaction);
-	postgres_transaction.Query(PGGetCreateViewSQL(info));
+	postgres_transaction.Query(PGGetCreateViewSQL(*this, info));
 	return tables.ReloadEntry(transaction.GetContext(), info.view_name);
 }
 

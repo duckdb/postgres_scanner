@@ -3,6 +3,7 @@
 #include "duckdb/parser/statement/create_statement.hpp"
 #include "duckdb/planner/operator/logical_extension_operator.hpp"
 #include "duckdb/catalog/catalog_entry/table_catalog_entry.hpp"
+#include "duckdb/parser/parsed_data/drop_info.hpp"
 
 namespace duckdb {
 
@@ -16,10 +17,26 @@ PostgresCreateIndex::PostgresCreateIndex(unique_ptr<CreateIndexInfo> info, Table
 SourceResultType PostgresCreateIndex::GetData(ExecutionContext &context, DataChunk &chunk,
                                               OperatorSourceInput &input) const {
 	auto &catalog = table.catalog;
-	if (info->catalog == INVALID_CATALOG && info->schema == catalog.GetName()) {
-		info->schema = DEFAULT_SCHEMA;
+	auto &schema = table.schema;
+	auto existing = schema.GetEntry(catalog.GetCatalogTransaction(context.client), CatalogType::INDEX_ENTRY, info->index_name);
+	if (existing) {
+		switch(info->on_conflict) {
+			case OnCreateConflict::IGNORE_ON_CONFLICT:
+				return SourceResultType::FINISHED;
+			case OnCreateConflict::ERROR_ON_CONFLICT:
+				throw BinderException("Index with name \"%s\" already exists in schema \"%s\"", info->index_name, table.schema.name);
+			case OnCreateConflict::REPLACE_ON_CONFLICT: {
+				DropInfo drop_info;
+				drop_info.type = CatalogType::INDEX_ENTRY;
+				drop_info.schema = info->schema;
+				drop_info.name = info->index_name;
+				schema.DropEntry(context.client, drop_info);
+				break;
+			}
+			default:
+				throw InternalException("Unsupported on create conflict");
+		}
 	}
-	auto &schema = catalog.GetSchema(context.client, info->schema);
 	schema.CreateIndex(context.client, *info, table);
 
 	return SourceResultType::FINISHED;

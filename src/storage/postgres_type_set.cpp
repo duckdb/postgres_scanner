@@ -16,7 +16,7 @@ struct PGTypeInfo {
 
 PostgresTypeSet::PostgresTypeSet(PostgresSchemaEntry &schema, unique_ptr<PostgresResultSlice> enum_result_p,
                                  unique_ptr<PostgresResultSlice> composite_type_result_p)
-    : PostgresCatalogSet(schema.ParentCatalog()), schema(schema), enum_result(std::move(enum_result_p)),
+    : PostgresCatalogSet(schema.ParentCatalog(), !enum_result_p), schema(schema), enum_result(std::move(enum_result_p)),
       composite_type_result(std::move(composite_type_result_p)) {
 }
 

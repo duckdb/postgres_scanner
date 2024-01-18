@@ -3,7 +3,7 @@
 #include "duckdb/parser/parsed_data/drop_info.hpp"
 namespace duckdb {
 
-PostgresCatalogSet::PostgresCatalogSet(Catalog &catalog) : catalog(catalog), is_loaded(false) {
+PostgresCatalogSet::PostgresCatalogSet(Catalog &catalog, bool is_loaded_p) : catalog(catalog), is_loaded(is_loaded_p) {
 }
 
 optional_ptr<CatalogEntry> PostgresCatalogSet::GetEntry(ClientContext &context, const string &name) {

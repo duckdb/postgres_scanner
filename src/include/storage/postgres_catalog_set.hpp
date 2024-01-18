@@ -19,7 +19,7 @@ class PostgresTransaction;
 
 class PostgresCatalogSet {
 public:
-	PostgresCatalogSet(Catalog &catalog);
+	PostgresCatalogSet(Catalog &catalog, bool is_loaded);
 
 	optional_ptr<CatalogEntry> GetEntry(ClientContext &context, const string &name);
 	void DropEntry(ClientContext &context, DropInfo &info);

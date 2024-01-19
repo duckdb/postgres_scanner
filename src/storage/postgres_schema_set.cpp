@@ -8,7 +8,7 @@
 
 namespace duckdb {
 
-PostgresSchemaSet::PostgresSchemaSet(Catalog &catalog) : PostgresCatalogSet(catalog) {
+PostgresSchemaSet::PostgresSchemaSet(Catalog &catalog) : PostgresCatalogSet(catalog, false) {
 }
 
 vector<unique_ptr<PostgresResultSlice>> SliceResult(PostgresResult &schemas, unique_ptr<PostgresResult> to_slice_ptr) {

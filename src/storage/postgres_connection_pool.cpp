@@ -2,6 +2,7 @@
 #include "storage/postgres_catalog.hpp"
 
 namespace duckdb {
+static bool pg_use_connection_cache = false;
 
 PostgresPoolConnection::PostgresPoolConnection() : pool(nullptr) {
 }
@@ -70,6 +71,13 @@ bool PostgresConnectionPool::TryGetConnection(PostgresPoolConnection &connection
 	return true;
 }
 
+void PostgresConnectionPool::PostgresSetConnectionCache(ClientContext &context, SetScope scope, Value &parameter) {
+	if (parameter.IsNull()) {
+		throw BinderException("Cannot be set to NULL");
+	}
+	pg_use_connection_cache = BooleanValue::Get(parameter);
+}
+
 PostgresPoolConnection PostgresConnectionPool::GetConnection() {
 	PostgresPoolConnection result;
 	if (!TryGetConnection(result)) {
@@ -89,6 +97,9 @@ void PostgresConnectionPool::ReturnConnection(PostgresConnection connection) {
 	if (active_connections >= maximum_connections) {
 		// if the maximum number of connections has been decreased by the user we might need to reclaim the connection
 		// immediately
+		return;
+	}
+	if (!pg_use_connection_cache) {
 		return;
 	}
 	// check if the underlying connection is still usable

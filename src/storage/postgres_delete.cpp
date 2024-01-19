@@ -15,9 +15,11 @@ PostgresDelete::PostgresDelete(LogicalOperator &op, TableCatalogEntry &table, id
 //===--------------------------------------------------------------------===//
 // States
 //===--------------------------------------------------------------------===//
-string GetDeleteSQL(const string &table_name, const string &ctid_list) {
+string GetDeleteSQL(const PostgresTableEntry &table, const string &ctid_list) {
 	string result;
-	result = "DELETE FROM " + KeywordHelper::WriteOptionallyQuoted(table_name);
+	result = "DELETE FROM ";
+	result += KeywordHelper::WriteQuoted(table.schema.name, '"') + ".";
+	result += KeywordHelper::WriteOptionallyQuoted(table.name);
 	result += " WHERE ctid IN (" + ctid_list + ")";
 	return result;
 }
@@ -36,7 +38,7 @@ public:
 			return;
 		}
 		auto &transaction = PostgresTransaction::Get(context, table.catalog);
-		transaction.Query(GetDeleteSQL(table.name, ctid_list));
+		transaction.Query(GetDeleteSQL(table, ctid_list));
 		ctid_list = "";
 	}
 };

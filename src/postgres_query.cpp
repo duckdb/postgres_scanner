@@ -13,6 +13,10 @@ static unique_ptr<FunctionData> PGQueryBind(ClientContext &context, TableFunctio
                                             vector<LogicalType> &return_types, vector<string> &names) {
 	auto result = make_uniq<PostgresBindData>();
 
+	if (input.inputs[0].IsNull() || input.inputs[1].IsNull()) {
+		throw BinderException("Parameters to postgres_query cannot be NULL");
+	}
+
 	// look up the database to query
 	auto db_name = input.inputs[0].GetValue<string>();
 	auto &db_manager = DatabaseManager::Get(context);
@@ -27,6 +31,12 @@ static unique_ptr<FunctionData> PGQueryBind(ClientContext &context, TableFunctio
 	auto &pg_catalog = catalog.Cast<PostgresCatalog>();
 	auto &transaction = Transaction::Get(context, catalog).Cast<PostgresTransaction>();
 	auto sql = input.inputs[1].GetValue<string>();
+	// strip any trailing semicolons
+	StringUtil::RTrim(sql);
+	while (!sql.empty() && sql.back() == ';') {
+		sql = sql.substr(0, sql.size() - 1);
+		StringUtil::RTrim(sql);
+	}
 
 	auto &con = transaction.GetConnection();
 	auto conn = con.GetConn();

@@ -10,6 +10,9 @@ statement ok
 PRAGMA enable_verification
 
 statement ok
+SET pg_experimental_connection_cache=true
+
+statement ok
 SET pg_connection_limit=1000
 
 statement ok

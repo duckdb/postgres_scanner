@@ -48,7 +48,9 @@ string CreateUpdateTable(const string &name, PostgresTableEntry &table, const ve
 
 string GetUpdateSQL(const string &name, PostgresTableEntry &table, const vector<PhysicalIndex> &index) {
 	string result;
-	result = "UPDATE " + KeywordHelper::WriteQuoted(table.name, '"');
+	result = "UPDATE ";
+	result += KeywordHelper::WriteQuoted(table.schema.name, '"') + ".";
+	result += KeywordHelper::WriteQuoted(table.name, '"');
 	result += " SET ";
 	for (idx_t i = 0; i < index.size(); i++) {
 		if (i > 0) {

@@ -38,7 +38,7 @@ struct PostgresGlobalState : public GlobalTableFunctionState {
 	explicit PostgresGlobalState(idx_t max_threads) : page_idx(0), batch_idx(0), max_threads(max_threads) {
 	}
 
-	mutex lock;
+	mutable mutex lock;
 	idx_t page_idx;
 	idx_t batch_idx;
 	idx_t max_threads;
@@ -477,6 +477,15 @@ unique_ptr<NodeStatistics> PostgresScanCardinality(ClientContext &context, const
 	return make_uniq<NodeStatistics>(estimated_cardinality);
 }
 
+double PostgresScanProgress(ClientContext &context, const FunctionData *bind_data_p,
+											const GlobalTableFunctionState *global_state) {
+	auto &bind_data = bind_data_p->Cast<PostgresBindData>();
+	auto &gstate = global_state->Cast<PostgresGlobalState>();
+
+	lock_guard<mutex> parallel_lock(gstate.lock);
+	double progress = 100 * double(gstate.page_idx) / double(bind_data.pages_approx);;
+	return MinValue<double>(100, progress);
+}
 
 static void PostgresScanSerialize(Serializer &serializer, const optional_ptr<FunctionData> bind_data_p,
                                   const TableFunction &function) {
@@ -495,6 +504,7 @@ PostgresScanFunction::PostgresScanFunction()
 	deserialize = PostgresScanDeserialize;
 	get_batch_index = PostgresScanBatchIndex;
 	cardinality = PostgresScanCardinality;
+	table_scan_progress = PostgresScanProgress;
 	projection_pushdown = true;
 }
 
@@ -506,6 +516,7 @@ PostgresScanFunctionFilterPushdown::PostgresScanFunctionFilterPushdown()
 	deserialize = PostgresScanDeserialize;
 	get_batch_index = PostgresScanBatchIndex;
 	cardinality = PostgresScanCardinality;
+	table_scan_progress = PostgresScanProgress;
 	projection_pushdown = true;
 	filter_pushdown = true;
 }

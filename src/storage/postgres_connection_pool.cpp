@@ -2,7 +2,7 @@
 #include "storage/postgres_catalog.hpp"
 
 namespace duckdb {
-static bool pg_use_connection_cache = false;
+static bool pg_use_connection_cache = true;
 
 PostgresPoolConnection::PostgresPoolConnection() : pool(nullptr) {
 }

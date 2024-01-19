@@ -35,7 +35,8 @@ struct PostgresBindData : public FunctionData {
 	idx_t pages_per_task = DEFAULT_PAGES_PER_TASK;
 	string dsn;
 
-	bool requires_materialization = false;
+	bool requires_materialization = true;
+	bool can_use_main_thread = true;
 	bool read_only = true;
 	bool emit_ctid = false;
 	idx_t max_threads = 1;

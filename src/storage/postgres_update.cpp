@@ -166,7 +166,7 @@ SourceResultType PostgresUpdate::GetData(ExecutionContext &context, DataChunk &c
 // Helpers
 //===--------------------------------------------------------------------===//
 string PostgresUpdate::GetName() const {
-	return "UPDATE";
+	return "PG_UPDATE";
 }
 
 string PostgresUpdate::ParamsToString() const {

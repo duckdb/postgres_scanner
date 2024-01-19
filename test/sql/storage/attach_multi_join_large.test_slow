@@ -1,0 +1,46 @@
+# name: test/sql/storage/attach_multi_join_large.test_slow
+# description: Test ATTACH with multiple joins on large tables
+# group: [storage]
+
+require postgres_scanner
+
+require-env POSTGRES_TEST_DATABASE_AVAILABLE
+
+statement ok
+PRAGMA enable_verification
+
+statement ok
+ATTACH 'dbname=postgresscanner' AS s1 (TYPE POSTGRES)
+
+statement ok
+USE s1
+
+statement ok
+CREATE OR REPLACE TABLE test1_large AS SELECT i id FROM range(1000000) t(i);
+
+statement ok
+CREATE OR REPLACE TABLE test2_large AS SELECT i id FROM range(1000000) t(i);
+
+statement ok
+CREATE OR REPLACE TABLE test3_large AS SELECT i id FROM range(1000000) t(i);
+
+query I
+select count(*)
+from test1_large a
+left join test2_large b
+  on a.id = b.id
+left join test3_large c
+  on a.id = c.id;
+----
+1000000
+
+# same query but with postgres_scan
+query I
+select count(*)
+from postgres_scan('dbname=postgresscanner', 'public', 'test1_large') a
+left join postgres_scan('dbname=postgresscanner', 'public', 'test2_large') b
+  on a.id = b.id
+left join postgres_scan('dbname=postgresscanner', 'public', 'test3_large') c
+  on a.id = c.id;
+----
+1000000

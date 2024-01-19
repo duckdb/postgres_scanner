@@ -42,7 +42,7 @@ public:
 	}
 
 	void Serialize(Serializer &serializer) const override {
-		throw InternalException("Cannot serialize Postgres Create index");
+		throw NotImplementedException("Cannot serialize Postgres Create index");
 	}
 
 	void ResolveTypes() override {

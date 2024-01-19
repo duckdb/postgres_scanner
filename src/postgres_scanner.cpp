@@ -155,6 +155,8 @@ static unique_ptr<FunctionData> PostgresBind(ClientContext &context, TableFuncti
 	}
 	bind_data->names = info->postgres_names;
 	bind_data->types = return_types;
+	bind_data->can_use_main_thread = true;
+	bind_data->requires_materialization = false;
 
 	PostgresScanFunction::PrepareBind(version, context, *bind_data, info->approx_num_pages);
 	return std::move(bind_data);
@@ -315,16 +317,23 @@ static bool PostgresParallelStateNext(ClientContext &context, const FunctionData
 
 bool PostgresGlobalState::TryOpenNewConnection(ClientContext &context, PostgresLocalState &lstate,
                                                const PostgresBindData &bind_data) {
+	auto pg_catalog = bind_data.GetCatalog();
 	{
 		lock_guard<mutex> parallel_lock(lock);
 		if (!used_main_thread) {
-			lstate.connection = PostgresConnection(GetConnection().GetConnection());
+			if (bind_data.can_use_main_thread) {
+				lstate.connection = PostgresConnection(GetConnection().GetConnection());
+			} else {
+				// we cannot use the main thread but we haven't initiated ANY scan yet
+				// we HAVE to open a new connection
+				lstate.pool_connection = pg_catalog->GetConnectionPool().ForceGetConnection();
+				lstate.connection = PostgresConnection(lstate.pool_connection.GetConnection().GetConnection());
+			}
 			used_main_thread = true;
 			return true;
 		}
 	}
 
-	auto pg_catalog = bind_data.GetCatalog();
 	if (pg_catalog) {
 		if (!pg_catalog->GetConnectionPool().TryGetConnection(lstate.pool_connection)) {
 			return false;
@@ -448,10 +457,26 @@ static idx_t PostgresScanBatchIndex(ClientContext &context, const FunctionData *
 
 static string PostgresScanToString(const FunctionData *bind_data_p) {
 	D_ASSERT(bind_data_p);
-
-	auto bind_data = (const PostgresBindData *)bind_data_p;
-	return bind_data->table_name;
+	auto &bind_data = bind_data_p->Cast<PostgresBindData>();
+	return bind_data.table_name;
 }
+
+unique_ptr<NodeStatistics> PostgresScanCardinality(ClientContext &context, const FunctionData *bind_data_p) {
+	auto &bind_data = bind_data_p->Cast<PostgresBindData>();
+	// see https://www.postgresql.org/docs/current/storage-page-layout.html
+	// pages are 8KB
+	// every page has ~24 bytes of overhead
+	constexpr static idx_t PAGE_METADATA_SIZE = 23;
+	constexpr static idx_t POSTGRES_PAGE_SIZE = 8192 - PAGE_METADATA_SIZE;
+	// every row has ~23 bytes of overhead in the header
+	constexpr static idx_t ROW_META_DATA_SIZE = 23;
+	// for simplicity we assume every column is 8 bytes on average
+	auto row_size = ROW_META_DATA_SIZE + bind_data.types.size() * 8;
+	auto rows_per_page = MaxValue<idx_t>(1, POSTGRES_PAGE_SIZE / row_size);
+	auto estimated_cardinality = bind_data.pages_approx * rows_per_page;
+	return make_uniq<NodeStatistics>(estimated_cardinality);
+}
+
 
 static void PostgresScanSerialize(Serializer &serializer, const optional_ptr<FunctionData> bind_data_p,
                                   const TableFunction &function) {
@@ -469,6 +494,7 @@ PostgresScanFunction::PostgresScanFunction()
 	serialize = PostgresScanSerialize;
 	deserialize = PostgresScanDeserialize;
 	get_batch_index = PostgresScanBatchIndex;
+	cardinality = PostgresScanCardinality;
 	projection_pushdown = true;
 }
 
@@ -479,6 +505,7 @@ PostgresScanFunctionFilterPushdown::PostgresScanFunctionFilterPushdown()
 	serialize = PostgresScanSerialize;
 	deserialize = PostgresScanDeserialize;
 	get_batch_index = PostgresScanBatchIndex;
+	cardinality = PostgresScanCardinality;
 	projection_pushdown = true;
 	filter_pushdown = true;
 }

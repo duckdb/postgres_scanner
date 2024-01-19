@@ -11,6 +11,7 @@
 #include "duckdb/main/database_manager.hpp"
 #include "duckdb/main/attached_database.hpp"
 #include "storage/postgres_catalog.hpp"
+#include "storage/postgres_optimizer.hpp"
 
 using namespace duckdb;
 
@@ -69,6 +70,11 @@ static void LoadInternal(DatabaseInstance &db) {
 	                          Value::BOOLEAN(false));
 	config.AddExtensionOption("pg_debug_show_queries", "DEBUG SETTING: print all queries sent to Postgres to stdout",
 	                          LogicalType::BOOLEAN, Value::BOOLEAN(false), SetPostgresDebugQueryPrint);
+
+
+	OptimizerExtension postgres_optimizer;
+	postgres_optimizer.optimize_function = PostgresOptimizer::Optimize;
+	config.optimizer_extensions.push_back(std::move(postgres_optimizer));
 }
 
 void PostgresScannerExtension::Load(DuckDB &db) {

@@ -105,7 +105,7 @@ SourceResultType PostgresDelete::GetData(ExecutionContext &context, DataChunk &c
 // Helpers
 //===--------------------------------------------------------------------===//
 string PostgresDelete::GetName() const {
-	return "DELETE";
+	return "PG_DELETE";
 }
 
 string PostgresDelete::ParamsToString() const {

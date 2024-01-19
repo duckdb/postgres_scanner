@@ -60,6 +60,7 @@ public:
 	//! Label all postgres scans in the sub-tree as requiring materialization
 	//! This is used for e.g. insert queries that have both (1) a scan from a postgres table, and (2) a sink into one
 	static void MaterializePostgresScans(PhysicalOperator &op);
+	static bool IsPostgresScan(const string &name);
 
 	//! Whether or not this is an in-memory Postgres database
 	bool InMemory() override;

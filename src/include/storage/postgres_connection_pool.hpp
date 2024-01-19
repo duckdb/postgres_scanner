@@ -46,6 +46,8 @@ public:
 public:
 	bool TryGetConnection(PostgresPoolConnection &connection);
 	PostgresPoolConnection GetConnection();
+	//! Always returns a connection - even if the connection slots are exhausted
+	PostgresPoolConnection ForceGetConnection();
 	void ReturnConnection(PostgresConnection connection);
 	void SetMaximumConnections(idx_t new_max);
 
@@ -55,6 +57,9 @@ private:
 	idx_t active_connections;
 	idx_t maximum_connections;
 	vector<PostgresConnection> connection_cache;
+
+private:
+	PostgresPoolConnection GetConnectionInternal();
 };
 
 } // namespace duckdb

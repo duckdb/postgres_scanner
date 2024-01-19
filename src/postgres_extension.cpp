@@ -11,6 +11,7 @@
 #include "duckdb/main/database_manager.hpp"
 #include "duckdb/main/attached_database.hpp"
 #include "storage/postgres_catalog.hpp"
+#include "storage/postgres_optimizer.hpp"
 
 using namespace duckdb;
 
@@ -64,14 +65,19 @@ static void LoadInternal(DatabaseInstance &db) {
 	config.AddExtensionOption("pg_array_as_varchar",
 	                          "Read Postgres arrays as varchar - enables reading mixed dimensional arrays",
 	                          LogicalType::BOOLEAN, Value::BOOLEAN(false));
-	config.AddExtensionOption("pg_experimental_connection_cache",
-							  "Whether or not to use the connection cache (currently experimental)", LogicalType::BOOLEAN,
-							  Value::BOOLEAN(false), PostgresConnectionPool::PostgresSetConnectionCache);
+	config.AddExtensionOption("pg_connection_cache",
+							  "Whether or not to use the connection cache", LogicalType::BOOLEAN,
+							  Value::BOOLEAN(true), PostgresConnectionPool::PostgresSetConnectionCache);
 	config.AddExtensionOption("pg_experimental_filter_pushdown",
 	                          "Whether or not to use filter pushdown (currently experimental)", LogicalType::BOOLEAN,
 	                          Value::BOOLEAN(false));
 	config.AddExtensionOption("pg_debug_show_queries", "DEBUG SETTING: print all queries sent to Postgres to stdout",
 	                          LogicalType::BOOLEAN, Value::BOOLEAN(false), SetPostgresDebugQueryPrint);
+
+
+	OptimizerExtension postgres_optimizer;
+	postgres_optimizer.optimize_function = PostgresOptimizer::Optimize;
+	config.optimizer_extensions.push_back(std::move(postgres_optimizer));
 }
 
 void PostgresScannerExtension::Load(DuckDB &db) {

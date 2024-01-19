@@ -1,0 +1,53 @@
+# name: test/sql/storage/attach_multi_join.test
+# description: Test ATTACH with multiple joins
+# group: [storage]
+
+require postgres_scanner
+
+require-env POSTGRES_TEST_DATABASE_AVAILABLE
+
+statement ok
+PRAGMA enable_verification
+
+statement ok
+ATTACH 'dbname=postgresscanner' AS s1 (TYPE POSTGRES)
+
+statement ok
+USE s1
+
+statement ok
+CREATE OR REPLACE TABLE test1(id TEXT PRIMARY KEY);
+
+statement ok
+CREATE OR REPLACE TABLE test2(id TEXT PRIMARY KEY);
+
+statement ok
+CREATE OR REPLACE TABLE test3(id TEXT PRIMARY KEY);
+
+query III
+select * from test1 a left join test2 b on a.id = b.id left join test3 c on a.id = c.id;
+----
+
+statement ok
+SET pg_connection_limit=1
+
+query III
+select * from test1 a left join test2 b on a.id = b.id left join test3 c on a.id = c.id;
+----
+
+statement ok
+BEGIN
+
+statement ok
+INSERT INTO test1 VALUES (1)
+
+statement ok
+INSERT INTO test2 VALUES (1)
+
+statement ok
+INSERT INTO test3 VALUES (1)
+
+query III
+select * from test1 a left join test2 b on a.id = b.id left join test3 c on a.id = c.id;
+----
+1	1	1

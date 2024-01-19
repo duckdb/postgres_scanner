@@ -2,7 +2,7 @@
 #include "storage/postgres_catalog.hpp"
 
 namespace duckdb {
-static bool pg_use_connection_cache = false;
+static bool pg_use_connection_cache = true;
 
 PostgresPoolConnection::PostgresPoolConnection() : pool(nullptr) {
 }
@@ -44,21 +44,30 @@ PostgresConnectionPool::PostgresConnectionPool(PostgresCatalog &postgres_catalog
     : postgres_catalog(postgres_catalog), active_connections(0), maximum_connections(maximum_connections_p) {
 }
 
+PostgresPoolConnection PostgresConnectionPool::GetConnectionInternal() {
+	active_connections++;
+	// check if we have any cached connections left
+	if (!connection_cache.empty()) {
+		auto connection = PostgresPoolConnection(this, std::move(connection_cache.back()));
+		connection_cache.pop_back();
+		return connection;
+	}
+
+	// no cached connections left but there is space to open a new one - open it
+	return PostgresPoolConnection(this, PostgresConnection::Open(postgres_catalog.path));
+}
+
+PostgresPoolConnection PostgresConnectionPool::ForceGetConnection() {
+	lock_guard<mutex> l(connection_lock);
+	return GetConnectionInternal();
+}
+
 bool PostgresConnectionPool::TryGetConnection(PostgresPoolConnection &connection) {
 	lock_guard<mutex> l(connection_lock);
 	if (active_connections >= maximum_connections) {
 		return false;
 	}
-	active_connections++;
-	// check if we have any cached connections left
-	if (!connection_cache.empty()) {
-		connection = PostgresPoolConnection(this, std::move(connection_cache.back()));
-		connection_cache.pop_back();
-		return true;
-	}
-
-	// no cached connections left but there is space to open a new one - open it
-	connection = PostgresPoolConnection(this, PostgresConnection::Open(postgres_catalog.path));
+	connection = GetConnectionInternal();
 	return true;
 }
 

@@ -7,11 +7,10 @@ require postgres_scanner
 require-env POSTGRES_TEST_DATABASE_AVAILABLE
 
 statement ok
-ATTACH 'dbname=postgresscanner' AS s1 (TYPE POSTGRES)
+PRAGMA enable_verification
 
-# FIXME:
-#statement ok
-#PRAGMA enable_verification
+statement ok
+ATTACH 'dbname=postgresscanner' AS s1 (TYPE POSTGRES)
 
 # primary keys
 statement ok

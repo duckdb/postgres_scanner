@@ -68,6 +68,9 @@ struct PostgresBinaryReader {
 		auto flags_len = 8;
 		auto header_len = magic_len + flags_len;
 
+		if (!buffer_ptr) {
+			throw IOException("buffer_ptr not set in CheckHeader");
+		}
 		if (buffer_ptr + header_len >= end) {
 			throw IOException("Unable to read binary COPY data from Postgres, invalid header");
 		}

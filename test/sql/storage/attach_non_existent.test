@@ -6,6 +6,9 @@ require postgres_scanner
 
 require-env POSTGRES_TEST_DATABASE_AVAILABLE
 
+statement ok
+PRAGMA enable_verification
+
 statement error
 ATTACH 'dbname=dbdoesnotexistx' AS s1 (TYPE POSTGRES)
 ----

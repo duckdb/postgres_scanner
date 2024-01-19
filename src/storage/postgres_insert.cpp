@@ -141,7 +141,7 @@ SourceResultType PostgresInsert::GetData(ExecutionContext &context, DataChunk &c
 // Helpers
 //===--------------------------------------------------------------------===//
 string PostgresInsert::GetName() const {
-	return table ? "INSERT" : "CREATE_TABLE_AS";
+	return table ? "PG_INSERT" : "PG_CREATE_TABLE_AS";
 }
 
 string PostgresInsert::ParamsToString() const {
@@ -188,14 +188,18 @@ unique_ptr<PhysicalOperator> AddCastToPostgresTypes(ClientContext &context, uniq
 	return plan;
 }
 
+bool PostgresCatalog::IsPostgresScan(const string &name) {
+	return name == "postgres_scan" || name == "postgres_scan_pushdown" || name == "postgres_query";
+}
+
 void PostgresCatalog::MaterializePostgresScans(PhysicalOperator &op) {
 	if (op.type == PhysicalOperatorType::TABLE_SCAN) {
 		auto &table_scan = op.Cast<PhysicalTableScan>();
-		if (table_scan.function.name == "postgres_scan" || table_scan.function.name == "postgres_scan_pushdown" ||
-		    table_scan.function.name == "postgres_query") {
+		if (PostgresCatalog::IsPostgresScan(table_scan.function.name)) {
 			auto &bind_data = table_scan.bind_data->Cast<PostgresBindData>();
 			bind_data.requires_materialization = true;
 			bind_data.max_threads = 1;
+			bind_data.can_use_main_thread = true;
 			bind_data.emit_ctid = true;
 		}
 	}

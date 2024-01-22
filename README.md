@@ -202,6 +202,7 @@ The extension exposes the following configuration parameters.
 | pg_debug_show_queries           | DEBUG SETTING: print all queries sent to Postgres to stdout                | false   |
 | pg_experimental_filter_pushdown | Whether or not to use filter pushdown (currently experimental)             | false   |
 | pg_array_as_varchar             | Read Postgres arrays as varchar - enables reading mixed dimensional arrays | false   |
+| pg_connection_cache             | Whether or not to use the connection cache                                 | true    |
 | pg_connection_limit             | The maximum amount of concurrent Postgres connections                      | 64      |
 | pg_pages_per_task               | The amount of pages per task                                               | 1000    |
 | pg_use_binary_copy              | Whether or not to use BINARY copy to read data                             | true    |

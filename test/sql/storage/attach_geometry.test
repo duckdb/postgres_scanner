@@ -2,9 +2,7 @@
 # description: Test built-in geometry types
 # group: [storage]
 
-
-statement ok
-LOAD '/Users/myth/Programs/duckdb-bugfix/build/debug/extension/postgres_scanner/postgres_scanner.duckdb_extension'
+require postgres_scanner
 
 require-env POSTGRES_TEST_DATABASE_AVAILABLE
 
@@ -12,7 +10,7 @@ statement ok
 PRAGMA enable_verification
 
 statement ok
-ATTACH 'dbname=postgres' AS s1 (TYPE POSTGRES)
+ATTACH 'dbname=postgresscanner' AS s1 (TYPE POSTGRES)
 
 query IIIIIII
 SELECT * FROM s1.geometry;

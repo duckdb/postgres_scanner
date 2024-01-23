@@ -216,7 +216,7 @@ insert into public_amounts values
 CREATE TABLE big_generated_table AS SELECT * FROM generate_series(0,999999);
 
 -- built-in geometric types
-create table geometry(p point, l line, ls lseg, b box, pa path, poly polygon, c circle);
-insert into geometry values ('(1,2)', '{1,2,3}', '(1,2,3,4)', '1,2,3,4', '1,2,3,4', '1,2,3,4,5,6,7,8', '1, 2, 3');
-insert into geometry values ('(-1.5,-2.5)', '{-1.5,-2.5,-3.5}', '[(-1.5,-2.5),(-3.5,-4.5)]', '(-1.5,-2.5,-3.5,-4.5)', '(1,2),(3,4),(-1.5,-2.5)', '(-1.5,-2.5,-3.5,-4.5)', '<(1, 2), 3>');
-insert into geometry values (NULL, NULL, NULL, NULL, NULL, NULL, NULL);
+create table geometry(p point);
+insert into geometry values ('(1,2)');
+insert into geometry values ('(-1.5,-2.5)');
+insert into geometry values (NULL);

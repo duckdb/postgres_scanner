@@ -14,7 +14,7 @@
 namespace duckdb {
 class PostgresSchemaEntry;
 
-class PostgresIndexSet : public PostgresCatalogSet {
+class PostgresIndexSet : public PostgresInSchemaSet {
 public:
 	PostgresIndexSet(PostgresSchemaEntry &schema, unique_ptr<PostgresResultSlice> index_result = nullptr);
 
@@ -27,7 +27,6 @@ protected:
 	void LoadEntries(ClientContext &context) override;
 
 protected:
-	PostgresSchemaEntry &schema;
 	unique_ptr<PostgresResultSlice> index_result;
 };
 

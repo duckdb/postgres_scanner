@@ -54,6 +54,8 @@ private:
 
 	PostgresCatalogSet &GetCatalogSet(CatalogType type);
 
+	static bool SchemaIsInternal(const string &name);
+
 private:
 	PostgresTableSet tables;
 	PostgresIndexSet indexes;

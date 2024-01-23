@@ -81,6 +81,8 @@ public:
 class PostgresClearCacheFunction : public TableFunction {
 public:
 	PostgresClearCacheFunction();
+
+	static void ClearCacheOnSetting(ClientContext &context, SetScope scope, Value &parameter);
 };
 
 class PostgresQueryFunction : public TableFunction {

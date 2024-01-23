@@ -8,7 +8,7 @@
 namespace duckdb {
 
 PostgresIndexSet::PostgresIndexSet(PostgresSchemaEntry &schema, unique_ptr<PostgresResultSlice> index_result_p)
-    : PostgresCatalogSet(schema.ParentCatalog(), !index_result_p), schema(schema), index_result(std::move(index_result_p)) {
+    : PostgresInSchemaSet(schema, !index_result_p), index_result(std::move(index_result_p)) {
 }
 
 string PostgresIndexSet::GetInitializeQuery() {

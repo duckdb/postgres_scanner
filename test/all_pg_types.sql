@@ -214,3 +214,9 @@ insert into public_amounts values
    (20, 0.000000000000000000067);
 
 CREATE TABLE big_generated_table AS SELECT * FROM generate_series(0,999999);
+
+-- built-in geometric types
+create table geometry(p point);
+insert into geometry values ('(1,2)');
+insert into geometry values ('(-1.5,-2.5)');
+insert into geometry values (NULL);

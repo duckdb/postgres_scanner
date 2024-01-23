@@ -1,0 +1,20 @@
+# name: test/sql/storage/attach_geometry.test
+# description: Test built-in geometry types
+# group: [storage]
+
+require postgres_scanner
+
+require-env POSTGRES_TEST_DATABASE_AVAILABLE
+
+statement ok
+PRAGMA enable_verification
+
+statement ok
+ATTACH 'dbname=postgresscanner' AS s1 (TYPE POSTGRES)
+
+query I
+SELECT * FROM s1.geometry;
+----
+{'x': 1.0, 'y': 2.0}
+{'x': -1.5, 'y': -2.5}
+NULL

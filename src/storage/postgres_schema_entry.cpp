@@ -14,15 +14,22 @@
 namespace duckdb {
 
 PostgresSchemaEntry::PostgresSchemaEntry(Catalog &catalog, string name)
-    : SchemaCatalogEntry(catalog, std::move(name), true), tables(*this), indexes(*this), types(*this) {
+    : SchemaCatalogEntry(catalog, name, SchemaIsInternal(name)), tables(*this), indexes(*this), types(*this) {
 }
 
 PostgresSchemaEntry::PostgresSchemaEntry(Catalog &catalog, string name, unique_ptr<PostgresResultSlice> tables,
                                          unique_ptr<PostgresResultSlice> enums,
                                          unique_ptr<PostgresResultSlice> composite_types,
                                          unique_ptr<PostgresResultSlice> indexes)
-    : SchemaCatalogEntry(catalog, std::move(name), true), tables(*this, std::move(tables)),
+    : SchemaCatalogEntry(catalog, name, SchemaIsInternal(name)), tables(*this, std::move(tables)),
       indexes(*this, std::move(indexes)), types(*this, std::move(enums), std::move(composite_types)) {
+}
+
+bool PostgresSchemaEntry::SchemaIsInternal(const string &name) {
+	if (name == "information_schema" || StringUtil::StartsWith(name, "pg_")) {
+		return true;
+	}
+	return false;
 }
 
 PostgresTransaction &GetPostgresTransaction(CatalogTransaction transaction) {

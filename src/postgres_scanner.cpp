@@ -187,6 +187,9 @@ static void PostgresInitInternal(ClientContext &context, const PostgresBindData 
 				col_names += "::VARCHAR";
 			}
 			if (bind_data->types[column_id].id() == LogicalTypeId::LIST) {
+				if (bind_data->postgres_types[column_id].info != PostgresTypeAnnotation::STANDARD) {
+					continue;
+				}
 				if (bind_data->postgres_types[column_id].children[0].info == PostgresTypeAnnotation::CAST_TO_VARCHAR) {
 					col_names += "::VARCHAR[]";
 				}

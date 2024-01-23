@@ -160,6 +160,30 @@ LogicalType PostgresUtils::TypeToLogicalType(optional_ptr<PostgresTransaction> t
 		return LogicalType::INTERVAL;
 	} else if (pgtypename == "uuid") {
 		return LogicalType::UUID;
+	} else if (pgtypename == "point") {
+		postgres_type.info = PostgresTypeAnnotation::GEOM_POINT;
+		child_list_t<LogicalType> point_struct;
+		point_struct.emplace_back(make_pair("x", LogicalType::DOUBLE));
+		point_struct.emplace_back(make_pair("y", LogicalType::DOUBLE));
+		return LogicalType::STRUCT(point_struct);
+	} else if (pgtypename == "line") {
+		postgres_type.info = PostgresTypeAnnotation::GEOM_LINE;
+		return LogicalType::LIST(LogicalType::DOUBLE);
+	} else if (pgtypename == "lseg") {
+		postgres_type.info = PostgresTypeAnnotation::GEOM_LINE_SEGMENT;
+		return LogicalType::LIST(LogicalType::DOUBLE);
+	} else if (pgtypename == "box") {
+		postgres_type.info = PostgresTypeAnnotation::GEOM_BOX;
+		return LogicalType::LIST(LogicalType::DOUBLE);
+	} else if (pgtypename == "path") {
+		postgres_type.info = PostgresTypeAnnotation::GEOM_PATH;
+		return LogicalType::LIST(LogicalType::DOUBLE);
+	} else if (pgtypename == "polygon") {
+		postgres_type.info = PostgresTypeAnnotation::GEOM_POLYGON;
+		return LogicalType::LIST(LogicalType::DOUBLE);
+	} else if (pgtypename == "circle") {
+		postgres_type.info = PostgresTypeAnnotation::GEOM_CIRCLE;
+		return LogicalType::LIST(LogicalType::DOUBLE);
 	} else {
 		if (!transaction) {
 			// unsupported so fallback to varchar

@@ -17,7 +17,7 @@ class PostgresResult;
 class PostgresSchemaEntry;
 struct PGTypeInfo;
 
-class PostgresTypeSet : public PostgresCatalogSet {
+class PostgresTypeSet : public PostgresInSchemaSet {
 public:
 	explicit PostgresTypeSet(PostgresSchemaEntry &schema, unique_ptr<PostgresResultSlice> enum_result = nullptr,
 	                         unique_ptr<PostgresResultSlice> composite_type_result = nullptr);
@@ -42,7 +42,6 @@ protected:
 	void InitializeCompositeTypes(PostgresTransaction &transaction, PostgresResultSlice &composite_types);
 
 protected:
-	PostgresSchemaEntry &schema;
 	unique_ptr<PostgresResultSlice> enum_result;
 	unique_ptr<PostgresResultSlice> composite_type_result;
 };

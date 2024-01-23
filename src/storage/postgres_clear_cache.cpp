@@ -21,11 +21,7 @@ static unique_ptr<FunctionData> ClearCacheBind(ClientContext &context, TableFunc
 	return std::move(result);
 }
 
-static void ClearCacheFunction(ClientContext &context, TableFunctionInput &data_p, DataChunk &output) {
-	auto &data = data_p.bind_data->CastNoConst<ClearCacheFunctionData>();
-	if (data.finished) {
-		return;
-	}
+static void ClearPostgresCaches(ClientContext &context) {
 	auto databases = DatabaseManager::Get(context).GetDatabases(context);
 	for (auto &db_ref : databases) {
 		auto &db = db_ref.get();
@@ -35,7 +31,19 @@ static void ClearCacheFunction(ClientContext &context, TableFunctionInput &data_
 		}
 		catalog.Cast<PostgresCatalog>().ClearCache();
 	}
+}
+
+static void ClearCacheFunction(ClientContext &context, TableFunctionInput &data_p, DataChunk &output) {
+	auto &data = data_p.bind_data->CastNoConst<ClearCacheFunctionData>();
+	if (data.finished) {
+		return;
+	}
+	ClearPostgresCaches(context);
 	data.finished = true;
+}
+
+void PostgresClearCacheFunction::ClearCacheOnSetting(ClientContext &context, SetScope scope, Value &parameter) {
+	ClearPostgresCaches(context);
 }
 
 PostgresClearCacheFunction::PostgresClearCacheFunction()

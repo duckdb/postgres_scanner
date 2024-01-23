@@ -263,6 +263,43 @@ public:
 		return (config.is_negative ? -base_res : base_res);
 	}
 
+	void ReadGeometry(const LogicalType &type, const PostgresType &postgres_type, Vector &out_vec, idx_t output_offset) {
+		idx_t element_count = 0;
+		switch(postgres_type.info) {
+		case PostgresTypeAnnotation::GEOM_LINE:
+		case PostgresTypeAnnotation::GEOM_CIRCLE:
+			element_count = 3;
+			break;
+		case PostgresTypeAnnotation::GEOM_LINE_SEGMENT:
+		case PostgresTypeAnnotation::GEOM_BOX:
+			element_count = 4;
+			break;
+		case PostgresTypeAnnotation::GEOM_PATH: {
+			// variable number of elements
+			auto path_is_closed = ReadBoolean(); // ignored for now
+			element_count = 2 * ReadInteger<uint32_t>();
+			break;
+		}
+		case PostgresTypeAnnotation::GEOM_POLYGON:
+			// variable number of elements
+			element_count = 2 * ReadInteger<uint32_t>();
+			break;
+		default:
+			throw InternalException("Unsupported type for ReadGeometry");
+		}
+		auto list_entries = FlatVector::GetData<list_entry_t>(out_vec);
+		auto child_offset = ListVector::GetListSize(out_vec);
+		ListVector::Reserve(out_vec, child_offset + element_count);
+		list_entries[output_offset].offset = child_offset;
+		list_entries[output_offset].length = element_count;
+		auto &child_vector = ListVector::GetEntry(out_vec);
+		auto child_data = FlatVector::GetData<double>(child_vector);
+		for(idx_t i = 0; i < element_count; i++) {
+			child_data[child_offset + i] = ReadDouble();
+		}
+		ListVector::SetListSize(out_vec, child_offset + element_count);
+	}
+
 	void ReadArray(const LogicalType &type, const PostgresType &postgres_type, Vector &out_vec, idx_t output_offset,
 	               uint32_t current_count, uint32_t dimensions[], uint32_t ndim) {
 		auto list_entries = FlatVector::GetData<list_entry_t>(out_vec);
@@ -451,6 +488,18 @@ public:
 				list_entry.length = 0;
 				break;
 			}
+			switch(postgres_type.info) {
+			case PostgresTypeAnnotation::GEOM_LINE:
+			case PostgresTypeAnnotation::GEOM_LINE_SEGMENT:
+			case PostgresTypeAnnotation::GEOM_BOX:
+			case PostgresTypeAnnotation::GEOM_PATH:
+			case PostgresTypeAnnotation::GEOM_POLYGON:
+			case PostgresTypeAnnotation::GEOM_CIRCLE:
+				ReadGeometry(type, postgres_type, out_vec, output_offset);
+				return;
+			default:
+				break;
+			}
 			D_ASSERT(value_len >= 3 * sizeof(uint32_t));
 			auto array_dim = ReadInteger<uint32_t>();
 			auto array_has_null = ReadInteger<uint32_t>(); // whether or not the array has nulls - ignore
@@ -472,8 +521,7 @@ public:
 				    "Expected an array with %llu dimensions, but this array has %llu dimensions. The array stored in "
 				    "Postgres does not match the schema. Postgres does not enforce that arrays match the provided "
 				    "schema but DuckDB requires this.\nSet pg_array_as_varchar=true to read the array as a varchar "
-				    "instead. Note that you might have to run CALL pg_clear_cache() to clear cached type information "
-				    "as well.",
+				    "instead.",
 				    expected_dimensions, array_dim);
 			}
 			auto dimensions = unique_ptr<uint32_t[]>(new uint32_t[array_dim]);
@@ -487,6 +535,12 @@ public:
 		}
 		case LogicalTypeId::STRUCT: {
 			auto &child_entries = StructVector::GetEntries(out_vec);
+			if (postgres_type.info == PostgresTypeAnnotation::GEOM_POINT) {
+				D_ASSERT(value_len == sizeof(double) * 2);
+				FlatVector::GetData<double>(*child_entries[0])[output_offset] = ReadDouble();
+				FlatVector::GetData<double>(*child_entries[1])[output_offset] = ReadDouble();
+				break;
+			}
 			auto entry_count = ReadInteger<uint32_t>();
 			if (entry_count != child_entries.size()) {
 				throw InternalException("Mismatch in entry count: expected %d but got %d", child_entries.size(),

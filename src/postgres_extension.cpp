@@ -64,7 +64,7 @@ static void LoadInternal(DatabaseInstance &db) {
 	                          SetPostgresConnectionLimit);
 	config.AddExtensionOption("pg_array_as_varchar",
 	                          "Read Postgres arrays as varchar - enables reading mixed dimensional arrays",
-	                          LogicalType::BOOLEAN, Value::BOOLEAN(false));
+	                          LogicalType::BOOLEAN, Value::BOOLEAN(false), PostgresClearCacheFunction::ClearCacheOnSetting);
 	config.AddExtensionOption("pg_connection_cache",
 							  "Whether or not to use the connection cache", LogicalType::BOOLEAN,
 							  Value::BOOLEAN(true), PostgresConnectionPool::PostgresSetConnectionCache);

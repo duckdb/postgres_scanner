@@ -17,7 +17,7 @@ class PostgresConnection;
 class PostgresResult;
 class PostgresSchemaEntry;
 
-class PostgresTableSet : public PostgresCatalogSet {
+class PostgresTableSet : public PostgresInSchemaSet {
 public:
 	explicit PostgresTableSet(PostgresSchemaEntry &schema, unique_ptr<PostgresResultSlice> tables = nullptr);
 
@@ -51,7 +51,6 @@ protected:
 	void CreateEntries(PostgresTransaction &transaction, PostgresResult &result, idx_t start, idx_t end);
 
 protected:
-	PostgresSchemaEntry &schema;
 	unique_ptr<PostgresResultSlice> table_result;
 };
 

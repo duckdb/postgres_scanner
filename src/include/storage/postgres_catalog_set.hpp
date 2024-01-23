@@ -15,6 +15,7 @@
 namespace duckdb {
 struct DropInfo;
 class PostgresResult;
+class PostgresSchemaEntry;
 class PostgresTransaction;
 
 class PostgresCatalogSet {
@@ -24,7 +25,7 @@ public:
 	optional_ptr<CatalogEntry> GetEntry(ClientContext &context, const string &name);
 	void DropEntry(ClientContext &context, DropInfo &info);
 	void Scan(ClientContext &context, const std::function<void(CatalogEntry &)> &callback);
-	optional_ptr<CatalogEntry> CreateEntry(unique_ptr<CatalogEntry> entry);
+	virtual optional_ptr<CatalogEntry> CreateEntry(unique_ptr<CatalogEntry> entry);
 	void ClearEntries();
 	virtual bool SupportReload() const {
 		return false;
@@ -49,6 +50,16 @@ private:
 	unordered_map<string, unique_ptr<CatalogEntry>> entries;
 	case_insensitive_map_t<string> entry_map;
 	atomic<bool> is_loaded;
+};
+
+class PostgresInSchemaSet : public PostgresCatalogSet {
+public:
+	PostgresInSchemaSet(PostgresSchemaEntry &schema, bool is_loaded);
+
+	optional_ptr<CatalogEntry> CreateEntry(unique_ptr<CatalogEntry> entry) override;
+
+protected:
+	PostgresSchemaEntry &schema;
 };
 
 struct PostgresResultSlice {

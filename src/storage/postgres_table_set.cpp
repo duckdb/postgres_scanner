@@ -15,7 +15,7 @@
 namespace duckdb {
 
 PostgresTableSet::PostgresTableSet(PostgresSchemaEntry &schema, unique_ptr<PostgresResultSlice> table_result_p)
-    : PostgresCatalogSet(schema.ParentCatalog(), !table_result_p), schema(schema), table_result(std::move(table_result_p)) {
+    : PostgresInSchemaSet(schema, !table_result_p), table_result(std::move(table_result_p)) {
 }
 
 string PostgresTableSet::GetInitializeQuery() {
@@ -26,7 +26,7 @@ FROM pg_class
 JOIN pg_namespace ON relnamespace = pg_namespace.oid
 JOIN pg_attribute ON pg_class.oid=pg_attribute.attrelid
 JOIN pg_type ON atttypid=pg_type.oid
-WHERE attnum > 0
+WHERE attnum > 0 AND relkind IN ('r', 'v', 'm', 'f', 'p')
 ORDER BY pg_namespace.oid, relname, attnum;
 )";
 }
@@ -96,7 +96,7 @@ void PostgresTableSet::LoadEntries(ClientContext &context) {
 	JOIN pg_namespace ON relnamespace = pg_namespace.oid
 	JOIN pg_attribute ON pg_class.oid=pg_attribute.attrelid
 	JOIN pg_type ON atttypid=pg_type.oid
-	WHERE pg_namespace.nspname=${SCHEMA_NAME} AND attnum > 0
+	WHERE pg_namespace.nspname=${SCHEMA_NAME} AND attnum > 0 AND relkind IN ('r', 'v', 'm', 'f', 'p')
 	ORDER BY relname, attnum;
 	)",
 		                                 "${SCHEMA_NAME}", KeywordHelper::WriteQuoted(schema.name));
@@ -116,7 +116,7 @@ FROM pg_class
 JOIN pg_namespace ON relnamespace = pg_namespace.oid
 JOIN pg_attribute ON pg_class.oid=pg_attribute.attrelid
 JOIN pg_type ON atttypid=pg_type.oid
-WHERE pg_namespace.nspname=${SCHEMA_NAME} AND relname=${TABLE_NAME} AND attnum > 0
+WHERE pg_namespace.nspname=${SCHEMA_NAME} AND relname=${TABLE_NAME} AND attnum > 0 AND relkind IN ('r', 'v', 'm', 'f', 'p')
 ORDER BY relname, attnum;
 )",
 	                                               "${SCHEMA_NAME}", KeywordHelper::WriteQuoted(schema_name)),

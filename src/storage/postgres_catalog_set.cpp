@@ -1,6 +1,8 @@
 #include "storage/postgres_catalog_set.hpp"
 #include "storage/postgres_transaction.hpp"
 #include "duckdb/parser/parsed_data/drop_info.hpp"
+#include "storage/postgres_schema_entry.hpp"
+
 namespace duckdb {
 
 PostgresCatalogSet::PostgresCatalogSet(Catalog &catalog, bool is_loaded_p) : catalog(catalog), is_loaded(is_loaded_p) {
@@ -101,6 +103,15 @@ void PostgresCatalogSet::ClearEntries() {
 	entry_map.clear();
 	entries.clear();
 	is_loaded = false;
+}
+
+PostgresInSchemaSet::PostgresInSchemaSet(PostgresSchemaEntry &schema, bool is_loaded) :
+	PostgresCatalogSet(schema.ParentCatalog(), is_loaded), schema(schema) {
+}
+
+optional_ptr<CatalogEntry> PostgresInSchemaSet::CreateEntry(unique_ptr<CatalogEntry> entry) {
+	entry->internal = schema.internal;
+	return PostgresCatalogSet::CreateEntry(std::move(entry));
 }
 
 } // namespace duckdb

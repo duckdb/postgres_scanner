@@ -13,6 +13,7 @@
 
 namespace duckdb {
 class PostgresSchemaEntry;
+class TableCatalogEntry;
 
 class PostgresIndexSet : public PostgresInSchemaSet {
 public:

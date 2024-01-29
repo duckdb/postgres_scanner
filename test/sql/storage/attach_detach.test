@@ -23,6 +23,7 @@ DETACH s1
 
 statement error
 SELECT * FROM s1.test
+----
 
 statement ok
 ATTACH 'dbname=postgresscanner' AS s1 (TYPE POSTGRES)

@@ -25,3 +25,14 @@ query I
 SELECT * FROM s1.filter_pushdown WHERE i=52525
 ----
 52525
+
+query I
+SELECT * FROM s1.composites_of_composites WHERE b.k < 8
+----
+{'a': {'i': 1, 'j': 2}, 'k': 3}
+{'a': {'i': 4, 'j': 5}, 'k': 6}
+
+query I
+SELECT * FROM s1.composites_of_composites WHERE b.a.j = 5
+----
+{'a': {'i': 4, 'j': 5}, 'k': 6}

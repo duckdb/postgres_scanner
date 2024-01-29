@@ -14,7 +14,6 @@ concurrency:
 jobs:
   duckdb-stable-build:
     name: Build extension binaries
-    if: startsWith(github.ref, 'refs/tags/v') || github.ref == 'refs/heads/main'
     uses: duckdb/duckdb/.github/workflows/_extension_distribution.yml@5b391512a8fc7800a0c22d98714e6d8f25c002cf
     with:
       duckdb_version: 5b391512a8fc7800a0c22d98714e6d8f25c002cf

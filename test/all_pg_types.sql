@@ -186,6 +186,12 @@ INSERT INTO mixed_arrays VALUES (
 	ARRAY[1, 2, 3]
 );
 
+CREATE TYPE composite_a AS (i INTEGER, j INTEGER);
+CREATE TYPE composite_b AS (a composite_a, k INTEGER);
+CREATE TABLE composites_of_composites (b composite_b);
+
+INSERT INTO composites_of_composites VALUES (((1,2),3)), (((4,5),6)), (((7,8),9));
+
 -- Issue #136 - Inconsistent results from querying postgres numeric columns
 create TABLE public_amounts (
     id bigint NOT NULL,

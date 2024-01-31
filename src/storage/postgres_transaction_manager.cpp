@@ -7,26 +7,26 @@ PostgresTransactionManager::PostgresTransactionManager(AttachedDatabase &db_p, P
     : TransactionManager(db_p), postgres_catalog(postgres_catalog) {
 }
 
-Transaction *PostgresTransactionManager::StartTransaction(ClientContext &context) {
+Transaction &PostgresTransactionManager::StartTransaction(ClientContext &context) {
 	auto transaction = make_uniq<PostgresTransaction>(postgres_catalog, *this, context);
 	transaction->Start();
-	auto result = transaction.get();
+	auto &result = *transaction;
 	lock_guard<mutex> l(transaction_lock);
 	transactions[result] = std::move(transaction);
 	return result;
 }
 
-string PostgresTransactionManager::CommitTransaction(ClientContext &context, Transaction *transaction) {
-	auto postgres_transaction = (PostgresTransaction *)transaction;
-	postgres_transaction->Commit();
+string PostgresTransactionManager::CommitTransaction(ClientContext &context, Transaction &transaction) {
+	auto &postgres_transaction = transaction.Cast<PostgresTransaction>();
+	postgres_transaction.Commit();
 	lock_guard<mutex> l(transaction_lock);
 	transactions.erase(transaction);
 	return string();
 }
 
-void PostgresTransactionManager::RollbackTransaction(Transaction *transaction) {
-	auto postgres_transaction = (PostgresTransaction *)transaction;
-	postgres_transaction->Rollback();
+void PostgresTransactionManager::RollbackTransaction(Transaction &transaction) {
+	auto &postgres_transaction = transaction.Cast<PostgresTransaction>();
+	postgres_transaction.Rollback();
 	lock_guard<mutex> l(transaction_lock);
 	transactions.erase(transaction);
 }

@@ -14,12 +14,11 @@ concurrency:
 jobs:
   duckdb-stable-build:
     name: Build extension binaries
-#    if: startsWith(github.ref, 'refs/tags/v') || github.ref == 'refs/heads/main'
-    uses: duckdb/duckdb/.github/workflows/_extension_distribution.yml@v0.9.2
+    uses: duckdb/duckdb/.github/workflows/_extension_distribution.yml@5b391512a8fc7800a0c22d98714e6d8f25c002cf
     with:
-      duckdb_version: v0.9.2
+      duckdb_version: 5b391512a8fc7800a0c22d98714e6d8f25c002cf
       extension_name: postgres_scanner
-      vcpkg_commit: 9edb1b8e590cc086563301d735cae4b6e732d2d2 # TODO: remove pinned vcpkg commit when updating duckdb version
+      exclude_archs: 'wasm_mvp;wasm_eh;wasm_threads;windows_amd64_rtools'
 
   duckdb-stable-deploy:
     name: Deploy extension binaries
@@ -27,6 +26,7 @@ jobs:
     uses: ./.github/workflows/_extension_deploy.yml
     secrets: inherit
     with:
-      duckdb_version: v0.9.2
+      duckdb_version: 5b391512a8fc7800a0c22d98714e6d8f25c002cf
       extension_name: postgres_scanner
+      exclude_archs: 'wasm_mvp;wasm_eh;wasm_threads;windows_amd64_rtools'
       deploy_latest: ${{ startsWith(github.ref, 'refs/tags/v') || github.ref == 'refs/heads/main' }}

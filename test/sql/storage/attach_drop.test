@@ -32,6 +32,7 @@ DROP TABLE simple.test
 # verify the drop was successful
 statement error
 SELECT * FROM simple.test;
+----
 
 statement error
 DROP TABLE simple.testx

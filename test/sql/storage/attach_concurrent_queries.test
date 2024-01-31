@@ -17,6 +17,7 @@ concurrentloop i 0 10
 
 statement maybe
 CREATE OR REPLACE TABLE s.concurrent(i INTEGER);
+----
 
 endloop
 

@@ -1,6 +1,7 @@
 #include "postgres_filter_pushdown.hpp"
 #include "duckdb/parser/keyword_helper.hpp"
 #include "duckdb/planner/filter/struct_filter.hpp"
+#include "duckdb/common/enum_util.hpp"
 
 namespace duckdb {
 
@@ -54,8 +55,8 @@ string PostgresFilterPushdown::TransformFilter(string &column_name, TableFilter 
 	}
 	case TableFilterType::STRUCT_EXTRACT: {
 		auto &struct_filter = filter.Cast<StructFilter>();
-		auto child_name = KeywordHelper::WriteQuoted(struct_filter.child_name);
-		auto new_name = column_name + "." + child_name;
+		auto child_name = KeywordHelper::WriteQuoted(struct_filter.child_name, '\"');
+		auto new_name = "(" + column_name + ")." + child_name;
 		return TransformFilter(new_name, *struct_filter.child_filter);
 	}
 	default:
@@ -77,9 +78,9 @@ string PostgresFilterPushdown::TransformFilters(const vector<column_t> &column_i
 		auto column_name = KeywordHelper::WriteQuoted(names[column_ids[entry.first]], '"');
 		auto &filter = *entry.second;
 
-		if (filter.filter_type == TableFilterType::STRUCT_EXTRACT) {
-			column_name = StringUtil::Format("(%s)", column_name.c_str());
-		}
+//		if (filter.filter_type == TableFilterType::STRUCT_EXTRACT) {
+//			column_name = StringUtil::Format("(%s)", column_name.c_str());
+//		}
 
 		result += TransformFilter(column_name, filter);
 	}

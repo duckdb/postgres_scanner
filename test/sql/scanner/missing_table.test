@@ -8,3 +8,4 @@ require-env POSTGRES_TEST_DATABASE_AVAILABLE
 
 statement error
 select * from postgres_scan('dbname=postgresscanner', 'public', 'does_not_exist')
+----

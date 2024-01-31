@@ -18,6 +18,7 @@ jobs:
     with:
       duckdb_version: 5b391512a8fc7800a0c22d98714e6d8f25c002cf
       extension_name: postgres_scanner
+      exclude_archs: 'wasm_mvp;wasm_eh;wasm_threads'
 
   duckdb-stable-deploy:
     name: Deploy extension binaries
@@ -27,4 +28,5 @@ jobs:
     with:
       duckdb_version: 5b391512a8fc7800a0c22d98714e6d8f25c002cf
       extension_name: postgres_scanner
+      exclude_archs: 'wasm_mvp;wasm_eh;wasm_threads'
       deploy_latest: ${{ startsWith(github.ref, 'refs/tags/v') || github.ref == 'refs/heads/main' }}

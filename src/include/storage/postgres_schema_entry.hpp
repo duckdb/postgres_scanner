@@ -18,8 +18,8 @@ class PostgresTransaction;
 
 class PostgresSchemaEntry : public SchemaCatalogEntry {
 public:
-	PostgresSchemaEntry(Catalog &catalog, string name);
-	PostgresSchemaEntry(Catalog &catalog, string name, unique_ptr<PostgresResultSlice> tables,
+	PostgresSchemaEntry(Catalog &catalog, CreateSchemaInfo &info);
+	PostgresSchemaEntry(Catalog &catalog, CreateSchemaInfo &info, unique_ptr<PostgresResultSlice> tables,
 	                    unique_ptr<PostgresResultSlice> enums, unique_ptr<PostgresResultSlice> composite_types,
 	                    unique_ptr<PostgresResultSlice> indexes);
 
@@ -44,6 +44,8 @@ public:
 	void DropEntry(ClientContext &context, DropInfo &info) override;
 	optional_ptr<CatalogEntry> GetEntry(CatalogTransaction transaction, CatalogType type, const string &name) override;
 
+        static bool SchemaIsInternal(const string &name);
+
 private:
 	void AlterTable(PostgresTransaction &transaction, RenameTableInfo &info);
 	void AlterTable(PostgresTransaction &transaction, RenameColumnInfo &info);
@@ -53,8 +55,6 @@ private:
 	void TryDropEntry(ClientContext &context, CatalogType catalog_type, const string &name);
 
 	PostgresCatalogSet &GetCatalogSet(CatalogType type);
-
-	static bool SchemaIsInternal(const string &name);
 
 private:
 	PostgresTableSet tables;

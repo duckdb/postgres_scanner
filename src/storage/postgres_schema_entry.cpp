@@ -13,15 +13,15 @@
 
 namespace duckdb {
 
-PostgresSchemaEntry::PostgresSchemaEntry(Catalog &catalog, string name)
-    : SchemaCatalogEntry(catalog, name, SchemaIsInternal(name)), tables(*this), indexes(*this), types(*this) {
+PostgresSchemaEntry::PostgresSchemaEntry(Catalog &catalog, CreateSchemaInfo &info)
+    : SchemaCatalogEntry(catalog, info), tables(*this), indexes(*this), types(*this) {
 }
 
-PostgresSchemaEntry::PostgresSchemaEntry(Catalog &catalog, string name, unique_ptr<PostgresResultSlice> tables,
+PostgresSchemaEntry::PostgresSchemaEntry(Catalog &catalog, CreateSchemaInfo &info, unique_ptr<PostgresResultSlice> tables,
                                          unique_ptr<PostgresResultSlice> enums,
                                          unique_ptr<PostgresResultSlice> composite_types,
                                          unique_ptr<PostgresResultSlice> indexes)
-    : SchemaCatalogEntry(catalog, name, SchemaIsInternal(name)), tables(*this, std::move(tables)),
+    : SchemaCatalogEntry(catalog, info), tables(*this, std::move(tables)),
       indexes(*this, std::move(indexes)), types(*this, std::move(enums), std::move(composite_types)) {
 }
 

@@ -16,12 +16,12 @@ Transaction &PostgresTransactionManager::StartTransaction(ClientContext &context
 	return result;
 }
 
-string PostgresTransactionManager::CommitTransaction(ClientContext &context, Transaction &transaction) {
+ErrorData PostgresTransactionManager::CommitTransaction(ClientContext &context, Transaction &transaction) {
 	auto &postgres_transaction = transaction.Cast<PostgresTransaction>();
 	postgres_transaction.Commit();
 	lock_guard<mutex> l(transaction_lock);
 	transactions.erase(transaction);
-	return string();
+	return ErrorData();
 }
 
 void PostgresTransactionManager::RollbackTransaction(Transaction &transaction) {

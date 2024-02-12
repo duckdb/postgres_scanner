@@ -20,7 +20,7 @@ public:
 	PostgresTransactionManager(AttachedDatabase &db_p, PostgresCatalog &postgres_catalog);
 
 	Transaction &StartTransaction(ClientContext &context) override;
-	string CommitTransaction(ClientContext &context, Transaction &transaction) override;
+	ErrorData CommitTransaction(ClientContext &context, Transaction &transaction) override;
 	void RollbackTransaction(Transaction &transaction) override;
 
 	void Checkpoint(ClientContext &context, bool force = false) override;

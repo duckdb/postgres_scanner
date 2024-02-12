@@ -61,8 +61,11 @@ void PostgresSchemaSet::LoadEntries(ClientContext &context) {
 	for (idx_t row = 0; row < rows; row++) {
 		auto oid = result->GetInt64(row, 0);
 		auto schema_name = result->GetString(row, 1);
+                CreateSchemaInfo info;
+                info.schema = schema_name;
+                info.internal = PostgresSchemaEntry::SchemaIsInternal(schema_name);
 		auto schema =
-		    make_uniq<PostgresSchemaEntry>(catalog, schema_name, std::move(tables[row]), std::move(enums[row]),
+		    make_uniq<PostgresSchemaEntry>(catalog, info, std::move(tables[row]), std::move(enums[row]),
 		                                   std::move(composite_types[row]), std::move(indexes[row]));
 		CreateEntry(std::move(schema));
 	}
@@ -73,7 +76,9 @@ optional_ptr<CatalogEntry> PostgresSchemaSet::CreateSchema(ClientContext &contex
 
 	string create_sql = "CREATE SCHEMA " + KeywordHelper::WriteQuoted(info.schema, '"');
 	transaction.Query(create_sql);
-	auto schema_entry = make_uniq<PostgresSchemaEntry>(catalog, info.schema);
+        auto info_copy = info.Copy();
+        info.internal = PostgresSchemaEntry::SchemaIsInternal(info_copy->schema);
+	auto schema_entry = make_uniq<PostgresSchemaEntry>(catalog, info_copy->Cast<CreateSchemaInfo>());
 	return CreateEntry(std::move(schema_entry));
 }
 

@@ -78,10 +78,6 @@ string PostgresFilterPushdown::TransformFilters(const vector<column_t> &column_i
 		auto column_name = KeywordHelper::WriteQuoted(names[column_ids[entry.first]], '"');
 		auto &filter = *entry.second;
 
-//		if (filter.filter_type == TableFilterType::STRUCT_EXTRACT) {
-//			column_name = StringUtil::Format("(%s)", column_name.c_str());
-//		}
-
 		result += TransformFilter(column_name, filter);
 	}
 	return result;

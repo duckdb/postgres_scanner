@@ -18,7 +18,7 @@ SELECT * FROM s.tbl_with_case_sensitive_columns
 42	84
 
 query II
-SELECT MyColumn, "MyColumn:1" FROM s.tbl_with_case_sensitive_columns
+SELECT MyColumn, "MyColumn_1" FROM s.tbl_with_case_sensitive_columns
 ----
 42	84
 
@@ -29,20 +29,20 @@ statement ok
 DELETE FROM s.tbl_with_case_sensitive_columns
 
 statement ok
-INSERT INTO s.tbl_with_case_sensitive_columns (MyColumn, "MyColumn:1") VALUES (42, 43);
+INSERT INTO s.tbl_with_case_sensitive_columns (MyColumn, "MyColumn_1") VALUES (42, 43);
 
 statement ok
 COMMIT
 
 query II
-SELECT MyColumn, "MyColumn:1" FROM s.tbl_with_case_sensitive_columns
+SELECT MyColumn, "MyColumn_1" FROM s.tbl_with_case_sensitive_columns
 ----
 42	43
 
 statement ok
-UPDATE s.tbl_with_case_sensitive_columns SET "MyColumn:1"=84
+UPDATE s.tbl_with_case_sensitive_columns SET "MyColumn_1"=84
 
 query II
-SELECT MyColumn, "MyColumn:1" FROM s.tbl_with_case_sensitive_columns
+SELECT MyColumn, "MyColumn_1" FROM s.tbl_with_case_sensitive_columns
 ----
 42	84

@@ -14,19 +14,19 @@ concurrency:
 jobs:
   duckdb-stable-build:
     name: Build extension binaries
-    uses: duckdb/duckdb/.github/workflows/_extension_distribution.yml@0e784765f6f87bd1ce9034afcce1e7f89fcd8777
+    uses: duckdb/duckdb/.github/workflows/_extension_distribution.yml@3fbbd15390059b8028ad6dfd56a3172e5ebc0ab8
     with:
-      duckdb_version: 0e784765f6
+      duckdb_version: v0.10.0
       extension_name: postgres_scanner
       exclude_archs: 'wasm_mvp;wasm_eh;wasm_threads;windows_amd64_rtools'
 
   duckdb-stable-deploy:
     name: Deploy extension binaries
     needs: duckdb-stable-build
-    uses: duckdb/duckdb/.github/workflows/_extension_deploy.yml@0e784765f6f87bd1ce9034afcce1e7f89fcd8777
+    uses: duckdb/duckdb/.github/workflows/_extension_deploy.yml@3fbbd15390059b8028ad6dfd56a3172e5ebc0ab8
     secrets: inherit
     with:
-      duckdb_version: 0e784765f6
+      duckdb_version: v0.10.0
       extension_name: postgres_scanner
       exclude_archs: 'wasm_mvp;wasm_eh;wasm_threads;windows_amd64_rtools'
       deploy_latest: ${{ startsWith(github.ref, 'refs/tags/v') || github.ref == 'refs/heads/main' }}

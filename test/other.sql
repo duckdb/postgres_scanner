@@ -131,6 +131,8 @@ CREATE TABLE dum();
 CREATE TABLE dee();
 INSERT INTO dee DEFAULT VALUES;
 
+CREATE VIEW dee_view as select * from dee;
+
 -- table with duplicate column names
 CREATE TABLE tbl_with_case_sensitive_columns (
 	"MyColumn" INT,

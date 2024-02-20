@@ -80,15 +80,16 @@ void PostgresTableSet::CreateEntries(PostgresTransaction &transaction, PostgresR
 			}
 			auto catalog_type = TransformRelKind(relkind);
 			switch (catalog_type) {
-				case CatalogType::TABLE_ENTRY:
-					info = make_uniq<PostgresTableInfo>(schema, relname);
-					break;
-				case CatalogType::VIEW_ENTRY:
-					info = make_uniq<PostgresViewInfo>(schema, relname);
-					break;
-				default: {
-					throw InternalException("Unexpected CatalogType in CreateEntries: %s", CatalogTypeToString(catalog_type));
-				}
+			case CatalogType::TABLE_ENTRY:
+				info = make_uniq<PostgresTableInfo>(schema, relname);
+				break;
+			case CatalogType::VIEW_ENTRY:
+				info = make_uniq<PostgresViewInfo>(schema, relname);
+				break;
+			default: {
+				throw InternalException("Unexpected CatalogType in CreateEntries: %s",
+				                        CatalogTypeToString(catalog_type));
+			}
 				info->approx_num_pages = approx_num_pages;
 			}
 		}
@@ -101,15 +102,15 @@ void PostgresTableSet::CreateEntries(PostgresTransaction &transaction, PostgresR
 		auto &create_info = pg_create_info->GetCreateInfo();
 		unique_ptr<StandardEntry> catalog_entry;
 		switch (create_info.type) {
-			case CatalogType::TABLE_ENTRY:
-				catalog_entry = make_uniq<PostgresTableEntry>(catalog, schema, pg_create_info->Cast<PostgresTableInfo>());
-				break;
-			case CatalogType::VIEW_ENTRY:
-				catalog_entry = make_uniq<PostgresViewEntry>(catalog, schema, pg_create_info->Cast<PostgresViewInfo>());
-				break;
-			default: {
-				throw InternalException("Unexpected CatalogType in CreateInfo: %s", CatalogTypeToString(create_info.type));
-			}
+		case CatalogType::TABLE_ENTRY:
+			catalog_entry = make_uniq<PostgresTableEntry>(catalog, schema, pg_create_info->Cast<PostgresTableInfo>());
+			break;
+		case CatalogType::VIEW_ENTRY:
+			catalog_entry = make_uniq<PostgresViewEntry>(catalog, schema, pg_create_info->Cast<PostgresViewInfo>());
+			break;
+		default: {
+			throw InternalException("Unexpected CatalogType in CreateInfo: %s", CatalogTypeToString(create_info.type));
+		}
 		}
 		CreateEntry(std::move(catalog_entry));
 	}

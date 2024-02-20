@@ -18,11 +18,14 @@ struct PostgresCreateInfo {
 public:
 	PostgresCreateInfo() {
 	}
-	virtual ~PostgresCreateInfo() {}
+	virtual ~PostgresCreateInfo() {
+	}
+
 public:
 	virtual CreateInfo &GetCreateInfo() = 0;
 	virtual const string &GetName() const = 0;
 	virtual void AddColumn(ColumnDefinition def, PostgresType pg_type, const string &pg_name) = 0;
+
 public:
 	template <class TARGET>
 	TARGET &Cast() {
@@ -35,6 +38,7 @@ public:
 		D_ASSERT(dynamic_cast<const TARGET *>(this));
 		return reinterpret_cast<const TARGET &>(*this);
 	}
+
 public:
 	idx_t approx_num_pages = 0;
 };

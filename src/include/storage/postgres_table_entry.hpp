@@ -29,9 +29,10 @@ public:
 		create_info = make_uniq<CreateTableInfo>((SchemaCatalogEntry &)schema, table);
 		create_info->columns.SetAllowDuplicates(true);
 	}
-	~PostgresTableInfo() override {}
-public:
+	~PostgresTableInfo() override {
+	}
 
+public:
 	CreateInfo &GetCreateInfo() override {
 		return *create_info;
 	}

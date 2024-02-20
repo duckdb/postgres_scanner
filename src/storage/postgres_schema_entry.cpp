@@ -17,12 +17,12 @@ PostgresSchemaEntry::PostgresSchemaEntry(Catalog &catalog, CreateSchemaInfo &inf
     : SchemaCatalogEntry(catalog, info), tables(*this), indexes(*this), types(*this) {
 }
 
-PostgresSchemaEntry::PostgresSchemaEntry(Catalog &catalog, CreateSchemaInfo &info, unique_ptr<PostgresResultSlice> tables,
-                                         unique_ptr<PostgresResultSlice> enums,
+PostgresSchemaEntry::PostgresSchemaEntry(Catalog &catalog, CreateSchemaInfo &info,
+                                         unique_ptr<PostgresResultSlice> tables, unique_ptr<PostgresResultSlice> enums,
                                          unique_ptr<PostgresResultSlice> composite_types,
                                          unique_ptr<PostgresResultSlice> indexes)
-    : SchemaCatalogEntry(catalog, info), tables(*this, std::move(tables)),
-      indexes(*this, std::move(indexes)), types(*this, std::move(enums), std::move(composite_types)) {
+    : SchemaCatalogEntry(catalog, info), tables(*this, std::move(tables)), indexes(*this, std::move(indexes)),
+      types(*this, std::move(enums), std::move(composite_types)) {
 }
 
 bool PostgresSchemaEntry::SchemaIsInternal(const string &name) {

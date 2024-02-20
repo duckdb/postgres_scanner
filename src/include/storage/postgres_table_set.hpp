@@ -46,7 +46,8 @@ protected:
 	void AlterTable(ClientContext &context, RemoveColumnInfo &info);
 
 	static void AddColumn(optional_ptr<PostgresTransaction> transaction, optional_ptr<PostgresSchemaEntry> schema,
-	                      PostgresResult &result, idx_t row, PostgresCreateInfo &pg_create_info, idx_t column_offset = 0);
+	                      PostgresResult &result, idx_t row, PostgresCreateInfo &pg_create_info,
+	                      idx_t column_offset = 0);
 
 	void CreateEntries(PostgresTransaction &transaction, PostgresResult &result, idx_t start, idx_t end);
 

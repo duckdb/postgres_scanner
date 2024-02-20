@@ -10,11 +10,13 @@
 
 #include "duckdb/catalog/catalog_entry/table_catalog_entry.hpp"
 #include "duckdb/parser/parsed_data/create_table_info.hpp"
+#include "storage/postgres_create_info.hpp"
 #include "postgres_utils.hpp"
 
 namespace duckdb {
 
-struct PostgresTableInfo {
+struct PostgresTableInfo : public PostgresCreateInfo {
+public:
 	PostgresTableInfo() {
 		create_info = make_uniq<CreateTableInfo>();
 		create_info->columns.SetAllowDuplicates(true);
@@ -27,15 +29,27 @@ struct PostgresTableInfo {
 		create_info = make_uniq<CreateTableInfo>((SchemaCatalogEntry &)schema, table);
 		create_info->columns.SetAllowDuplicates(true);
 	}
+	~PostgresTableInfo() override {}
+public:
 
-	const string &GetTableName() const {
+	CreateInfo &GetCreateInfo() override {
+		return *create_info;
+	}
+
+	const string &GetName() const override {
 		return create_info->table;
 	}
 
+	void AddColumn(ColumnDefinition def, PostgresType pg_type, const string &pg_name) override {
+		postgres_types.push_back(std::move(pg_type));
+		postgres_names.push_back(pg_name);
+		create_info->columns.AddColumn(std::move(def));
+	}
+
+public:
 	unique_ptr<CreateTableInfo> create_info;
 	vector<PostgresType> postgres_types;
 	vector<string> postgres_names;
-	idx_t approx_num_pages = 0;
 };
 
 class PostgresTableEntry : public TableCatalogEntry {
@@ -61,7 +75,7 @@ public:
 	vector<PostgresType> postgres_types;
 	//! Column names as they are within Postgres
 	//! We track these separately because of case sensitivity - Postgres allows e.g. the columns "ID" and "id" together
-	//! We would in this case remap them to "ID" and "id:1", while postgres_names store the original names
+	//! We would in this case remap them to "ID" and "id_1", while postgres_names store the original names
 	vector<string> postgres_names;
 	//! The approximate number of pages a table consumes in Postgres
 	idx_t approx_num_pages;

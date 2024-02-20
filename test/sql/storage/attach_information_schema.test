@@ -1,0 +1,19 @@
+# name: test/sql/storage/attach_describe.test
+# description: Test DESCRIBE
+# group: [storage]
+
+require postgres_scanner
+
+require-env POSTGRES_TEST_DATABASE_AVAILABLE
+
+statement ok
+PRAGMA enable_verification
+
+statement ok
+ATTACH 'dbname=postgres' AS s1 (TYPE POSTGRES)
+
+query IIII
+select table_catalog, table_schema, table_name, table_type  from information_schema.tables where table_name in ('v','s','t');
+----
+s1	public	t	BASE TABLE
+s1	public	v	VIEW

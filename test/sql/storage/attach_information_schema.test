@@ -10,7 +10,7 @@ statement ok
 PRAGMA enable_verification
 
 statement ok
-ATTACH 'dbname=postgres' AS s1 (TYPE POSTGRES)
+ATTACH 'postgres:dbname=postgresscanner' AS s1
 
 query IIII
 select
@@ -18,7 +18,7 @@ select
 	table_schema,
 	table_name,
 	table_type
-from information_schema.tables where table_name in ('v','s','t') and table_name LIKE 'dee%';
+from information_schema.tables where table_name in ('chars_view','chars');
 ----
-s1	public	dee	BASE TABLE
-s1	public	dee_view	VIEW
+s1	public	chars	BASE TABLE
+s1	public	chars_view	VIEW

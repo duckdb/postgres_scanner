@@ -481,12 +481,13 @@ unique_ptr<NodeStatistics> PostgresScanCardinality(ClientContext &context, const
 }
 
 double PostgresScanProgress(ClientContext &context, const FunctionData *bind_data_p,
-											const GlobalTableFunctionState *global_state) {
+                            const GlobalTableFunctionState *global_state) {
 	auto &bind_data = bind_data_p->Cast<PostgresBindData>();
 	auto &gstate = global_state->Cast<PostgresGlobalState>();
 
 	lock_guard<mutex> parallel_lock(gstate.lock);
-	double progress = 100 * double(gstate.page_idx) / double(bind_data.pages_approx);;
+	double progress = 100 * double(gstate.page_idx) / double(bind_data.pages_approx);
+	;
 	return MinValue<double>(100, progress);
 }
 

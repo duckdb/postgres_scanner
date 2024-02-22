@@ -62,18 +62,16 @@ static void LoadInternal(DatabaseInstance &db) {
 	config.AddExtensionOption("pg_connection_limit", "The maximum amount of concurrent Postgres connections",
 	                          LogicalType::UBIGINT, Value::UBIGINT(PostgresConnectionPool::DEFAULT_MAX_CONNECTIONS),
 	                          SetPostgresConnectionLimit);
-	config.AddExtensionOption("pg_array_as_varchar",
-	                          "Read Postgres arrays as varchar - enables reading mixed dimensional arrays",
-	                          LogicalType::BOOLEAN, Value::BOOLEAN(false), PostgresClearCacheFunction::ClearCacheOnSetting);
-	config.AddExtensionOption("pg_connection_cache",
-							  "Whether or not to use the connection cache", LogicalType::BOOLEAN,
-							  Value::BOOLEAN(true), PostgresConnectionPool::PostgresSetConnectionCache);
+	config.AddExtensionOption(
+	    "pg_array_as_varchar", "Read Postgres arrays as varchar - enables reading mixed dimensional arrays",
+	    LogicalType::BOOLEAN, Value::BOOLEAN(false), PostgresClearCacheFunction::ClearCacheOnSetting);
+	config.AddExtensionOption("pg_connection_cache", "Whether or not to use the connection cache", LogicalType::BOOLEAN,
+	                          Value::BOOLEAN(true), PostgresConnectionPool::PostgresSetConnectionCache);
 	config.AddExtensionOption("pg_experimental_filter_pushdown",
 	                          "Whether or not to use filter pushdown (currently experimental)", LogicalType::BOOLEAN,
 	                          Value::BOOLEAN(false));
 	config.AddExtensionOption("pg_debug_show_queries", "DEBUG SETTING: print all queries sent to Postgres to stdout",
 	                          LogicalType::BOOLEAN, Value::BOOLEAN(false), SetPostgresDebugQueryPrint);
-
 
 	OptimizerExtension postgres_optimizer;
 	postgres_optimizer.optimize_function = PostgresOptimizer::Optimize;

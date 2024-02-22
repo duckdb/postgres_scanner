@@ -18,23 +18,25 @@ SourceResultType PostgresCreateIndex::GetData(ExecutionContext &context, DataChu
                                               OperatorSourceInput &input) const {
 	auto &catalog = table.catalog;
 	auto &schema = table.schema;
-	auto existing = schema.GetEntry(catalog.GetCatalogTransaction(context.client), CatalogType::INDEX_ENTRY, info->index_name);
+	auto existing =
+	    schema.GetEntry(catalog.GetCatalogTransaction(context.client), CatalogType::INDEX_ENTRY, info->index_name);
 	if (existing) {
-		switch(info->on_conflict) {
-			case OnCreateConflict::IGNORE_ON_CONFLICT:
-				return SourceResultType::FINISHED;
-			case OnCreateConflict::ERROR_ON_CONFLICT:
-				throw BinderException("Index with name \"%s\" already exists in schema \"%s\"", info->index_name, table.schema.name);
-			case OnCreateConflict::REPLACE_ON_CONFLICT: {
-				DropInfo drop_info;
-				drop_info.type = CatalogType::INDEX_ENTRY;
-				drop_info.schema = info->schema;
-				drop_info.name = info->index_name;
-				schema.DropEntry(context.client, drop_info);
-				break;
-			}
-			default:
-				throw InternalException("Unsupported on create conflict");
+		switch (info->on_conflict) {
+		case OnCreateConflict::IGNORE_ON_CONFLICT:
+			return SourceResultType::FINISHED;
+		case OnCreateConflict::ERROR_ON_CONFLICT:
+			throw BinderException("Index with name \"%s\" already exists in schema \"%s\"", info->index_name,
+			                      table.schema.name);
+		case OnCreateConflict::REPLACE_ON_CONFLICT: {
+			DropInfo drop_info;
+			drop_info.type = CatalogType::INDEX_ENTRY;
+			drop_info.schema = info->schema;
+			drop_info.name = info->index_name;
+			schema.DropEntry(context.client, drop_info);
+			break;
+		}
+		default:
+			throw InternalException("Unsupported on create conflict");
 		}
 	}
 	schema.CreateIndex(context.client, *info, table);

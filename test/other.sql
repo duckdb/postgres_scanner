@@ -131,8 +131,6 @@ CREATE TABLE dum();
 CREATE TABLE dee();
 INSERT INTO dee DEFAULT VALUES;
 
-CREATE VIEW dee_view as select * from dee;
-
 -- table with duplicate column names
 CREATE TABLE tbl_with_case_sensitive_columns (
 	"MyColumn" INT,
@@ -157,6 +155,8 @@ INSERT INTO chars VALUES ('hello'), ('world'), ('maxlength1'), ('hello     '), (
 
 CREATE TABLE chars_array(c CHAR(10)[]);
 INSERT INTO chars_array VALUES (ARRAY['hello', 'world', 'maxlength1', 'hello     ', '     ', NULL]);
+
+CREATE VIEW chars_view as select * from chars;
 
 -- varchar with length limit
 CREATE TABLE varchars_fixed_len(c VARCHAR(10));

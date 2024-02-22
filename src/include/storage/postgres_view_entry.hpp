@@ -28,9 +28,10 @@ public:
 		create_info = make_uniq<CreateViewInfo>((SchemaCatalogEntry &)schema, view);
 		// create_info->columns.SetAllowDuplicates(true);
 	}
-	~PostgresViewInfo() override {}
-public:
+	~PostgresViewInfo() override {
+	}
 
+public:
 	const string &GetName() const override {
 		return create_info->view_name;
 	}
@@ -56,6 +57,7 @@ class PostgresViewEntry : public ViewCatalogEntry {
 public:
 	PostgresViewEntry(Catalog &catalog, SchemaCatalogEntry &schema, CreateViewInfo &info);
 	PostgresViewEntry(Catalog &catalog, SchemaCatalogEntry &schema, PostgresViewInfo &info);
+
 public:
 	//! Postgres type annotations
 	vector<PostgresType> postgres_types;

@@ -25,6 +25,7 @@ public:
 	virtual CreateInfo &GetCreateInfo() = 0;
 	virtual const string &GetName() const = 0;
 	virtual void AddColumn(ColumnDefinition def, PostgresType pg_type, const string &pg_name) = 0;
+	virtual void GetColumnNamesAndTypes(vector<string> &names, vector<LogicalType> &types) = 0;
 
 public:
 	template <class TARGET>
@@ -41,6 +42,8 @@ public:
 
 public:
 	idx_t approx_num_pages = 0;
+	vector<PostgresType> postgres_types;
+	vector<string> postgres_names;
 };
 
 } // namespace duckdb

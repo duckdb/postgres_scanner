@@ -24,10 +24,10 @@ public:
 public:
 	optional_ptr<CatalogEntry> CreateTable(ClientContext &context, BoundCreateTableInfo &info);
 
-	static unique_ptr<PostgresTableInfo> GetTableInfo(PostgresTransaction &transaction, PostgresSchemaEntry &schema,
-	                                                  const string &table_name);
-	static unique_ptr<PostgresTableInfo> GetTableInfo(PostgresConnection &connection, const string &schema_name,
-	                                                  const string &table_name);
+	static unique_ptr<PostgresCreateInfo> GetTableInfo(PostgresTransaction &transaction, PostgresSchemaEntry &schema,
+	                                                   const string &table_name);
+	static unique_ptr<PostgresCreateInfo> GetTableInfo(PostgresConnection &connection, const string &schema_name,
+	                                                   const string &table_name);
 	optional_ptr<CatalogEntry> ReloadEntry(ClientContext &context, const string &table_name) override;
 
 	void AlterTable(ClientContext &context, AlterTableInfo &info);

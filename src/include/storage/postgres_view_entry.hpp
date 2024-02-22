@@ -42,21 +42,26 @@ public:
 
 	void AddColumn(ColumnDefinition def, PostgresType pg_type, const string &pg_name) override {
 		postgres_types.push_back(std::move(pg_type));
+		D_ASSERT(!pg_name.empty());
 		postgres_names.push_back(pg_name);
 		create_info->types.push_back(def.Type());
 		create_info->names.push_back(def.Name());
 	}
 
+	void GetColumnNamesAndTypes(vector<string> &names, vector<LogicalType> &types) override {
+		names = create_info->names;
+		types = create_info->types;
+	}
+
 public:
 	unique_ptr<CreateViewInfo> create_info;
-	vector<PostgresType> postgres_types;
-	vector<string> postgres_names;
 };
 
 class PostgresViewEntry : public ViewCatalogEntry {
 public:
 	PostgresViewEntry(Catalog &catalog, SchemaCatalogEntry &schema, CreateViewInfo &info);
 	PostgresViewEntry(Catalog &catalog, SchemaCatalogEntry &schema, PostgresViewInfo &info);
+	~PostgresViewEntry() override;
 
 public:
 	//! Postgres type annotations

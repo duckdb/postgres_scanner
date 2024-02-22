@@ -43,20 +43,26 @@ public:
 
 	void AddColumn(ColumnDefinition def, PostgresType pg_type, const string &pg_name) override {
 		postgres_types.push_back(std::move(pg_type));
+		D_ASSERT(!pg_name.empty());
 		postgres_names.push_back(pg_name);
 		create_info->columns.AddColumn(std::move(def));
+	}
+	void GetColumnNamesAndTypes(vector<string> &names, vector<LogicalType> &types) override {
+		for (auto &col : create_info->columns.Logical()) {
+			names.push_back(col.GetName());
+			types.push_back(col.GetType());
+		}
 	}
 
 public:
 	unique_ptr<CreateTableInfo> create_info;
-	vector<PostgresType> postgres_types;
-	vector<string> postgres_names;
 };
 
 class PostgresTableEntry : public TableCatalogEntry {
 public:
 	PostgresTableEntry(Catalog &catalog, SchemaCatalogEntry &schema, CreateTableInfo &info);
 	PostgresTableEntry(Catalog &catalog, SchemaCatalogEntry &schema, PostgresTableInfo &info);
+	~PostgresTableEntry() override;
 
 public:
 	unique_ptr<BaseStatistics> GetStatistics(ClientContext &context, column_t column_id) override;

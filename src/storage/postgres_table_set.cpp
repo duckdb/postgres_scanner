@@ -2,16 +2,15 @@
 #include "storage/postgres_transaction.hpp"
 #include "storage/postgres_table_entry.hpp"
 #include "storage/postgres_view_entry.hpp"
+#include "storage/postgres_schema_entry.hpp"
 #include "duckdb/parser/parsed_data/create_table_info.hpp"
 #include "duckdb/parser/constraints/not_null_constraint.hpp"
 #include "duckdb/parser/constraints/unique_constraint.hpp"
 #include "duckdb/parser/expression/constant_expression.hpp"
 #include "duckdb/planner/parsed_data/bound_create_table_info.hpp"
 #include "duckdb/catalog/dependency_list.hpp"
-#include "duckdb/parser/parsed_data/create_table_info.hpp"
 #include "duckdb/parser/parsed_data/create_view_info.hpp"
 #include "duckdb/parser/constraints/list.hpp"
-#include "storage/postgres_schema_entry.hpp"
 #include "duckdb/parser/parser.hpp"
 #include "postgres_conversion.hpp"
 
@@ -40,6 +39,7 @@ void PostgresTableSet::AddColumn(optional_ptr<PostgresTransaction> transaction,
 	PostgresTypeData type_info;
 	idx_t column_index = column_offset;
 	auto column_name = result.GetString(row, column_index);
+	D_ASSERT(!column_name.empty());
 	type_info.type_name = result.GetString(row, column_index + 1);
 	type_info.type_modifier = result.GetInt64(row, column_index + 2);
 	type_info.array_dimensions = result.GetInt64(row, column_index + 3);
@@ -47,7 +47,7 @@ void PostgresTableSet::AddColumn(optional_ptr<PostgresTransaction> transaction,
 
 	PostgresType postgres_type;
 	auto column_type = PostgresUtils::TypeToLogicalType(transaction, schema, type_info, postgres_type);
-	ColumnDefinition column(std::move(column_name), std::move(column_type));
+	ColumnDefinition column(column_name, std::move(column_type));
 	if (!default_value.empty()) {
 		auto expressions = Parser::ParseExpressionList(default_value);
 		if (expressions.empty()) {
@@ -55,15 +55,29 @@ void PostgresTableSet::AddColumn(optional_ptr<PostgresTransaction> transaction,
 		}
 		column.SetDefaultValue(std::move(expressions[0]));
 	}
-	pg_create_info.AddColumn(std::move(column), std::move(postgres_type), column_name);
+	pg_create_info.AddColumn(std::move(column), std::move(postgres_type), std::move(column_name));
 }
 
 static CatalogType TransformRelKind(const string &relkind) {
 	if (relkind == "v") {
 		return CatalogType::VIEW_ENTRY;
 	}
-	// For now we only support views and tables
-	return CatalogType::TABLE_ENTRY;
+	if (relkind == "r") {
+		return CatalogType::TABLE_ENTRY;
+	}
+	if (relkind == "m") {
+		// TODO: support materialized views
+		return CatalogType::TABLE_ENTRY;
+	}
+	if (relkind == "f") {
+		// TODO: support foreign tables
+		return CatalogType::TABLE_ENTRY;
+	}
+	if (relkind == "p") {
+		// TODO: support partitioned tables
+		return CatalogType::TABLE_ENTRY;
+	}
+	throw InternalException("Unexpected relkind in TransformRelkind: %s", relkind);
 }
 
 void PostgresTableSet::CreateEntries(PostgresTransaction &transaction, PostgresResult &result, idx_t start, idx_t end) {
@@ -71,9 +85,11 @@ void PostgresTableSet::CreateEntries(PostgresTransaction &transaction, PostgresR
 	unique_ptr<PostgresCreateInfo> info;
 
 	for (idx_t row = start; row < end; row++) {
-		auto relname = result.GetString(row, 1);
-		auto relkind = result.GetString(row, 2);
-		auto approx_num_pages = result.GetInt64(row, 3);
+		const idx_t COLUMN_OFFSET = 4;
+		auto relname = result.GetString(row, COLUMN_OFFSET - 3);
+		D_ASSERT(!relname.empty());
+		auto relkind = result.GetString(row, COLUMN_OFFSET - 2);
+		auto approx_num_pages = result.GetInt64(row, COLUMN_OFFSET - 1);
 		if (!info || info->GetName() != relname) {
 			if (info) {
 				infos.push_back(std::move(info));
@@ -93,7 +109,7 @@ void PostgresTableSet::CreateEntries(PostgresTransaction &transaction, PostgresR
 				info->approx_num_pages = approx_num_pages;
 			}
 		}
-		AddColumn(&transaction, &schema, result, row, *info, 3);
+		AddColumn(&transaction, &schema, result, row, *info, COLUMN_OFFSET);
 	}
 	if (info) {
 		infos.push_back(std::move(info));
@@ -143,7 +159,7 @@ void PostgresTableSet::LoadEntries(ClientContext &context) {
 
 string GetTableInfoQuery(const string &schema_name, const string &table_name) {
 	return StringUtil::Replace(StringUtil::Replace(R"(
-SELECT relpages, attname,
+SELECT relpages, relkind, attname,
     pg_type.typname type_name, atttypmod type_modifier, pg_attribute.attndims ndim
 FROM pg_class
 JOIN pg_namespace ON relnamespace = pg_namespace.oid
@@ -156,48 +172,93 @@ ORDER BY relname, attnum;
 	                           "${TABLE_NAME}", KeywordHelper::WriteQuoted(table_name));
 }
 
-unique_ptr<PostgresTableInfo> PostgresTableSet::GetTableInfo(PostgresTransaction &transaction,
-                                                             PostgresSchemaEntry &schema, const string &table_name) {
+unique_ptr<PostgresCreateInfo> PostgresTableSet::GetTableInfo(PostgresTransaction &transaction,
+                                                              PostgresSchemaEntry &schema, const string &table_name) {
 	auto query = GetTableInfoQuery(schema.name, table_name);
 	auto result = transaction.Query(query);
 	auto rows = result->Count();
 	if (rows == 0) {
 		return nullptr;
 	}
-	auto table_info = make_uniq<PostgresTableInfo>(schema, table_name);
-	for (idx_t row = 0; row < rows; row++) {
-		AddColumn(&transaction, &schema, *result, row, *table_info, 1);
+	const idx_t COLUMN_OFFSET = 2;
+	auto relkind = result->GetString(0, 2);
+	auto catalog_type = TransformRelKind(relkind);
+	unique_ptr<PostgresCreateInfo> info;
+	switch (catalog_type) {
+	case CatalogType::TABLE_ENTRY:
+		info = make_uniq<PostgresTableInfo>(schema, table_name);
+		break;
+	case CatalogType::VIEW_ENTRY:
+		info = make_uniq<PostgresViewInfo>(schema, table_name);
+		break;
+	default: {
+		throw InternalException("Unexpected CatalogType in GetTableInfo: %s", CatalogTypeToString(catalog_type));
 	}
-	table_info->approx_num_pages = result->GetInt64(0, 0);
-	return table_info;
+	}
+
+	for (idx_t row = 0; row < rows; row++) {
+		AddColumn(&transaction, &schema, *result, row, *info, COLUMN_OFFSET);
+	}
+	info->approx_num_pages = result->GetInt64(0, 0);
+	return info;
 }
 
-unique_ptr<PostgresTableInfo> PostgresTableSet::GetTableInfo(PostgresConnection &connection, const string &schema_name,
-                                                             const string &table_name) {
+unique_ptr<PostgresCreateInfo> PostgresTableSet::GetTableInfo(PostgresConnection &connection, const string &schema_name,
+                                                              const string &table_name) {
 	auto query = GetTableInfoQuery(schema_name, table_name);
 	auto result = connection.Query(query);
 	auto rows = result->Count();
 	if (rows == 0) {
 		throw InvalidInputException("Table %s does not contain any columns.", table_name);
 	}
-	auto table_info = make_uniq<PostgresTableInfo>(schema_name, table_name);
-	for (idx_t row = 0; row < rows; row++) {
-		AddColumn(nullptr, nullptr, *result, row, *table_info, 1);
+	auto relkind = result->GetString(0, 2);
+	auto catalog_type = TransformRelKind(relkind);
+	unique_ptr<PostgresCreateInfo> info;
+	switch (catalog_type) {
+	case CatalogType::TABLE_ENTRY:
+		info = make_uniq<PostgresTableInfo>(schema_name, table_name);
+		break;
+	case CatalogType::VIEW_ENTRY:
+		info = make_uniq<PostgresViewInfo>(schema_name, table_name);
+		break;
+	default: {
+		throw InternalException("Unexpected CatalogType in GetTableInfo: %s", CatalogTypeToString(catalog_type));
 	}
-	table_info->approx_num_pages = result->GetInt64(0, 0);
-	return table_info;
+	}
+	for (idx_t row = 0; row < rows; row++) {
+		AddColumn(nullptr, nullptr, *result, row, *info, 1);
+	}
+	info->approx_num_pages = result->GetInt64(0, 0);
+	return info;
 }
 
 optional_ptr<CatalogEntry> PostgresTableSet::ReloadEntry(ClientContext &context, const string &table_name) {
 	auto &transaction = PostgresTransaction::Get(context, catalog);
-	auto table_info = GetTableInfo(transaction, schema, table_name);
-	if (!table_info) {
+	auto pg_info = GetTableInfo(transaction, schema, table_name);
+	if (!pg_info) {
 		return nullptr;
 	}
-	auto table_entry = make_uniq<PostgresTableEntry>(catalog, schema, *table_info);
-	auto table_ptr = table_entry.get();
-	CreateEntry(std::move(table_entry));
-	return table_ptr;
+
+	unique_ptr<CatalogEntry> entry;
+	auto &create_info = pg_info->GetCreateInfo();
+	switch (create_info.type) {
+	case CatalogType::TABLE_ENTRY: {
+		auto &table_info = pg_info->Cast<PostgresTableInfo>();
+		entry = make_uniq<PostgresTableEntry>(catalog, schema, table_info);
+		break;
+	}
+	case CatalogType::VIEW_ENTRY: {
+		auto &view_info = pg_info->Cast<PostgresViewInfo>();
+		entry = make_uniq<PostgresViewEntry>(catalog, schema, view_info);
+		break;
+	}
+	default: {
+		throw InternalException("Unexpected CatalogType in ReloadEntry: %s", CatalogTypeToString(create_info.type));
+	}
+	}
+	auto entry_ptr = entry.get();
+	CreateEntry(std::move(entry));
+	return entry_ptr;
 }
 
 // FIXME - this is almost entirely copied from TableCatalogEntry::ColumnsToSQL - should be unified

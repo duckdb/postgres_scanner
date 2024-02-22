@@ -29,4 +29,7 @@ PostgresViewEntry::PostgresViewEntry(Catalog &catalog, SchemaCatalogEntry &schem
 	approx_num_pages = info.approx_num_pages;
 }
 
+PostgresViewEntry::~PostgresViewEntry() {
+}
+
 } // namespace duckdb

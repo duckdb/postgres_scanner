@@ -139,7 +139,7 @@ void PostgresTableSet::LoadEntries(ClientContext &context) {
 		table_result.reset();
 	} else {
 		auto query = StringUtil::Replace(R"(
-	SELECT 0, relname, relpages, attname,
+	SELECT 0, relname, relkind, relpages, attname,
 		pg_type.typname type_name, atttypmod type_modifier, pg_attribute.attndims ndim
 	FROM pg_class
 	JOIN pg_namespace ON relnamespace = pg_namespace.oid
@@ -181,7 +181,7 @@ unique_ptr<PostgresCreateInfo> PostgresTableSet::GetTableInfo(PostgresTransactio
 		return nullptr;
 	}
 	const idx_t COLUMN_OFFSET = 2;
-	auto relkind = result->GetString(0, 2);
+	auto relkind = result->GetString(0, 1);
 	auto catalog_type = TransformRelKind(relkind);
 	unique_ptr<PostgresCreateInfo> info;
 	switch (catalog_type) {

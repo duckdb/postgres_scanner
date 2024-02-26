@@ -22,8 +22,15 @@ PostgresTableSet::PostgresTableSet(PostgresSchemaEntry &schema, unique_ptr<Postg
 
 string PostgresTableSet::GetInitializeQuery() {
 	return R"(
-SELECT pg_namespace.oid, relname, relkind, relpages, attname,
-    pg_type.typname type_name, atttypmod type_modifier, pg_attribute.attndims ndim
+	SELECT
+		pg_namespace.oid,
+		relname,
+		relkind,
+		relpages,
+		attname,
+		pg_type.typname type_name,
+		atttypmod type_modifier,
+		pg_attribute.attndims ndim
 FROM pg_class
 JOIN pg_namespace ON relnamespace = pg_namespace.oid
 JOIN pg_attribute ON pg_class.oid=pg_attribute.attrelid
@@ -159,8 +166,13 @@ void PostgresTableSet::LoadEntries(ClientContext &context) {
 
 string GetTableInfoQuery(const string &schema_name, const string &table_name) {
 	return StringUtil::Replace(StringUtil::Replace(R"(
-SELECT relpages, relkind, attname,
-    pg_type.typname type_name, atttypmod type_modifier, pg_attribute.attndims ndim
+SELECT
+	relpages,
+	relkind,
+	attname,
+	pg_type.typname type_name,
+	atttypmod type_modifier,
+	pg_attribute.attndims ndim
 FROM pg_class
 JOIN pg_namespace ON relnamespace = pg_namespace.oid
 JOIN pg_attribute ON pg_class.oid=pg_attribute.attrelid
@@ -211,7 +223,9 @@ unique_ptr<PostgresCreateInfo> PostgresTableSet::GetTableInfo(PostgresConnection
 	if (rows == 0) {
 		throw InvalidInputException("Table %s does not contain any columns.", table_name);
 	}
-	auto relkind = result->GetString(0, 2);
+
+	const idx_t COLUMN_OFFSET = 2;
+	auto relkind = result->GetString(0, 1);
 	auto catalog_type = TransformRelKind(relkind);
 	unique_ptr<PostgresCreateInfo> info;
 	switch (catalog_type) {
@@ -226,7 +240,7 @@ unique_ptr<PostgresCreateInfo> PostgresTableSet::GetTableInfo(PostgresConnection
 	}
 	}
 	for (idx_t row = 0; row < rows; row++) {
-		AddColumn(nullptr, nullptr, *result, row, *info, 1);
+		AddColumn(nullptr, nullptr, *result, row, *info, COLUMN_OFFSET);
 	}
 	info->approx_num_pages = result->GetInt64(0, 0);
 	return info;

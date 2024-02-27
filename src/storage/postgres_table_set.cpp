@@ -26,6 +26,7 @@ string PostgresTableSet::GetInitializeQuery() {
 		pg_namespace.oid,
 		relname,
 		relkind,
+		pg_get_viewdef(pg_class.oid) AS view_definition,
 		relpages,
 		attname,
 		pg_type.typname type_name,
@@ -92,10 +93,11 @@ void PostgresTableSet::CreateEntries(PostgresTransaction &transaction, PostgresR
 	unique_ptr<PostgresCreateInfo> info;
 
 	for (idx_t row = start; row < end; row++) {
-		const idx_t COLUMN_OFFSET = 4;
-		auto relname = result.GetString(row, COLUMN_OFFSET - 3);
+		const idx_t COLUMN_OFFSET = 5;
+		auto relname = result.GetString(row, COLUMN_OFFSET - 4);
 		D_ASSERT(!relname.empty());
-		auto relkind = result.GetString(row, COLUMN_OFFSET - 2);
+		auto relkind = result.GetString(row, COLUMN_OFFSET - 3);
+		auto view_definition = result.GetString(row, COLUMN_OFFSET - 2);
 		auto approx_num_pages = result.GetInt64(row, COLUMN_OFFSET - 1);
 		if (!info || info->GetName() != relname) {
 			if (info) {
@@ -107,7 +109,7 @@ void PostgresTableSet::CreateEntries(PostgresTransaction &transaction, PostgresR
 				info = make_uniq<PostgresTableInfo>(schema, relname);
 				break;
 			case CatalogType::VIEW_ENTRY:
-				info = make_uniq<PostgresViewInfo>(schema, relname);
+				info = make_uniq<PostgresViewInfo>(schema, relname, view_definition);
 				break;
 			default: {
 				throw InternalException("Unexpected CatalogType in CreateEntries: %s",
@@ -142,12 +144,21 @@ void PostgresTableSet::CreateEntries(PostgresTransaction &transaction, PostgresR
 void PostgresTableSet::LoadEntries(ClientContext &context) {
 	auto &transaction = PostgresTransaction::Get(context, catalog);
 	if (table_result) {
+		// This query was created from PostgresTableSet::GetInitializeQuery()
 		CreateEntries(transaction, table_result->GetResult(), table_result->start, table_result->end);
 		table_result.reset();
 	} else {
 		auto query = StringUtil::Replace(R"(
-	SELECT 0, relname, relkind, relpages, attname,
-		pg_type.typname type_name, atttypmod type_modifier, pg_attribute.attndims ndim
+		SELECT
+			0 as "pg_namespace.oid",
+			relname,
+			relkind,
+			pg_get_viewdef(pg_class.oid) AS view_definition,
+			relpages,
+			attname,
+			pg_type.typname type_name,
+			atttypmod type_modifier,
+			pg_attribute.attndims ndim
 	FROM pg_class
 	JOIN pg_namespace ON relnamespace = pg_namespace.oid
 	JOIN pg_attribute ON pg_class.oid=pg_attribute.attrelid
@@ -169,6 +180,7 @@ string GetTableInfoQuery(const string &schema_name, const string &table_name) {
 SELECT
 	relpages,
 	relkind,
+	pg_get_viewdef(pg_class.oid) AS view_definition,
 	attname,
 	pg_type.typname type_name,
 	atttypmod type_modifier,
@@ -192,8 +204,9 @@ unique_ptr<PostgresCreateInfo> PostgresTableSet::GetTableInfo(PostgresTransactio
 	if (rows == 0) {
 		return nullptr;
 	}
-	const idx_t COLUMN_OFFSET = 2;
+	const idx_t COLUMN_OFFSET = 3;
 	auto relkind = result->GetString(0, 1);
+	auto view_definition = result->GetString(0, 2);
 	auto catalog_type = TransformRelKind(relkind);
 	unique_ptr<PostgresCreateInfo> info;
 	switch (catalog_type) {
@@ -201,7 +214,7 @@ unique_ptr<PostgresCreateInfo> PostgresTableSet::GetTableInfo(PostgresTransactio
 		info = make_uniq<PostgresTableInfo>(schema, table_name);
 		break;
 	case CatalogType::VIEW_ENTRY:
-		info = make_uniq<PostgresViewInfo>(schema, table_name);
+		info = make_uniq<PostgresViewInfo>(schema, table_name, view_definition);
 		break;
 	default: {
 		throw InternalException("Unexpected CatalogType in GetTableInfo: %s", CatalogTypeToString(catalog_type));
@@ -224,8 +237,9 @@ unique_ptr<PostgresCreateInfo> PostgresTableSet::GetTableInfo(PostgresConnection
 		throw InvalidInputException("Table %s does not contain any columns.", table_name);
 	}
 
-	const idx_t COLUMN_OFFSET = 2;
+	const idx_t COLUMN_OFFSET = 3;
 	auto relkind = result->GetString(0, 1);
+	auto view_definition = result->GetString(0, 2);
 	auto catalog_type = TransformRelKind(relkind);
 	unique_ptr<PostgresCreateInfo> info;
 	switch (catalog_type) {
@@ -233,7 +247,7 @@ unique_ptr<PostgresCreateInfo> PostgresTableSet::GetTableInfo(PostgresConnection
 		info = make_uniq<PostgresTableInfo>(schema_name, table_name);
 		break;
 	case CatalogType::VIEW_ENTRY:
-		info = make_uniq<PostgresViewInfo>(schema_name, table_name);
+		info = make_uniq<PostgresViewInfo>(schema_name, table_name, view_definition);
 		break;
 	default: {
 		throw InternalException("Unexpected CatalogType in GetTableInfo: %s", CatalogTypeToString(catalog_type));

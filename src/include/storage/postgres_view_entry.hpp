@@ -16,16 +16,19 @@ namespace duckdb {
 
 struct PostgresViewInfo : public PostgresCreateInfo {
 public:
-	PostgresViewInfo() {
+	PostgresViewInfo(const string &select_stmt) {
 		create_info = make_uniq<CreateViewInfo>();
+		create_info->query = CreateViewInfo::ParseSelect(select_stmt);
 		// create_info->columns.SetAllowDuplicates(true);
 	}
-	PostgresViewInfo(const string &schema, const string &view) {
+	PostgresViewInfo(const string &schema, const string &view, const string &select_stmt) {
 		create_info = make_uniq<CreateViewInfo>(string(), schema, view);
+		create_info->query = CreateViewInfo::ParseSelect(select_stmt);
 		// create_info->columns.SetAllowDuplicates(true);
 	}
-	PostgresViewInfo(const SchemaCatalogEntry &schema, const string &view) {
+	PostgresViewInfo(const SchemaCatalogEntry &schema, const string &view, const string &select_stmt) {
 		create_info = make_uniq<CreateViewInfo>((SchemaCatalogEntry &)schema, view);
+		create_info->query = CreateViewInfo::ParseSelect(select_stmt);
 		// create_info->columns.SetAllowDuplicates(true);
 	}
 	~PostgresViewInfo() override {

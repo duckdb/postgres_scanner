@@ -34,7 +34,7 @@ already exists
 statement error
 INSERT INTO v1 VALUES (42);
 ----
-cannot copy to view
+Catalog Error: v1 is not an table
 
 # FIXME - error message here is not very descriptive
 statement error
@@ -48,7 +48,7 @@ DELETE FROM v1
 statement error
 INSERT INTO v1 VALUES (1, 1);
 ----
-table v1 has 1 columns but 2 values were supplied
+Catalog Error: v1 is not an table
 
 statement ok
 CREATE VIEW IF NOT EXISTS v1 AS SELECT 84;

@@ -16,74 +16,74 @@ statement ok
 USE s;
 
 statement ok
-DROP VIEW IF EXISTS v1
+DROP VIEW IF EXISTS v5
 
 statement ok
-CREATE VIEW v1 AS SELECT 42 AS i;
+CREATE VIEW v5 AS SELECT 42 AS i;
 
 query I
-SELECT i FROM v1
+SELECT i FROM v5
 ----
 42
 
 statement error
-CREATE VIEW v1 AS SELECT 84;
+CREATE VIEW v5 AS SELECT 84;
 ----
 already exists
 
 statement error
-INSERT INTO v1 VALUES (42);
+INSERT INTO v5 VALUES (42);
 ----
-Catalog Error: v1 is not an table
+Catalog Error: v5 is not an table
 
 # FIXME - error message here is not very descriptive
 statement error
-UPDATE v1 SET i=84
+UPDATE v5 SET i=84
 ----
 
 statement error
-DELETE FROM v1
+DELETE FROM v5
 ----
 
 statement error
-INSERT INTO v1 VALUES (1, 1);
+INSERT INTO v5 VALUES (1, 1);
 ----
-Catalog Error: v1 is not an table
+Catalog Error: v5 is not an table
 
 statement ok
-CREATE VIEW IF NOT EXISTS v1 AS SELECT 84;
+CREATE VIEW IF NOT EXISTS v5 AS SELECT 84;
 
 statement ok
-CREATE OR REPLACE VIEW v1 AS SELECT 84;
+CREATE OR REPLACE VIEW v5 AS SELECT 84;
 
 query I
-SELECT * FROM v1
+SELECT * FROM v5
 ----
 84
 
 statement error
-DROP TABLE v1
+DROP TABLE v5
 ----
 not a table
 
 statement ok
-DROP VIEW v1
+DROP VIEW v5
 
 statement error
-SELECT * FROM v1
+SELECT * FROM v5
 ----
-Table with name v1 does not exist
+Table with name v5 does not exist
 
 statement error
-DROP VIEW v1
+DROP VIEW v5
 ----
-View with name v1 does not exist
+View with name v5 does not exist
 
 statement ok
-CREATE VIEW v1(a) AS SELECT 99;
+CREATE VIEW v5(a) AS SELECT 99;
 
 query I
-SELECT a FROM v1
+SELECT a FROM v5
 ----
 99
 

@@ -1,0 +1,8 @@
+# name: test/sql/misc/autoloading.test
+# description: Test autoloading based on setting
+# group: [misc]
+
+require postgres_scanner
+
+statement ok
+SET pg_connection_cache=false

@@ -12,8 +12,43 @@
 #include "duckdb/main/attached_database.hpp"
 #include "storage/postgres_catalog.hpp"
 #include "storage/postgres_optimizer.hpp"
+#include "duckdb/planner/extension_callback.hpp"
+#include "duckdb/main/client_context.hpp"
+#include "duckdb/main/client_context_state.hpp"
+#include "duckdb/main/connection_manager.hpp"
+#include "duckdb/common/error_data.hpp"
 
 using namespace duckdb;
+
+class PostgresExtensionState : public ClientContextState {
+public:
+	bool CanRequestRebind() override {
+		return true;
+	}
+	RebindQueryInfo OnPlanningError(ClientContext &context, SQLStatement &statement, ErrorData &error) override {
+		if (error.Type() != ExceptionType::BINDER) {
+			return RebindQueryInfo::DO_NOT_REBIND;
+		}
+		auto &extra_info = error.ExtraInfo();
+		auto entry = extra_info.find("error_subtype");
+		if (entry == extra_info.end()) {
+			return RebindQueryInfo::DO_NOT_REBIND;
+		}
+		if (entry->second != "COLUMN_NOT_FOUND") {
+			return RebindQueryInfo::DO_NOT_REBIND;
+		}
+		// clear caches and rebind
+		PostgresClearCacheFunction::ClearPostgresCaches(context);
+		return RebindQueryInfo::ATTEMPT_TO_REBIND;
+	}
+};
+
+class PostgresExtensionCallback : public ExtensionCallback {
+public:
+	void OnConnectionOpened(ClientContext &context) override {
+		context.registered_state.insert(make_pair("postgres_extension", make_shared<PostgresExtensionState>()));
+	}
+};
 
 static void SetPostgresConnectionLimit(ClientContext &context, SetScope scope, Value &parameter) {
 	if (scope == SetScope::LOCAL) {
@@ -78,6 +113,11 @@ static void LoadInternal(DatabaseInstance &db) {
 	OptimizerExtension postgres_optimizer;
 	postgres_optimizer.optimize_function = PostgresOptimizer::Optimize;
 	config.optimizer_extensions.push_back(std::move(postgres_optimizer));
+
+	config.extension_callbacks.push_back(make_uniq<PostgresExtensionCallback>());
+	for(auto &connection : ConnectionManager::Get(db).GetConnectionList()) {
+		connection->registered_state.insert(make_pair("postgres_extension", make_shared<PostgresExtensionState>()));
+	}
 }
 
 void PostgresScannerExtension::Load(DuckDB &db) {

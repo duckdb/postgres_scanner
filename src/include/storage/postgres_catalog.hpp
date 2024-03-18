@@ -72,6 +72,20 @@ public:
 
 	void ClearCache();
 
+	//! Whether or not this catalog should search a specific type with the standard priority
+	CatalogLookupBehavior CatalogTypeLookupRule(CatalogType type) const override {
+		switch (type) {
+		case CatalogType::INDEX_ENTRY:
+		case CatalogType::TABLE_ENTRY:
+		case CatalogType::TYPE_ENTRY:
+		case CatalogType::VIEW_ENTRY:
+			return CatalogLookupBehavior::STANDARD;
+		default:
+			// unsupported type (e.g. scalar functions, aggregates, ...)
+			return CatalogLookupBehavior::NEVER_LOOKUP;
+		}
+	}
+
 private:
 	void DropSchema(ClientContext &context, DropInfo &info) override;
 

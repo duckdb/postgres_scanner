@@ -25,7 +25,7 @@ public:
 public:
 	optional_ptr<CatalogEntry> CreateType(ClientContext &context, CreateTypeInfo &info);
 
-	static string GetInitializeEnumsQuery();
+	static string GetInitializeEnumsQuery(PostgresVersion version);
 	static string GetInitializeCompositesQuery();
 
 protected:

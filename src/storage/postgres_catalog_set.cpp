@@ -105,8 +105,8 @@ void PostgresCatalogSet::ClearEntries() {
 	is_loaded = false;
 }
 
-PostgresInSchemaSet::PostgresInSchemaSet(PostgresSchemaEntry &schema, bool is_loaded) :
-	PostgresCatalogSet(schema.ParentCatalog(), is_loaded), schema(schema) {
+PostgresInSchemaSet::PostgresInSchemaSet(PostgresSchemaEntry &schema, bool is_loaded)
+    : PostgresCatalogSet(schema.ParentCatalog(), is_loaded), schema(schema) {
 }
 
 optional_ptr<CatalogEntry> PostgresInSchemaSet::CreateEntry(unique_ptr<CatalogEntry> entry) {

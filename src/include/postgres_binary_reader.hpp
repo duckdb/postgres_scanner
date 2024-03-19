@@ -263,9 +263,10 @@ public:
 		return (config.is_negative ? -base_res : base_res);
 	}
 
-	void ReadGeometry(const LogicalType &type, const PostgresType &postgres_type, Vector &out_vec, idx_t output_offset) {
+	void ReadGeometry(const LogicalType &type, const PostgresType &postgres_type, Vector &out_vec,
+	                  idx_t output_offset) {
 		idx_t element_count = 0;
-		switch(postgres_type.info) {
+		switch (postgres_type.info) {
 		case PostgresTypeAnnotation::GEOM_LINE:
 		case PostgresTypeAnnotation::GEOM_CIRCLE:
 			element_count = 3;
@@ -294,7 +295,7 @@ public:
 		list_entries[output_offset].length = element_count;
 		auto &child_vector = ListVector::GetEntry(out_vec);
 		auto child_data = FlatVector::GetData<double>(child_vector);
-		for(idx_t i = 0; i < element_count; i++) {
+		for (idx_t i = 0; i < element_count; i++) {
 			child_data[child_offset + i] = ReadDouble();
 		}
 		ListVector::SetListSize(out_vec, child_offset + element_count);
@@ -488,7 +489,7 @@ public:
 				list_entry.length = 0;
 				break;
 			}
-			switch(postgres_type.info) {
+			switch (postgres_type.info) {
 			case PostgresTypeAnnotation::GEOM_LINE:
 			case PostgresTypeAnnotation::GEOM_LINE_SEGMENT:
 			case PostgresTypeAnnotation::GEOM_BOX:

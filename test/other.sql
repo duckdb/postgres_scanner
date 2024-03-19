@@ -163,3 +163,4 @@ INSERT INTO varchars_fixed_len VALUES ('hello'), ('world'), ('maxlength1'), ('he
 -- tables with constraints
 create table tbl_with_constraints(pk int primary key, c1 int not null, c2 int, c3 int not null);
 create table tbl_with_more_constraints(pk1 int, pk2 int, fk1 int references tbl_with_constraints(pk), primary key (pk1, pk2));
+create table tbl_with_unique_constraints(pk int unique, c1 int not null, c2 int, c3 int not null, unique(c2, c3));

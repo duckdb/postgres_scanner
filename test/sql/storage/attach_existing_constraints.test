@@ -1,0 +1,39 @@
+# name: test/sql/storage/attach_existing_constraints.test
+# description: Test existing constraints
+# group: [storage]
+
+require postgres_scanner
+
+require-env POSTGRES_TEST_DATABASE_AVAILABLE
+
+statement ok
+PRAGMA enable_verification
+
+statement ok
+ATTACH 'dbname=postgresscanner' AS s (TYPE POSTGRES, READ_ONLY)
+
+statement ok
+USE s
+
+query IIII
+SELECT column_name, column_type, "null", key FROM (DESCRIBE tbl_with_constraints)
+----
+pk	INTEGER	NO	PRI
+c1	INTEGER	NO	NULL
+c2	INTEGER	YES	NULL
+c3	INTEGER	NO	NULL
+
+query IIII
+SELECT column_name, column_type, "null", key FROM (DESCRIBE tbl_with_more_constraints)
+----
+pk1	INTEGER	NO	PRI
+pk2	INTEGER	NO	PRI
+fk1	INTEGER	YES	NULL
+
+query IIII
+SELECT column_name, column_type, "null", key FROM (DESCRIBE tbl_with_unique_constraints)
+----
+pk	INTEGER	YES	UNI
+c1	INTEGER	NO	NULL
+c2	INTEGER	YES	UNI
+c3	INTEGER	NO	UNI

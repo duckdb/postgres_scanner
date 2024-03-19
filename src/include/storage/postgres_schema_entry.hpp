@@ -44,7 +44,7 @@ public:
 	void DropEntry(ClientContext &context, DropInfo &info) override;
 	optional_ptr<CatalogEntry> GetEntry(CatalogTransaction transaction, CatalogType type, const string &name) override;
 
-        static bool SchemaIsInternal(const string &name);
+	static bool SchemaIsInternal(const string &name);
 
 private:
 	void AlterTable(PostgresTransaction &transaction, RenameTableInfo &info);

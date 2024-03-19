@@ -29,12 +29,13 @@ void GatherPostgresScans(LogicalOperator &op, PostgresOperators &result) {
 		result.scans[*catalog].push_back(get);
 	}
 	// recurse into children
-	for(auto &child : op.children) {
+	for (auto &child : op.children) {
 		GatherPostgresScans(*child, result);
 	}
 }
 
-void PostgresOptimizer::Optimize(ClientContext &context, OptimizerExtensionInfo *info, unique_ptr<LogicalOperator> &plan) {
+void PostgresOptimizer::Optimize(ClientContext &context, OptimizerExtensionInfo *info,
+                                 unique_ptr<LogicalOperator> &plan) {
 	// look at the query plan and check if we can enable streaming query scans
 	PostgresOperators operators;
 	GatherPostgresScans(*plan, operators);
@@ -42,10 +43,10 @@ void PostgresOptimizer::Optimize(ClientContext &context, OptimizerExtensionInfo 
 		// no scans
 		return;
 	}
-	for(auto &entry : operators.scans) {
+	for (auto &entry : operators.scans) {
 		auto &catalog = entry.first;
 		auto multiple_scans = entry.second.size() > 1;
-		for(auto &scan : entry.second) {
+		for (auto &scan : entry.second) {
 			auto &bind_data = scan.get().bind_data->Cast<PostgresBindData>();
 			// if there is a single scan in the plan we can always stream using the main thread
 			// if there is more than one scan we either (1) need to materialize, or (2) cannot use the main thread

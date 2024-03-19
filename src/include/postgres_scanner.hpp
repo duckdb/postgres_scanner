@@ -91,4 +91,9 @@ public:
 	PostgresQueryFunction();
 };
 
+class PostgresExecuteFunction : public TableFunction {
+public:
+	PostgresExecuteFunction();
+};
+
 } // namespace duckdb

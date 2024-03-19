@@ -87,6 +87,9 @@ static void LoadInternal(DatabaseInstance &db) {
 	PostgresQueryFunction query_func;
 	ExtensionUtil::RegisterFunction(db, query_func);
 
+	PostgresExecuteFunction execute_func;
+	ExtensionUtil::RegisterFunction(db, execute_func);
+
 	auto &config = DBConfig::GetConfig(db);
 	config.storage_extensions["postgres_scanner"] = make_uniq<PostgresStorageExtension>();
 

@@ -20,3 +20,11 @@ SELECT COUNT(*), SUM(generate_series) FROM s1.big_generated_table
 1000000	499999500000
 
 endloop
+
+statement ok
+SET pg_use_ctid_scan=false;
+
+query II
+SELECT COUNT(*), SUM(generate_series) FROM s1.big_generated_table
+----
+1000000	499999500000

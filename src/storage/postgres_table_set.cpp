@@ -107,7 +107,7 @@ void PostgresTableSet::AddConstraint(PostgresResult &result, idx_t row, Postgres
 void PostgresTableSet::AddColumnOrConstraint(optional_ptr<PostgresTransaction> transaction,
                                              optional_ptr<PostgresSchemaEntry> schema, PostgresResult &result,
                                              idx_t row, PostgresTableInfo &table_info) {
-	if (result.IsNull(row, 2)) {
+	if (result.IsNull(row, 3)) {
 		// constraint
 		AddConstraint(result, row, table_info);
 	} else {
@@ -167,7 +167,7 @@ unique_ptr<PostgresTableInfo> PostgresTableSet::GetTableInfo(PostgresTransaction
 	for (idx_t row = 0; row < rows; row++) {
 		AddColumnOrConstraint(&transaction, &schema, *result, row, *table_info);
 	}
-	table_info->approx_num_pages = result->GetInt64(0, 0);
+	table_info->approx_num_pages = result->GetInt64(0, 2);
 	return table_info;
 }
 
@@ -183,7 +183,7 @@ unique_ptr<PostgresTableInfo> PostgresTableSet::GetTableInfo(PostgresConnection 
 	for (idx_t row = 0; row < rows; row++) {
 		AddColumnOrConstraint(nullptr, nullptr, *result, row, *table_info);
 	}
-	table_info->approx_num_pages = result->GetInt64(0, 0);
+	table_info->approx_num_pages = result->GetInt64(0, 2);
 	return table_info;
 }
 

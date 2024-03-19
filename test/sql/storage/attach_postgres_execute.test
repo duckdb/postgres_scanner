@@ -1,0 +1,32 @@
+# name: test/sql/storage/attach_postgres_execute.test
+# description: Test attaching postgres execute
+# group: [storage]
+
+require postgres_scanner
+
+require-env POSTGRES_TEST_DATABASE_AVAILABLE
+
+statement ok
+PRAGMA enable_verification
+
+statement ok
+ATTACH 'dbname=postgresscanner' AS s (TYPE POSTGRES);
+
+statement ok
+CALL postgres_execute('s', 'DROP TABLE IF EXISTS my_unlogged_table')
+
+statement ok
+CALL postgres_execute('s', 'CREATE UNLOGGED TABLE public.my_unlogged_table(i INTEGER)')
+
+statement ok
+INSERT INTO s.my_unlogged_table VALUES(42)
+
+query I
+FROM s.my_unlogged_table
+----
+42
+
+statement error
+CALL postgres_execute('s', 'CREATE TABLE public.my_unlogged_table(i INTEGER)')
+----
+already exists

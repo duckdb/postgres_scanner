@@ -16,3 +16,8 @@ statement error
 CREATE TABLE s.read_only_tbl(i INTEGER);
 ----
 read-only mode
+
+statement error
+CALL postgres_execute('s', 'CREATE UNLOGGED TABLE public.my_unlogged_table(i INTEGER)')
+----
+read-only

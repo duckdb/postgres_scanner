@@ -20,7 +20,15 @@ PostgresTypeSet::PostgresTypeSet(PostgresSchemaEntry &schema, unique_ptr<Postgre
       composite_type_result(std::move(composite_type_result_p)) {
 }
 
-string PostgresTypeSet::GetInitializeEnumsQuery() {
+string PostgresTypeSet::GetInitializeEnumsQuery(PostgresVersion version) {
+	if (version.major_v < 8 || (version.major_v == 8 && version.minor_v < 3)) {
+		// pg_enum support has been present since v8.3 - https://www.postgresql.org/docs/8.3/catalog-pg-enum.html
+		// for older postgres versions we don't support enums instead
+		return R"(
+SELECT 0 AS oid, 0 AS enumtypid, '' AS typname, '' AS enumlabel
+LIMIT 0;
+)";
+	}
 	return R"(
 SELECT n.oid, enumtypid, typname, enumlabel
 FROM pg_enum e

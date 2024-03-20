@@ -5,6 +5,7 @@
 #include "storage/postgres_transaction.hpp"
 #include "duckdb/parser/parsed_data/create_schema_info.hpp"
 #include "storage/postgres_table_set.hpp"
+#include "storage/postgres_catalog.hpp"
 
 namespace duckdb {
 
@@ -40,9 +41,11 @@ ORDER BY oid;
 }
 
 void PostgresSchemaSet::LoadEntries(ClientContext &context) {
+	auto &pg_catalog = catalog.Cast<PostgresCatalog>();
+	auto pg_version = pg_catalog.GetPostgresVersion();
 	string schema_query = PostgresSchemaSet::GetInitializeQuery();
 	string tables_query = PostgresTableSet::GetInitializeQuery();
-	string enum_types_query = PostgresTypeSet::GetInitializeEnumsQuery();
+	string enum_types_query = PostgresTypeSet::GetInitializeEnumsQuery(pg_version);
 	string composite_types_query = PostgresTypeSet::GetInitializeCompositesQuery();
 	string index_query = PostgresIndexSet::GetInitializeQuery();
 

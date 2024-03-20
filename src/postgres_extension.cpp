@@ -96,7 +96,7 @@ static void LoadInternal(DatabaseInstance &db) {
 	config.AddExtensionOption("pg_use_binary_copy", "Whether or not to use BINARY copy to read data",
 	                          LogicalType::BOOLEAN, Value::BOOLEAN(true));
 	config.AddExtensionOption("pg_use_ctid_scan", "Whether or not to parallelize scanning using table ctids",
-							  LogicalType::BOOLEAN, Value::BOOLEAN(true));
+	                          LogicalType::BOOLEAN, Value::BOOLEAN(true));
 	config.AddExtensionOption("pg_pages_per_task", "The amount of pages per task", LogicalType::UBIGINT,
 	                          Value::UBIGINT(PostgresBindData::DEFAULT_PAGES_PER_TASK));
 	config.AddExtensionOption("pg_connection_limit", "The maximum amount of concurrent Postgres connections",

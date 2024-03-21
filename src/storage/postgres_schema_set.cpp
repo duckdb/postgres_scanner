@@ -76,7 +76,11 @@ void PostgresSchemaSet::LoadEntries(ClientContext &context) {
 optional_ptr<CatalogEntry> PostgresSchemaSet::CreateSchema(ClientContext &context, CreateSchemaInfo &info) {
 	auto &transaction = PostgresTransaction::Get(context, catalog);
 
-	string create_sql = "CREATE SCHEMA " + KeywordHelper::WriteQuoted(info.schema, '"');
+	string create_sql = "CREATE SCHEMA ";
+	if (info.on_conflict == OnCreateConflict::IGNORE_ON_CONFLICT) {
+		create_sql += " IF NOT EXISTS";
+	}
+	create_sql += KeywordHelper::WriteQuoted(info.schema, '"');
 	transaction.Query(create_sql);
 	auto info_copy = info.Copy();
 	info.internal = PostgresSchemaEntry::SchemaIsInternal(info_copy->schema);

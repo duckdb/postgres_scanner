@@ -87,10 +87,15 @@ static void LoadInternal(DatabaseInstance &db) {
 	PostgresQueryFunction query_func;
 	ExtensionUtil::RegisterFunction(db, query_func);
 
+	PostgresExecuteFunction execute_func;
+	ExtensionUtil::RegisterFunction(db, execute_func);
+
 	auto &config = DBConfig::GetConfig(db);
 	config.storage_extensions["postgres_scanner"] = make_uniq<PostgresStorageExtension>();
 
 	config.AddExtensionOption("pg_use_binary_copy", "Whether or not to use BINARY copy to read data",
+	                          LogicalType::BOOLEAN, Value::BOOLEAN(true));
+	config.AddExtensionOption("pg_use_ctid_scan", "Whether or not to parallelize scanning using table ctids",
 	                          LogicalType::BOOLEAN, Value::BOOLEAN(true));
 	config.AddExtensionOption("pg_pages_per_task", "The amount of pages per task", LogicalType::UBIGINT,
 	                          Value::UBIGINT(PostgresBindData::DEFAULT_PAGES_PER_TASK));
@@ -113,7 +118,7 @@ static void LoadInternal(DatabaseInstance &db) {
 	config.optimizer_extensions.push_back(std::move(postgres_optimizer));
 
 	config.extension_callbacks.push_back(make_uniq<PostgresExtensionCallback>());
-	for(auto &connection : ConnectionManager::Get(db).GetConnectionList()) {
+	for (auto &connection : ConnectionManager::Get(db).GetConnectionList()) {
 		connection->registered_state.insert(make_pair("postgres_extension", make_shared<PostgresExtensionState>()));
 	}
 }

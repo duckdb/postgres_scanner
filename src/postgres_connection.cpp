@@ -118,8 +118,12 @@ vector<unique_ptr<PostgresResult>> PostgresConnection::ExecuteQueries(const stri
 }
 
 PostgresVersion PostgresConnection::GetPostgresVersion() {
-	auto result =
-	    Query("SELECT CURRENT_SETTING('server_version'), (SELECT COUNT(*) FROM pg_settings WHERE name LIKE 'rds%')");
+	auto result = TryQuery("SELECT version(), (SELECT COUNT(*) FROM pg_settings WHERE name LIKE 'rds%')");
+	if (!result) {
+		PostgresVersion version;
+		version.type_v = PostgresInstanceType::UNKNOWN;
+		return version;
+	}
 	auto version = PostgresUtils::ExtractPostgresVersion(result->GetString(0, 0));
 	if (result->GetInt64(0, 1) > 0) {
 		version.type_v = PostgresInstanceType::AURORA;

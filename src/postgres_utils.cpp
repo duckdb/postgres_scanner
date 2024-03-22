@@ -434,6 +434,9 @@ uint32_t PostgresUtils::ToPostgresOid(const LogicalType &input) {
 PostgresVersion PostgresUtils::ExtractPostgresVersion(const string &version_str) {
 	PostgresVersion result;
 	idx_t pos = 0;
+	if (!StringUtil::Contains(version_str, "PostgreSQL")) {
+		result.type_v = PostgresInstanceType::UNKNOWN;
+	}
 	// scan for the first digit
 	while (pos < version_str.size() && !StringUtil::CharacterIsDigit(version_str[pos])) {
 		pos++;

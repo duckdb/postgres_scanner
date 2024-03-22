@@ -16,17 +16,21 @@ namespace duckdb {
 
 struct PostgresViewInfo : public PostgresCreateInfo {
 public:
-	PostgresViewInfo(const string &select_stmt) {
+	static constexpr const PostgresCreateInfoType TYPE = PostgresCreateInfoType::VIEW;
+
+public:
+	PostgresViewInfo(const string &select_stmt) : PostgresCreateInfo(TYPE) {
 		create_info = make_uniq<CreateViewInfo>();
 		create_info->query = CreateViewInfo::ParseSelect(select_stmt);
 		// create_info->columns.SetAllowDuplicates(true);
 	}
-	PostgresViewInfo(const string &schema, const string &view, const string &select_stmt) {
+	PostgresViewInfo(const string &schema, const string &view, const string &select_stmt) : PostgresCreateInfo(TYPE) {
 		create_info = make_uniq<CreateViewInfo>(string(), schema, view);
 		create_info->query = CreateViewInfo::ParseSelect(select_stmt);
 		// create_info->columns.SetAllowDuplicates(true);
 	}
-	PostgresViewInfo(const SchemaCatalogEntry &schema, const string &view, const string &select_stmt) {
+	PostgresViewInfo(const SchemaCatalogEntry &schema, const string &view, const string &select_stmt)
+	    : PostgresCreateInfo(TYPE) {
 		create_info = make_uniq<CreateViewInfo>((SchemaCatalogEntry &)schema, view);
 		create_info->query = CreateViewInfo::ParseSelect(select_stmt);
 		// create_info->columns.SetAllowDuplicates(true);
@@ -54,6 +58,13 @@ public:
 	void GetColumnNamesAndTypes(vector<string> &names, vector<LogicalType> &types) override {
 		names = create_info->names;
 		types = create_info->types;
+	}
+	idx_t PhysicalColumnCount() const override {
+		D_ASSERT(create_info->types.size() == create_info->names.size());
+		return create_info->types.size();
+	}
+	void AddConstraint(unique_ptr<Constraint> constraint) override {
+		throw NotImplementedException("Can't create constraints on a VIEW entry");
 	}
 
 public:

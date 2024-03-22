@@ -15,6 +15,14 @@ DROP SCHEMA IF EXISTS simple.new_schema CASCADE
 statement ok
 create schema simple.new_schema;
 
+statement error
+create schema simple.new_schema;
+----
+already exists
+
+statement ok
+create schema if not exists simple.new_schema;
+
 statement ok
 create table simple.new_schema.newtable(i int);
 

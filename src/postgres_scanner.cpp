@@ -106,6 +106,19 @@ void PostgresScanFunction::PrepareBind(PostgresVersion version, ClientContext &c
 			bind_data.pages_per_task = PostgresBindData::DEFAULT_PAGES_PER_TASK;
 		}
 	}
+	bool use_ctid_scan = true;
+	Value pg_use_ctid_scan;
+	if (context.TryGetCurrentSetting("pg_use_ctid_scan", pg_use_ctid_scan)) {
+		use_ctid_scan = BooleanValue::Get(pg_use_ctid_scan);
+	}
+	if (version.major_v < 14) {
+		// Disable parallel CTID scan on older Postgres versions since it is not efficient
+		// see https://github.com/duckdb/postgres_scanner/issues/186
+		use_ctid_scan = false;
+	}
+	if (!use_ctid_scan) {
+		approx_num_pages = 0;
+	}
 	bind_data.SetTablePages(approx_num_pages);
 	bind_data.version = version;
 }

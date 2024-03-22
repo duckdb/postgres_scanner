@@ -12,6 +12,7 @@
 #include "duckdb/parser/parsed_data/create_view_info.hpp"
 #include "duckdb/parser/constraints/list.hpp"
 #include "duckdb/parser/parser.hpp"
+#include "duckdb/common/string_util.hpp"
 #include "postgres_conversion.hpp"
 
 namespace duckdb {
@@ -20,37 +21,80 @@ PostgresTableSet::PostgresTableSet(PostgresSchemaEntry &schema, unique_ptr<Postg
     : PostgresInSchemaSet(schema, !table_result_p), table_result(std::move(table_result_p)) {
 }
 
-string PostgresTableSet::GetInitializeQuery() {
-	return R"(
-	SELECT
-		pg_namespace.oid,
-		relname,
-		relkind,
-		pg_get_viewdef(pg_class.oid) AS view_definition,
-		relpages,
-		attname,
-		pg_type.typname type_name,
-		atttypmod type_modifier,
-		pg_attribute.attndims ndim
+// Column IDs for the retrieved query result
+static constexpr idx_t NAMESPACE_ID = 0;
+static constexpr idx_t REL_NAME_ID = 1;
+static constexpr idx_t REL_KIND_ID = 2;
+static constexpr idx_t VIEW_DEFINITION_ID = 3;
+static constexpr idx_t APPROX_NUM_PAGES_ID = 4;
+static constexpr idx_t COLUMN_OFFSET = 5;
+static constexpr idx_t CONSTRAINT_OFFSET = 11;
+
+string PostgresTableSet::GetInitializeQuery(const string &schema, const string &table) {
+	string base_query = R"(
+SELECT
+	pg_namespace.oid AS namespace_id,
+	relname,
+	relkind,
+	pg_get_viewdef(pg_class.oid) AS view_definition,
+	relpages,
+	attname,
+	pg_type.typname type_name,
+	atttypmod type_modifier,
+	pg_attribute.attndims ndim,
+	attnum,
+	pg_attribute.attnotnull AS notnull,
+	NULL constraint_id,
+	NULL constraint_type,
+	NULL constraint_key
 FROM pg_class
 JOIN pg_namespace ON relnamespace = pg_namespace.oid
 JOIN pg_attribute ON pg_class.oid=pg_attribute.attrelid
 JOIN pg_type ON atttypid=pg_type.oid
-WHERE attnum > 0 AND relkind IN ('r', 'v', 'm', 'f', 'p')
-ORDER BY pg_namespace.oid, relname, attnum;
+WHERE attnum > 0 AND relkind IN ('r', 'v', 'm', 'f', 'p') ${CONDITION}
+UNION ALL
+SELECT
+	pg_namespace.oid AS namespace_id,
+	relname,
+	NULL as relkind,
+	NULL as view_definition,
+	NULL relpages,
+	NULL attname,
+	NULL type_name,
+	NULL type_modifier,
+	NULL ndim,
+	NULL attnum,
+	NULL AS notnull,
+	pg_constraint.oid AS constraint_id,
+	contype AS constraint_type,
+	conkey AS constraint_key
+FROM pg_class
+JOIN pg_namespace ON relnamespace = pg_namespace.oid
+JOIN pg_constraint ON (pg_class.oid=pg_constraint.conrelid)
+WHERE contype IN ('p', 'u') ${CONDITION}
+ORDER BY namespace_id, relname, attnum, constraint_id;
 )";
+	string condition;
+	// FIXME: use StringUtil::Join(...) with 'AND ' as separator
+	if (!schema.empty()) {
+		condition += "AND pg_namespace.nspname=" + KeywordHelper::WriteQuoted(schema) + " ";
+	}
+	if (!table.empty()) {
+		condition += "AND relname=" + KeywordHelper::WriteQuoted(table);
+	}
+	return StringUtil::Replace(base_query, "${CONDITION}", condition);
 }
 
 void PostgresTableSet::AddColumn(optional_ptr<PostgresTransaction> transaction,
                                  optional_ptr<PostgresSchemaEntry> schema, PostgresResult &result, idx_t row,
-                                 PostgresCreateInfo &pg_create_info, idx_t column_offset) {
+                                 PostgresCreateInfo &pg_create_info) {
 	PostgresTypeData type_info;
-	idx_t column_index = column_offset;
-	auto column_name = result.GetString(row, column_index);
+	auto column_name = result.GetString(row, COLUMN_OFFSET);
 	D_ASSERT(!column_name.empty());
-	type_info.type_name = result.GetString(row, column_index + 1);
-	type_info.type_modifier = result.GetInt64(row, column_index + 2);
-	type_info.array_dimensions = result.GetInt64(row, column_index + 3);
+	type_info.type_name = result.GetString(row, COLUMN_OFFSET + 1);
+	type_info.type_modifier = result.GetInt64(row, COLUMN_OFFSET + 2);
+	type_info.array_dimensions = result.GetInt64(row, COLUMN_OFFSET + 3);
+	bool is_not_null = result.GetBool(row, COLUMN_OFFSET + 5);
 	string default_value;
 
 	PostgresType postgres_type;
@@ -62,6 +106,9 @@ void PostgresTableSet::AddColumn(optional_ptr<PostgresTransaction> transaction,
 			throw InternalException("Expression list is empty");
 		}
 		column.SetDefaultValue(std::move(expressions[0]));
+	}
+	if (is_not_null) {
+		pg_create_info.AddConstraint(make_uniq<NotNullConstraint>(LogicalIndex(pg_create_info.PhysicalColumnCount())));
 	}
 	pg_create_info.AddColumn(std::move(column), std::move(postgres_type), std::move(column_name));
 }
@@ -88,17 +135,52 @@ static CatalogType TransformRelKind(const string &relkind) {
 	throw InternalException("Unexpected relkind in TransformRelkind: %s", relkind);
 }
 
+void PostgresTableSet::AddConstraint(PostgresResult &result, idx_t row, PostgresTableInfo &table_info) {
+	auto constraint_type = result.GetString(row, CONSTRAINT_OFFSET + 1);
+	auto constraint_key = result.GetString(row, CONSTRAINT_OFFSET + 2);
+	if (constraint_key.empty() || constraint_key.front() != '{' || constraint_key.back() != '}') {
+		// invalid constraint key
+		D_ASSERT(0);
+		return;
+	}
+
+	auto &create_info = table_info.GetCreateInfo();
+	auto &create_table_info = create_info.Cast<CreateTableInfo>();
+	auto splits = StringUtil::Split(constraint_key.substr(1, constraint_key.size() - 2), ",");
+	vector<string> columns;
+	for (auto &split : splits) {
+		auto index = std::stoull(split);
+		columns.push_back(create_table_info.columns.GetColumn(LogicalIndex(index - 1)).Name());
+	}
+
+	create_table_info.constraints.push_back(make_uniq<UniqueConstraint>(std::move(columns), constraint_type == "p"));
+}
+
+void PostgresTableSet::AddColumnOrConstraint(optional_ptr<PostgresTransaction> transaction,
+                                             optional_ptr<PostgresSchemaEntry> schema, PostgresResult &result,
+                                             idx_t row, PostgresCreateInfo &info) {
+	if (result.IsNull(row, COLUMN_OFFSET)) {
+		// constraint
+		if (info.GetType() != PostgresCreateInfoType::TABLE) {
+			throw NotImplementedException("Can not add constraints to views!");
+		}
+		auto &table_info = info.Cast<PostgresTableInfo>();
+		AddConstraint(result, row, table_info);
+	} else {
+		AddColumn(transaction, schema, result, row, info);
+	}
+}
+
 void PostgresTableSet::CreateEntries(PostgresTransaction &transaction, PostgresResult &result, idx_t start, idx_t end) {
 	vector<unique_ptr<PostgresCreateInfo>> infos;
 	unique_ptr<PostgresCreateInfo> info;
 
 	for (idx_t row = start; row < end; row++) {
-		const idx_t COLUMN_OFFSET = 5;
-		auto relname = result.GetString(row, COLUMN_OFFSET - 4);
+		auto relname = result.GetString(row, REL_NAME_ID);
 		D_ASSERT(!relname.empty());
-		auto relkind = result.GetString(row, COLUMN_OFFSET - 3);
-		auto view_definition = result.GetString(row, COLUMN_OFFSET - 2);
-		auto approx_num_pages = result.GetInt64(row, COLUMN_OFFSET - 1);
+		auto relkind = result.GetString(row, REL_KIND_ID);
+		auto view_definition = result.GetString(row, VIEW_DEFINITION_ID);
+		auto approx_num_pages = result.GetInt64(row, APPROX_NUM_PAGES_ID);
 		if (!info || info->GetName() != relname) {
 			if (info) {
 				infos.push_back(std::move(info));
@@ -115,10 +197,12 @@ void PostgresTableSet::CreateEntries(PostgresTransaction &transaction, PostgresR
 				throw InternalException("Unexpected CatalogType in CreateEntries: %s",
 				                        CatalogTypeToString(catalog_type));
 			}
+				auto approx_num_pages =
+				    result.IsNull(row, APPROX_NUM_PAGES_ID) ? 0 : result.GetInt64(row, APPROX_NUM_PAGES_ID);
 				info->approx_num_pages = approx_num_pages;
 			}
 		}
-		AddColumn(&transaction, &schema, result, row, *info, COLUMN_OFFSET);
+		AddColumnOrConstraint(&transaction, &schema, result, row, *info);
 	}
 	if (info) {
 		infos.push_back(std::move(info));
@@ -144,29 +228,10 @@ void PostgresTableSet::CreateEntries(PostgresTransaction &transaction, PostgresR
 void PostgresTableSet::LoadEntries(ClientContext &context) {
 	auto &transaction = PostgresTransaction::Get(context, catalog);
 	if (table_result) {
-		// This query was created from PostgresTableSet::GetInitializeQuery()
 		CreateEntries(transaction, table_result->GetResult(), table_result->start, table_result->end);
 		table_result.reset();
 	} else {
-		auto query = StringUtil::Replace(R"(
-		SELECT
-			0 as "pg_namespace.oid",
-			relname,
-			relkind,
-			pg_get_viewdef(pg_class.oid) AS view_definition,
-			relpages,
-			attname,
-			pg_type.typname type_name,
-			atttypmod type_modifier,
-			pg_attribute.attndims ndim
-	FROM pg_class
-	JOIN pg_namespace ON relnamespace = pg_namespace.oid
-	JOIN pg_attribute ON pg_class.oid=pg_attribute.attrelid
-	JOIN pg_type ON atttypid=pg_type.oid
-	WHERE pg_namespace.nspname=${SCHEMA_NAME} AND attnum > 0 AND relkind IN ('r', 'v', 'm', 'f', 'p')
-	ORDER BY relname, attnum;
-	)",
-		                                 "${SCHEMA_NAME}", KeywordHelper::WriteQuoted(schema.name));
+		auto query = GetInitializeQuery(schema.name);
 
 		auto result = transaction.Query(query);
 		auto rows = result->Count();
@@ -175,38 +240,16 @@ void PostgresTableSet::LoadEntries(ClientContext &context) {
 	}
 }
 
-string GetTableInfoQuery(const string &schema_name, const string &table_name) {
-	return StringUtil::Replace(StringUtil::Replace(R"(
-SELECT
-	relpages,
-	relkind,
-	pg_get_viewdef(pg_class.oid) AS view_definition,
-	attname,
-	pg_type.typname type_name,
-	atttypmod type_modifier,
-	pg_attribute.attndims ndim
-FROM pg_class
-JOIN pg_namespace ON relnamespace = pg_namespace.oid
-JOIN pg_attribute ON pg_class.oid=pg_attribute.attrelid
-JOIN pg_type ON atttypid=pg_type.oid
-WHERE pg_namespace.nspname=${SCHEMA_NAME} AND relname=${TABLE_NAME} AND attnum > 0 AND relkind IN ('r', 'v', 'm', 'f', 'p')
-ORDER BY relname, attnum;
-)",
-	                                               "${SCHEMA_NAME}", KeywordHelper::WriteQuoted(schema_name)),
-	                           "${TABLE_NAME}", KeywordHelper::WriteQuoted(table_name));
-}
-
 unique_ptr<PostgresCreateInfo> PostgresTableSet::GetTableInfo(PostgresTransaction &transaction,
                                                               PostgresSchemaEntry &schema, const string &table_name) {
-	auto query = GetTableInfoQuery(schema.name, table_name);
+	auto query = PostgresTableSet::GetInitializeQuery(schema.name, table_name);
 	auto result = transaction.Query(query);
 	auto rows = result->Count();
 	if (rows == 0) {
 		return nullptr;
 	}
-	const idx_t COLUMN_OFFSET = 3;
-	auto relkind = result->GetString(0, 1);
-	auto view_definition = result->GetString(0, 2);
+	auto relkind = result->GetString(0, REL_KIND_ID);
+	auto view_definition = result->GetString(0, VIEW_DEFINITION_ID);
 	auto catalog_type = TransformRelKind(relkind);
 	unique_ptr<PostgresCreateInfo> info;
 	switch (catalog_type) {
@@ -222,24 +265,23 @@ unique_ptr<PostgresCreateInfo> PostgresTableSet::GetTableInfo(PostgresTransactio
 	}
 
 	for (idx_t row = 0; row < rows; row++) {
-		AddColumn(&transaction, &schema, *result, row, *info, COLUMN_OFFSET);
+		AddColumnOrConstraint(&transaction, &schema, *result, row, *info);
 	}
-	info->approx_num_pages = result->GetInt64(0, 0);
+	info->approx_num_pages = result->GetInt64(0, APPROX_NUM_PAGES_ID);
 	return info;
 }
 
 unique_ptr<PostgresCreateInfo> PostgresTableSet::GetTableInfo(PostgresConnection &connection, const string &schema_name,
                                                               const string &table_name) {
-	auto query = GetTableInfoQuery(schema_name, table_name);
+	auto query = PostgresTableSet::GetInitializeQuery(schema_name, table_name);
 	auto result = connection.Query(query);
 	auto rows = result->Count();
 	if (rows == 0) {
 		throw InvalidInputException("Table %s does not contain any columns.", table_name);
 	}
 
-	const idx_t COLUMN_OFFSET = 3;
-	auto relkind = result->GetString(0, 1);
-	auto view_definition = result->GetString(0, 2);
+	auto relkind = result->GetString(0, REL_KIND_ID);
+	auto view_definition = result->GetString(0, VIEW_DEFINITION_ID);
 	auto catalog_type = TransformRelKind(relkind);
 	unique_ptr<PostgresCreateInfo> info;
 	switch (catalog_type) {
@@ -254,9 +296,9 @@ unique_ptr<PostgresCreateInfo> PostgresTableSet::GetTableInfo(PostgresConnection
 	}
 	}
 	for (idx_t row = 0; row < rows; row++) {
-		AddColumn(nullptr, nullptr, *result, row, *info, COLUMN_OFFSET);
+		AddColumnOrConstraint(nullptr, nullptr, *result, row, *info);
 	}
-	info->approx_num_pages = result->GetInt64(0, 0);
+	info->approx_num_pages = result->GetInt64(0, APPROX_NUM_PAGES_ID);
 	return info;
 }
 

@@ -17,15 +17,18 @@ namespace duckdb {
 
 struct PostgresTableInfo : public PostgresCreateInfo {
 public:
-	PostgresTableInfo() {
+	static constexpr const PostgresCreateInfoType TYPE = PostgresCreateInfoType::TABLE;
+
+public:
+	PostgresTableInfo() : PostgresCreateInfo(TYPE) {
 		create_info = make_uniq<CreateTableInfo>();
 		create_info->columns.SetAllowDuplicates(true);
 	}
-	PostgresTableInfo(const string &schema, const string &table) {
+	PostgresTableInfo(const string &schema, const string &table) : PostgresCreateInfo(TYPE) {
 		create_info = make_uniq<CreateTableInfo>(string(), schema, table);
 		create_info->columns.SetAllowDuplicates(true);
 	}
-	PostgresTableInfo(const SchemaCatalogEntry &schema, const string &table) {
+	PostgresTableInfo(const SchemaCatalogEntry &schema, const string &table) : PostgresCreateInfo(TYPE) {
 		create_info = make_uniq<CreateTableInfo>((SchemaCatalogEntry &)schema, table);
 		create_info->columns.SetAllowDuplicates(true);
 	}
@@ -52,6 +55,13 @@ public:
 			names.push_back(col.GetName());
 			types.push_back(col.GetType());
 		}
+	}
+	idx_t PhysicalColumnCount() const override {
+		return create_info->columns.PhysicalColumnCount();
+	}
+
+	void AddConstraint(unique_ptr<Constraint> constraint) override {
+		create_info->constraints.push_back(std::move(constraint));
 	}
 
 public:

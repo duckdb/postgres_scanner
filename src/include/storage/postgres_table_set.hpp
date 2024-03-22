@@ -32,7 +32,7 @@ public:
 
 	void AlterTable(ClientContext &context, AlterTableInfo &info);
 
-	static string GetInitializeQuery();
+	static string GetInitializeQuery(const string &schema = string(), const string &table = string());
 
 protected:
 	void LoadEntries(ClientContext &context) override;
@@ -46,8 +46,11 @@ protected:
 	void AlterTable(ClientContext &context, RemoveColumnInfo &info);
 
 	static void AddColumn(optional_ptr<PostgresTransaction> transaction, optional_ptr<PostgresSchemaEntry> schema,
-	                      PostgresResult &result, idx_t row, PostgresCreateInfo &pg_create_info,
-	                      idx_t column_offset = 0);
+	                      PostgresResult &result, idx_t row, PostgresCreateInfo &pg_create_info);
+	static void AddConstraint(PostgresResult &result, idx_t row, PostgresTableInfo &table_info);
+	static void AddColumnOrConstraint(optional_ptr<PostgresTransaction> transaction,
+	                                  optional_ptr<PostgresSchemaEntry> schema, PostgresResult &result, idx_t row,
+	                                  PostgresCreateInfo &table_info);
 
 	void CreateEntries(PostgresTransaction &transaction, PostgresResult &result, idx_t start, idx_t end);
 

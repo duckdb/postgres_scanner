@@ -27,6 +27,7 @@ void PostgresIndexSet::LoadEntries(ClientContext &context) {
 	auto &result = index_result->GetResult();
 	for (idx_t row = index_result->start; row < index_result->end; row++) {
 		auto table_name = result.GetString(row, 1);
+		D_ASSERT(!table_name.empty());
 		auto index_name = result.GetString(row, 2);
 		CreateIndexInfo info;
 		info.schema = schema.name;

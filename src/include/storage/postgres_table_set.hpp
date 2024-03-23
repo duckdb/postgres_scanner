@@ -24,10 +24,10 @@ public:
 public:
 	optional_ptr<CatalogEntry> CreateTable(ClientContext &context, BoundCreateTableInfo &info);
 
-	static unique_ptr<PostgresTableInfo> GetTableInfo(PostgresTransaction &transaction, PostgresSchemaEntry &schema,
-	                                                  const string &table_name);
-	static unique_ptr<PostgresTableInfo> GetTableInfo(PostgresConnection &connection, const string &schema_name,
-	                                                  const string &table_name);
+	static unique_ptr<PostgresCreateInfo> GetTableInfo(PostgresTransaction &transaction, PostgresSchemaEntry &schema,
+	                                                   const string &table_name);
+	static unique_ptr<PostgresCreateInfo> GetTableInfo(PostgresConnection &connection, const string &schema_name,
+	                                                   const string &table_name);
 	optional_ptr<CatalogEntry> ReloadEntry(ClientContext &context, const string &table_name) override;
 
 	void AlterTable(ClientContext &context, AlterTableInfo &info);
@@ -46,11 +46,11 @@ protected:
 	void AlterTable(ClientContext &context, RemoveColumnInfo &info);
 
 	static void AddColumn(optional_ptr<PostgresTransaction> transaction, optional_ptr<PostgresSchemaEntry> schema,
-	                      PostgresResult &result, idx_t row, PostgresTableInfo &table_info);
+	                      PostgresResult &result, idx_t row, PostgresCreateInfo &pg_create_info);
 	static void AddConstraint(PostgresResult &result, idx_t row, PostgresTableInfo &table_info);
 	static void AddColumnOrConstraint(optional_ptr<PostgresTransaction> transaction,
 	                                  optional_ptr<PostgresSchemaEntry> schema, PostgresResult &result, idx_t row,
-	                                  PostgresTableInfo &table_info);
+	                                  PostgresCreateInfo &table_info);
 
 	void CreateEntries(PostgresTransaction &transaction, PostgresResult &result, idx_t start, idx_t end);
 

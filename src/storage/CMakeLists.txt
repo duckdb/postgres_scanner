@@ -18,7 +18,9 @@ add_library(
   postgres_transaction_manager.cpp
   postgres_type_entry.cpp
   postgres_type_set.cpp
-  postgres_update.cpp)
+  postgres_update.cpp
+  postgres_view_entry.cpp
+  )
 set(ALL_OBJECT_FILES
     ${ALL_OBJECT_FILES} $<TARGET_OBJECTS:postgres_ext_storage>
     PARENT_SCOPE)

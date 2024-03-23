@@ -156,6 +156,8 @@ INSERT INTO chars VALUES ('hello'), ('world'), ('maxlength1'), ('hello     '), (
 CREATE TABLE chars_array(c CHAR(10)[]);
 INSERT INTO chars_array VALUES (ARRAY['hello', 'world', 'maxlength1', 'hello     ', '     ', NULL]);
 
+CREATE VIEW chars_view as select * from chars;
+
 -- varchar with length limit
 CREATE TABLE varchars_fixed_len(c VARCHAR(10));
 INSERT INTO varchars_fixed_len VALUES ('hello'), ('world'), ('maxlength1'), ('hello     '), ('     '), (NULL);

@@ -1,0 +1,69 @@
+# name: test/sql/catalog/view/test_view_aliases.test
+# description: Test behavior of aliasing on view creation
+# group: [view]
+
+require postgres_scanner
+
+require-env POSTGRES_TEST_DATABASE_AVAILABLE
+
+statement ok
+PRAGMA enable_verification
+
+statement ok
+ATTACH 'postgres:dbname=postgresscanner' AS s1
+
+statement ok
+drop schema if exists s1.view_aliases cascade;
+
+statement ok
+create schema s1.view_aliases;
+
+# Fully aliased
+statement ok
+CREATE VIEW s1.view_aliases.X (a) AS SELECT 'x'
+
+query I
+select a from s1.view_aliases.x;
+----
+x
+
+statement ok
+drop view s1.view_aliases.x;
+
+# Not aliased (no expression alias)
+statement ok
+CREATE VIEW s1.view_aliases.x AS SELECT 'x'
+
+query I
+select x from s1.view_aliases.x
+----
+{'CAST('x' AS VARCHAR)': x}
+
+statement ok
+drop view s1.view_aliases.x;
+
+# Not aliased (with expression alias)
+statement ok
+CREATE VIEW s1.view_aliases.x AS SELECT 'x' x
+
+query I
+select x from s1.view_aliases.x
+----
+x
+
+statement ok
+drop view s1.view_aliases.x;
+
+# Partially aliased
+statement error
+CREATE VIEW s1.view_aliases.x (x) AS SELECT 'a', 'x' x
+----
+ERROR:  column "x" specified more than once
+
+statement ok
+CREATE VIEW s1.view_aliases.x (x) AS SELECT 'a', 'x' also_x
+
+query I
+select x from s1.view_aliases.x
+----
+a

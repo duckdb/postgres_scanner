@@ -4,6 +4,7 @@
 #include "postgres_scanner.hpp"
 #include "postgres_storage.hpp"
 #include "postgres_scanner_extension.hpp"
+#include "postgres_binary_copy.hpp"
 
 #include "duckdb/catalog/catalog.hpp"
 #include "duckdb/parser/parsed_data/create_table_function_info.hpp"
@@ -89,6 +90,9 @@ static void LoadInternal(DatabaseInstance &db) {
 
 	PostgresExecuteFunction execute_func;
 	ExtensionUtil::RegisterFunction(db, execute_func);
+
+	PostgresBinaryCopyFunction binary_copy;
+	ExtensionUtil::RegisterFunction(db, binary_copy);
 
 	auto &config = DBConfig::GetConfig(db);
 	config.storage_extensions["postgres_scanner"] = make_uniq<PostgresStorageExtension>();

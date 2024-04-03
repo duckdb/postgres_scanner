@@ -399,7 +399,7 @@ public:
 			break;
 		}
 		default:
-			throw InternalException("Unsupported type for Postgres insert");
+			throw NotImplementedException("Type \"%s\" is not supported for Postgres binary copy", type);
 		}
 	}
 

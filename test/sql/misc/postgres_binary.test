@@ -1,0 +1,72 @@
+# name: test/sql/misc/postgres_binary.test
+# description: Test postgres binary copy through a file
+# group: [scanner]
+
+require postgres_scanner
+
+require-env POSTGRES_TEST_DATABASE_AVAILABLE
+
+statement ok
+CALL postgres_attach('dbname=postgresscanner');
+
+statement ok
+ATTACH 'dbname=postgresscanner' AS s (TYPE POSTGRES)
+
+# straightforward integer copy
+statement ok
+COPY (SELECT i::INT AS i FROM range(100) t(i)) TO '__TEST_DIR__/pg_binary.bin' (FORMAT postgres_binary);
+
+statement ok
+CREATE OR REPLACE TABLE s.binary_copy_test(i INTEGER);
+
+statement ok
+CALL postgres_execute('s', 'COPY binary_copy_test FROM ''__WORKING_DIRECTORY__/__TEST_DIR__/pg_binary.bin'' (FORMAT binary)')
+
+query IIII
+SELECT COUNT(*), MIN(i), MAX(i), SUM(i) FROM s.binary_copy_test
+----
+100	0	99	4950
+
+# test all supported types
+statement ok
+CREATE TABLE all_types_tbl AS
+SELECT bool, smallint, int, bigint, float, double, dec_4_1, dec_9_4, dec_18_6, dec38_10,
+	case when date < '1992-01-01' then '4712-01-01 (BC)' else '5874896-01-01' end as date, -- postgres has more constrained date ranges
+	time,
+	timestamp, interval, uuid, blob,
+	replace(varchar, chr(0), '') as varchar, -- postgres does not support null bytes in varchar columns
+	blob, int_array, varchar_array
+FROM test_all_types()
+
+# create an empty table on the postgres side
+statement ok
+CREATE OR REPLACE TABLE s.binary_copy_test AS FROM all_types_tbl LIMIT 0;
+
+statement ok
+COPY all_types_tbl TO '__TEST_DIR__/pg_binary.bin' (FORMAT postgres_binary);
+
+statement ok
+CALL postgres_execute('s', 'COPY binary_copy_test FROM ''__WORKING_DIRECTORY__/__TEST_DIR__/pg_binary.bin'' (FORMAT binary)')
+
+query I nosort all_types
+FROM all_types_tbl
+----
+
+query I nosort all_types
+SELECT * FROM s.binary_copy_test
+----
+
+# test an unsupported type
+statement error
+COPY (SELECT 42::UINT32) TO '__TEST_DIR__/pg_binary.bin' (FORMAT postgres_binary);
+----
+not supported
+
+# reading not yet supported
+statement ok
+CREATE TABLE read_tbl(i int);
+
+statement error
+COPY read_tbl FROM '__TEST_DIR__/pg_binary.bin' (FORMAT postgres_binary);
+----
+not supported

@@ -5,6 +5,7 @@ add_subdirectory(storage)
 add_library(
   postgres_ext_library OBJECT
   postgres_attach.cpp
+  postgres_binary_copy.cpp
   postgres_connection.cpp
   postgres_copy_from.cpp
   postgres_copy_to.cpp

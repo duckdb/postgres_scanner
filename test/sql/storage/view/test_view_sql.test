@@ -1,0 +1,64 @@
+# name: test/sql/catalog/view/test_view_sql.test
+# description: Test behavior of 'sql' on various different views
+# group: [view]
+
+require postgres_scanner
+
+require-env POSTGRES_TEST_DATABASE_AVAILABLE
+
+statement ok
+PRAGMA enable_verification
+
+statement ok
+ATTACH 'postgres:dbname=postgresscanner' AS s1
+
+statement ok
+drop schema if exists s1.my_schema cascade;
+
+statement ok
+drop schema if exists s1."schema name" cascade;
+
+statement ok
+drop view if exists s1.vw;
+
+statement ok
+drop view if exists s1."view name";
+
+statement ok
+create schema s1.my_schema;
+
+# X contains columns `a` and `y`
+statement ok
+CREATE VIEW s1.my_schema.X (a) AS SELECT 'x' as x, 'y' as y;
+
+statement error
+alter view s1.my_schema.x rename to Y;
+----
+Binder Error: Only altering tables is supported for now
+
+statement ok
+drop schema s1.my_schema cascade;
+
+statement ok
+create view s1.vw as select * from VALUES (42, 'test') t(a, b);
+
+statement ok
+create or replace view s1.vw (c1, c2) as select * from VALUES (42, 'test') t(a, b);
+
+statement ok
+create or replace view s1."view name" as select * from VALUES (42, 'test') t(a, b);
+
+statement ok
+drop view s1.vw;
+
+statement ok
+drop view s1."view name"
+
+statement ok
+create schema s1."schema name";
+
+statement ok
+CREATE VIEW s1."schema name"."view name" (
+	"other name 1",
+	"column name 2"
+) AS SELECT * FROM VALUES (42, 'test') t(a, b);

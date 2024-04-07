@@ -1,0 +1,76 @@
+# name: test/sql/catalog/view/test_view.test
+# description: Test view creation
+# group: [view]
+
+require postgres_scanner
+
+require-env POSTGRES_TEST_DATABASE_AVAILABLE
+
+statement ok
+PRAGMA enable_verification
+
+statement ok
+ATTACH 'postgres:dbname=postgresscanner' AS s1
+
+statement ok
+drop view if exists s1.v1;
+
+statement ok
+CREATE VIEW s1.v1 AS SELECT 42 as j
+
+statement error
+CREATE VIEW s1.v1 AS SELECT 'whatever'
+----
+Failed to execute query
+
+query I
+SELECT j FROM s1.v1 WHERE j > 41
+----
+42
+
+# name alias in view
+query I
+SELECT x FROM s1.v1 t1(x) WHERE x > 41
+----
+42
+
+statement ok
+DROP VIEW s1.v1
+
+statement error
+SELECT j FROM s1.v1 WHERE j > 41
+----
+
+statement ok
+CREATE VIEW s1.v1 AS SELECT 'whatever'
+
+query T
+SELECT * FROM s1.v1
+----
+whatever
+
+statement ok
+CREATE OR REPLACE VIEW s1.v1 AS SELECT 42
+
+query I
+SELECT * FROM s1.v1
+----
+42
+
+statement error
+INSERT INTO s1.v1 VALUES (1)
+----
+
+statement ok
+DROP VIEW s1.v1
+
+statement error
+DROP VIEW s1.v1
+----
+
+statement ok
+DROP VIEW IF EXISTS s1.v1
+
+statement error
+CREATE VIEW s1.v1 AS SELECT * FROM dontexist
+----

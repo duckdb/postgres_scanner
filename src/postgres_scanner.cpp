@@ -162,10 +162,7 @@ static unique_ptr<FunctionData> PostgresBind(ClientContext &context, TableFuncti
 	auto info = PostgresTableSet::GetTableInfo(con, bind_data->schema_name, bind_data->table_name);
 
 	bind_data->postgres_types = info->postgres_types;
-	for (auto &col : info->create_info->columns.Logical()) {
-		names.push_back(col.GetName());
-		return_types.push_back(col.GetType());
-	}
+	info->GetColumnNamesAndTypes(names, return_types);
 	bind_data->names = info->postgres_names;
 	bind_data->types = return_types;
 	bind_data->can_use_main_thread = true;

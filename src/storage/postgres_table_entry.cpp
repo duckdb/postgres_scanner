@@ -15,6 +15,7 @@ PostgresTableEntry::PostgresTableEntry(Catalog &catalog, SchemaCatalogEntry &sch
 			col.TypeMutable() = PostgresUtils::RemoveAlias(col.GetType());
 		}
 		postgres_types.push_back(PostgresUtils::CreateEmptyPostgresType(col.GetType()));
+		D_ASSERT(!col.GetName().empty());
 		postgres_names.push_back(col.GetName());
 	}
 	approx_num_pages = 0;
@@ -23,6 +24,11 @@ PostgresTableEntry::PostgresTableEntry(Catalog &catalog, SchemaCatalogEntry &sch
 PostgresTableEntry::PostgresTableEntry(Catalog &catalog, SchemaCatalogEntry &schema, PostgresTableInfo &info)
     : TableCatalogEntry(catalog, schema, *info.create_info), postgres_types(std::move(info.postgres_types)),
       postgres_names(std::move(info.postgres_names)) {
+#ifdef DEBUG
+	for (auto &result_name : postgres_names) {
+		D_ASSERT(!result_name.empty());
+	}
+#endif
 	D_ASSERT(postgres_types.size() == columns.LogicalColumnCount());
 	approx_num_pages = info.approx_num_pages;
 }
@@ -48,6 +54,11 @@ TableFunction PostgresTableEntry::GetScanFunction(ClientContext &context, unique
 		result->types.push_back(col.GetType());
 	}
 	result->names = postgres_names;
+#ifdef DEBUG
+	for (auto &result_name : result->names) {
+		D_ASSERT(!result_name.empty());
+	}
+#endif
 	result->postgres_types = postgres_types;
 	result->read_only = transaction.IsReadOnly();
 	PostgresScanFunction::PrepareBind(pg_catalog.GetPostgresVersion(), context, *result, approx_num_pages);
@@ -118,6 +129,9 @@ PostgresCopyFormat PostgresTableEntry::GetCopyFormat(ClientContext &context) {
 		}
 	}
 	return PostgresCopyFormat::BINARY;
+}
+
+PostgresTableEntry::~PostgresTableEntry() {
 }
 
 } // namespace duckdb

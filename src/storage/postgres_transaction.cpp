@@ -31,14 +31,19 @@ void PostgresTransaction::Rollback() {
 	}
 }
 
+static string GetBeginTransactionQuery(AccessMode access_mode) {
+	string result = "BEGIN TRANSACTION ISOLATION LEVEL REPEATABLE READ";
+	if (access_mode == AccessMode::READ_ONLY) {
+		result += " READ ONLY";
+	}
+	return result;
+}
+
 PostgresConnection &PostgresTransaction::GetConnection() {
 	auto &con = GetConnectionRaw();
 	if (transaction_state == PostgresTransactionState::TRANSACTION_NOT_YET_STARTED) {
 		transaction_state = PostgresTransactionState::TRANSACTION_STARTED;
-		string query = "BEGIN TRANSACTION";
-		if (access_mode == AccessMode::READ_ONLY) {
-			query += " READ ONLY";
-		}
+		string query = GetBeginTransactionQuery(access_mode);
 		con.Execute(query);
 	}
 	return con;
@@ -56,10 +61,7 @@ unique_ptr<PostgresResult> PostgresTransaction::Query(const string &query) {
 	auto &con = GetConnectionRaw();
 	if (transaction_state == PostgresTransactionState::TRANSACTION_NOT_YET_STARTED) {
 		transaction_state = PostgresTransactionState::TRANSACTION_STARTED;
-		string transaction_start = "BEGIN TRANSACTION";
-		if (access_mode == AccessMode::READ_ONLY) {
-			transaction_start += " READ ONLY";
-		}
+		string transaction_start = GetBeginTransactionQuery(access_mode);
 		transaction_start += ";\n";
 		return con.Query(transaction_start + query);
 	}
@@ -70,10 +72,7 @@ vector<unique_ptr<PostgresResult>> PostgresTransaction::ExecuteQueries(const str
 	auto &con = GetConnectionRaw();
 	if (transaction_state == PostgresTransactionState::TRANSACTION_NOT_YET_STARTED) {
 		transaction_state = PostgresTransactionState::TRANSACTION_STARTED;
-		string transaction_start = "BEGIN TRANSACTION";
-		if (access_mode == AccessMode::READ_ONLY) {
-			transaction_start += " READ ONLY";
-		}
+		string transaction_start = GetBeginTransactionQuery(access_mode);
 		transaction_start += ";\n";
 		return con.ExecuteQueries(transaction_start + queries);
 	}

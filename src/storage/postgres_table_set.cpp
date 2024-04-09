@@ -38,7 +38,7 @@ SELECT pg_namespace.oid AS namespace_id, relname, NULL relpages, NULL attname, N
 FROM pg_class
 JOIN pg_namespace ON relnamespace = pg_namespace.oid
 JOIN pg_constraint ON (pg_class.oid=pg_constraint.conrelid)
-WHERE contype IN ('p', 'u') ${CONDITION}
+WHERE relkind IN ('r', 'v', 'm', 'f', 'p') AND contype IN ('p', 'u') ${CONDITION}
 ORDER BY namespace_id, relname, attnum, constraint_id;
 )";
 	string condition;
@@ -98,6 +98,9 @@ void PostgresTableSet::AddConstraint(PostgresResult &result, idx_t row, Postgres
 	vector<string> columns;
 	for (auto &split : splits) {
 		auto index = std::stoull(split);
+		if (index >= create_info.columns.LogicalColumnCount()) {
+			return;
+		}
 		columns.push_back(create_info.columns.GetColumn(LogicalIndex(index - 1)).Name());
 	}
 

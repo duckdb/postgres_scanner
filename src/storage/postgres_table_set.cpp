@@ -98,7 +98,7 @@ void PostgresTableSet::AddConstraint(PostgresResult &result, idx_t row, Postgres
 	vector<string> columns;
 	for (auto &split : splits) {
 		auto index = std::stoull(split);
-		if (index > create_info.columns.LogicalColumnCount()) {
+		if (index <= 0 || index > create_info.columns.LogicalColumnCount()) {
 			return;
 		}
 		columns.push_back(create_info.columns.GetColumn(LogicalIndex(index - 1)).Name());

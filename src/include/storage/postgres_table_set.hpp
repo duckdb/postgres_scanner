@@ -54,6 +54,11 @@ protected:
 
 	void CreateEntries(PostgresTransaction &transaction, PostgresResult &result, idx_t start, idx_t end);
 
+private:
+	string GetAlterTablePrefix(ClientContext &context, const string &name);
+	string GetAlterTablePrefix(const string &name, optional_ptr<CatalogEntry> entry);
+	string GetAlterTableColumnName(const string &name, optional_ptr<CatalogEntry> entry);
+
 protected:
 	unique_ptr<PostgresResultSlice> table_result;
 };

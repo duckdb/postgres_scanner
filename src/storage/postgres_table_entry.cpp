@@ -78,8 +78,13 @@ static bool CopyRequiresText(const LogicalType &type, const PostgresType &pg_typ
 	case LogicalTypeId::LIST: {
 		D_ASSERT(pg_type.children.size() == 1);
 		auto &child_type = ListType::GetChildType(type);
-		if (child_type.id() != LogicalTypeId::LIST && !PostgresUtils::SupportedPostgresOid(child_type)) {
-			return true;
+		if (child_type.id() != LogicalTypeId::LIST) {
+			if (!PostgresUtils::SupportedPostgresOid(child_type)) {
+				return true;
+			}
+			if (pg_type.children[0].oid != PostgresUtils::ToPostgresOid(child_type)) {
+				return true;
+			}
 		}
 		if (CopyRequiresText(child_type, pg_type.children[0])) {
 			return true;

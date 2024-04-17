@@ -318,39 +318,60 @@ optional_ptr<CatalogEntry> PostgresTableSet::CreateTable(ClientContext &context,
 	return CreateEntry(std::move(tbl_entry));
 }
 
+string PostgresTableSet::GetAlterTablePrefix(const string &name, optional_ptr<CatalogEntry> entry) {
+	string sql = "ALTER TABLE ";
+	sql += KeywordHelper::WriteQuoted(schema.name, '"') + ".";
+	sql += KeywordHelper::WriteQuoted(entry ? entry->name : name, '"');
+	return sql;
+}
+
+string PostgresTableSet::GetAlterTableColumnName(const string &name, optional_ptr<CatalogEntry> entry) {
+	if (!entry || entry->type != CatalogType::TABLE_ENTRY) {
+		return name;
+	}
+	auto &table = entry->Cast<PostgresTableEntry>();
+	string column_name = name;
+	auto column_index = table.GetColumnIndex(column_name, true);
+	if (!column_index.IsValid()) {
+		return name;
+	}
+	return table.postgres_names[column_index.index];
+}
+
+string PostgresTableSet::GetAlterTablePrefix(ClientContext &context, const string &name) {
+	auto entry = GetEntry(context, name);
+	return GetAlterTablePrefix(name, entry);
+}
+
 void PostgresTableSet::AlterTable(ClientContext &context, RenameTableInfo &info) {
 	auto &transaction = PostgresTransaction::Get(context, catalog);
-	string sql = "ALTER TABLE ";
-	sql += KeywordHelper::WriteOptionallyQuoted(schema.name) + ".";
-	sql += KeywordHelper::WriteOptionallyQuoted(info.name);
+	string sql = GetAlterTablePrefix(context, info.name);
 	sql += " RENAME TO ";
-	sql += KeywordHelper::WriteOptionallyQuoted(info.new_table_name);
+	sql += KeywordHelper::WriteQuoted(info.new_table_name, '"');
 	transaction.Query(sql);
 }
 
 void PostgresTableSet::AlterTable(ClientContext &context, RenameColumnInfo &info) {
 	auto &transaction = PostgresTransaction::Get(context, catalog);
-	string sql = "ALTER TABLE ";
-	sql += KeywordHelper::WriteOptionallyQuoted(schema.name) + ".";
-	sql += KeywordHelper::WriteOptionallyQuoted(info.name);
+	auto entry = GetEntry(context, info.name);
+	string sql = GetAlterTablePrefix(info.name, entry);
 	sql += " RENAME COLUMN  ";
-	sql += KeywordHelper::WriteOptionallyQuoted(info.old_name);
+	string column_name = GetAlterTableColumnName(info.old_name, entry);
+	sql += KeywordHelper::WriteQuoted(column_name, '"');
 	sql += " TO ";
-	sql += KeywordHelper::WriteOptionallyQuoted(info.new_name);
+	sql += KeywordHelper::WriteQuoted(info.new_name, '"');
 
 	transaction.Query(sql);
 }
 
 void PostgresTableSet::AlterTable(ClientContext &context, AddColumnInfo &info) {
 	auto &transaction = PostgresTransaction::Get(context, catalog);
-	string sql = "ALTER TABLE ";
-	sql += KeywordHelper::WriteOptionallyQuoted(schema.name) + ".";
-	sql += KeywordHelper::WriteOptionallyQuoted(info.name);
+	string sql = GetAlterTablePrefix(context, info.name);
 	sql += " ADD COLUMN  ";
 	if (info.if_column_not_exists) {
 		sql += "IF NOT EXISTS ";
 	}
-	sql += KeywordHelper::WriteOptionallyQuoted(info.new_column.Name());
+	sql += KeywordHelper::WriteQuoted(info.new_column.Name(), '"');
 	sql += " ";
 	sql += info.new_column.Type().ToString();
 	transaction.Query(sql);
@@ -358,14 +379,14 @@ void PostgresTableSet::AlterTable(ClientContext &context, AddColumnInfo &info) {
 
 void PostgresTableSet::AlterTable(ClientContext &context, RemoveColumnInfo &info) {
 	auto &transaction = PostgresTransaction::Get(context, catalog);
-	string sql = "ALTER TABLE ";
-	sql += KeywordHelper::WriteOptionallyQuoted(schema.name) + ".";
-	sql += KeywordHelper::WriteOptionallyQuoted(info.name);
+	auto entry = GetEntry(context, info.name);
+	string sql = GetAlterTablePrefix(info.name, entry);
 	sql += " DROP COLUMN  ";
 	if (info.if_column_exists) {
 		sql += "IF EXISTS ";
 	}
-	sql += KeywordHelper::WriteOptionallyQuoted(info.removed_column);
+	string column_name = GetAlterTableColumnName(info.removed_column, entry);
+	sql += KeywordHelper::WriteQuoted(column_name, '"');
 	transaction.Query(sql);
 }
 

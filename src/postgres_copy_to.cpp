@@ -197,7 +197,7 @@ void CastBlobToPostgres(ClientContext &context, Vector &input, Vector &result, i
 			continue;
 		}
 		const char *HEX_STRING = "0123456789ABCDEF";
-		string blob_str = "\\\\x";
+		string blob_str = "\\x";
 		auto blob_data = const_data_ptr_cast(input_data[r].GetData());
 		auto blob_size = input_data[r].GetSize();
 		for (idx_t c = 0; c < blob_size; c++) {

@@ -21,34 +21,42 @@ public:
 		stream.WriteData(const_data_ptr_cast("\b"), 1);
 	}
 
+	void WriteCharInternal(char c) {
+		stream.WriteData(const_data_ptr_cast(&c), 1);
+	}
+
 	void WriteChar(char c) {
 		switch (c) {
 		case '\n':
-			WriteChar('\\');
-			WriteChar('n');
+			WriteCharInternal('\\');
+			WriteCharInternal('n');
 			break;
 		case '\r':
-			WriteChar('\\');
-			WriteChar('r');
+			WriteCharInternal('\\');
+			WriteCharInternal('r');
 			break;
 		case '\b':
-			WriteChar('\\');
-			WriteChar('b');
+			WriteCharInternal('\\');
+			WriteCharInternal('b');
 			break;
 		case '\f':
-			WriteChar('\\');
-			WriteChar('f');
+			WriteCharInternal('\\');
+			WriteCharInternal('f');
 			break;
 		case '\t':
-			WriteChar('\\');
-			WriteChar('t');
+			WriteCharInternal('\\');
+			WriteCharInternal('t');
 			break;
 		case '\v':
-			WriteChar('\\');
-			WriteChar('v');
+			WriteCharInternal('\\');
+			WriteCharInternal('v');
+			break;
+		case '\\':
+			WriteCharInternal('\\');
+			WriteCharInternal('\\');
 			break;
 		default:
-			stream.WriteData(const_data_ptr_cast(&c), 1);
+			WriteCharInternal(c);
 			break;
 		}
 	}

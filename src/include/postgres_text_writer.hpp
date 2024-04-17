@@ -55,6 +55,10 @@ public:
 			WriteCharInternal('\\');
 			WriteCharInternal('\\');
 			break;
+		case '"':
+			WriteCharInternal('\\');
+			WriteCharInternal('"');
+			break;
 		default:
 			WriteCharInternal(c);
 			break;

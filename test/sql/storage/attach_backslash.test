@@ -19,10 +19,11 @@ statement ok
 CREATE OR REPLACE TABLE s1.varchar_data(v VARCHAR);
 
 statement ok
-INSERT INTO s1.varchar_data VALUES ('\42\');
+INSERT INTO s1.varchar_data VALUES ('\42\'), ('"quoted value \ with backslashes ''\"');
 
 query I
 SELECT * FROM s1.varchar_data
 ----
 \42\
+"quoted value \ with backslashes '\"
 

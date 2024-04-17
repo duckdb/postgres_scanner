@@ -122,11 +122,11 @@ void CastListToPostgresArray(ClientContext &context, Vector &input, Vector &varc
 				result += "NULL";
 			} else {
 				if (requires_quotes) {
-					result += StringUtil::Repeat("\\\"", depth);
+					result += StringUtil::Repeat("\"", depth);
 				}
 				result += child_entries[child_idx].GetString();
 				if (requires_quotes) {
-					result += StringUtil::Repeat("\\\"", depth);
+					result += StringUtil::Repeat("\"", depth);
 				}
 			}
 		}
@@ -175,11 +175,11 @@ void CastStructToPostgres(ClientContext &context, Vector &input, Vector &varchar
 			} else {
 				bool requires_quotes = child_requires_quotes[c];
 				if (requires_quotes) {
-					result += StringUtil::Repeat("\\\"", depth);
+					result += StringUtil::Repeat("\"", depth);
 				}
 				result += FlatVector::GetData<string_t>(child_varchar_vectors[c])[r].GetString();
 				if (requires_quotes) {
-					result += StringUtil::Repeat("\\\"", depth);
+					result += StringUtil::Repeat("\"", depth);
 				}
 			}
 		}

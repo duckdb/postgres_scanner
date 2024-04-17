@@ -74,6 +74,9 @@ static bool CopyRequiresText(const LogicalType &type, const PostgresType &pg_typ
 	if (pg_type.info != PostgresTypeAnnotation::STANDARD) {
 		return true;
 	}
+	if (pg_type.oid != PostgresUtils::ToPostgresOid(type)) {
+		return true;
+	}
 	switch (type.id()) {
 	case LogicalTypeId::LIST: {
 		D_ASSERT(pg_type.children.size() == 1);

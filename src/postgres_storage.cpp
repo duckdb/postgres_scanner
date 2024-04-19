@@ -10,7 +10,7 @@ namespace duckdb {
 
 string EscapeConnectionString(const string &input) {
 	string result = "'";
-	for(auto c : input) {
+	for (auto c : input) {
 		if (c == '\\') {
 			result += "\\\\";
 		} else if (c == '\'') {
@@ -19,7 +19,7 @@ string EscapeConnectionString(const string &input) {
 			result += c;
 		}
 	}
-	result +=  "'";
+	result += "'";
 	return result;
 }
 
@@ -58,7 +58,7 @@ static unique_ptr<Catalog> PostgresAttach(StorageExtensionInfo *storage_info, Cl
 	string connection_string = info.path;
 
 	string secret_name;
-	for(auto &entry : info.options) {
+	for (auto &entry : info.options) {
 		auto lower_name = StringUtil::Lower(entry.first);
 		if (lower_name == "type" || lower_name == "read_only") {
 			// already handled

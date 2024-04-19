@@ -37,18 +37,23 @@ statement ok
 INSERT INTO my_composite_tbl VALUES ({'id': 42, 'name': 'test 123'});
 
 statement ok
+INSERT INTO my_composite_tbl VALUES ({'id': 43, 'name': ')'});
+
+statement ok
 INSERT INTO my_composite_tbl VALUES (ROW(100, 'xxx'));
 
 query I
 SELECT * FROM my_composite_tbl
 ----
 {'id': 42, 'name': test 123}
+{'id': 43, 'name': )}
 {'id': 100, 'name': xxx}
 
 query II
 SELECT c.id, c.name FROM my_composite_tbl
 ----
 42	test 123
+43	)
 100	xxx
 
 # use an existing composite type
@@ -89,3 +94,59 @@ CREATE TABLE unsupported_tbl_def(
 );
 ----
 Composite types in Postgres must be named
+
+# composite type containing a list of varchars deep town
+statement ok
+DROP TABLE IF EXISTS my_composite_tbl
+
+statement ok
+DROP TYPE IF EXISTS my_composite_type
+
+statement ok
+DROP TYPE IF EXISTS my_inner_composite_type
+
+statement ok
+CREATE TYPE my_inner_composite_type as STRUCT(
+	id INT,
+	names varchar[]
+);
+
+statement ok
+CREATE TYPE my_composite_type AS STRUCT(
+	id INT,
+	children my_inner_composite_type[]
+);
+
+statement ok
+CREATE OR REPLACE TABLE my_composite_tbl(
+	c my_composite_type
+);
+
+statement ok
+INSERT INTO my_composite_tbl VALUES ({'id': 42, 'children': [{'id': 43, 'names': ['a', 'b']}]});
+
+statement ok
+INSERT INTO my_composite_tbl VALUES ({'id': 10, 'children': [{'id': 20, 'names': ['a', '', '''{}[]()";,\n\\', 'b']}, {'id': 30, 'names': ['(', '""""""""""""', ')']}]});
+
+statement ok
+INSERT INTO my_composite_tbl VALUES (
+	{
+		'id': 10,
+		'children': [
+			{'id': 20, 'names': ['a', 'b']},
+			{'id': 30, 'names': null},
+			{'id': 40, 'names': ['}', '"', null]},
+			{'id': 50, 'names': ['', 'a', ')']},
+			{'id': null, 'names': null}
+		]
+	}
+)
+;
+
+
+query I
+SELECT * FROM my_composite_tbl
+----
+{'id': 42, 'children': [{'id': 43, 'names': [a, b]}]}
+{'id': 10, 'children': [{'id': 20, 'names': [a, , '{}[]()";,\n\\, b]}, {'id': 30, 'names': [(, """""""""""", )]}]}
+{'id': 10, 'children': [{'id': 20, 'names': [a, b]}, {'id': 30, 'names': NULL}, {'id': 40, 'names': [}, ", NULL]}, {'id': 50, 'names': [, a, )]}, {'id': NULL, 'names': NULL}]}

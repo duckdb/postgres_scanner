@@ -91,7 +91,7 @@ void PostgresConnection::FinishCopyTo(PostgresCopyState &state) {
 	}
 }
 
-bool NeedsQuotes(string to_quote, int size) {
+bool NeedsQuotes(const string &to_quote, idx_t size) {
 	// Check if the string contains list or struct specific characters, or if it's empty or starts/ends with whitespaces
 	if (size <= 0) {
 		// Always quote the empty string
@@ -101,35 +101,38 @@ bool NeedsQuotes(string to_quote, int size) {
 		// The string starts with whitespace, we need to preserve it
 		return true;
 	}
-	for (int c = 0; c < size; c++) {
+	if (isspace(to_quote[size - 1])) {
+		// The string ends with whitespace, we need to preserve it
+		return true;
+	}
+	for (idx_t c = 0; c < size; c++) {
 		switch (to_quote[c]) {
-			case '"':
-			case '\\':
-			case '{':
-			case '}':
-			case '(':
-			case ')':
-			case ',':
-				return true;
+		case '"':
+		case '\\':
+		case '{':
+		case '}':
+		case '(':
+		case ')':
+		case ',':
+			return true;
 		}
 	}
-	// The string ends with whitespace, we need to preserve it
-	return isspace(to_quote[size - 1]);
+	return false;
 }
 
-void EscapeQuotes(string to_escape, string &result, int size) {
+void EscapeQuotes(const string &to_escape, string &result, idx_t size) {
 	// Escape quotes and backslashes so that the string can be quoted
-	for (int c = 0; c < size; c++) {
+	for (idx_t c = 0; c < size; c++) {
 		switch (to_escape[c]) {
-			case '"':
-			case '\\':
-				result += "\\";
+		case '"':
+		case '\\':
+			result += "\\";
 		}
 		result += to_escape[c];
 	}
 }
 
-void QuoteAndEscapeIfNeeded(string to_quote, string &result, int size) {
+void QuoteAndEscapeIfNeeded(const string &to_quote, string &result, idx_t size) {
 	// Quote the string iff it contains list or struct specific characters
 	if (!NeedsQuotes(to_quote, size)) {
 		result += to_quote;
@@ -207,7 +210,7 @@ void CastStructToPostgres(ClientContext &context, Vector &input, Vector &varchar
 				result += ",";
 			}
 			if (FlatVector::IsNull(child_varchar_vectors[c], r)) {
-				result += "";  // Struct literals encode null by omitting the value
+				result += ""; // Struct literals encode null by omitting the value
 			} else {
 				auto child = FlatVector::GetData<string_t>(child_varchar_vectors[c])[r];
 				QuoteAndEscapeIfNeeded(child.GetString(), result, child.GetSize());

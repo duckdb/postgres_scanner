@@ -87,6 +87,51 @@ INSERT INTO lists VALUES (NULL);
 statement ok
 INSERT INTO lists VALUES ([NULL, 'string 123', 's']);
 
+statement ok
+INSERT INTO LISTS VALUES (['']);
+
+statement ok
+INSERT INTO LISTS VALUES ([' 0 ']);
+
+statement ok
+INSERT INTO LISTS VALUES (['', '']);
+
+statement ok
+INSERT INTO LISTS VALUES (['a', '']);
+
+statement ok
+INSERT INTO LISTS VALUES (['a', '  ', 'b']);
+
+statement ok
+INSERT INTO LISTS VALUES (['a', '}', 'b']);
+
+statement ok
+INSERT INTO LISTS VALUES (['a', '"', 'b']);
+
+statement ok
+INSERT INTO LISTS VALUES (['a', '''{}[]()";,\n\\', 'b']);
+
+statement ok
+INSERT INTO LISTS VALUES ([['']]);
+
+statement ok
+INSERT INTO LISTS VALUES ([['', '']]);
+
+statement ok
+INSERT INTO LISTS VALUES ([['a', '']]);
+
+statement ok
+INSERT INTO LISTS VALUES ([['a', '  ', 'b']]);
+
+statement ok
+INSERT INTO LISTS VALUES ([['a', '}', 'b']]);
+
+statement ok
+INSERT INTO LISTS VALUES ([['a', '"', 'b']]);
+
+statement ok
+INSERT INTO LISTS VALUES ([['a', '''{}[]()";,\n\\', 'b'], ['a', '''{}[]()";,\n\\', 'b']]);
+
 query I
 SELECT * FROM lists
 ----
@@ -94,6 +139,21 @@ SELECT * FROM lists
 []
 NULL
 [NULL, string 123, s]
+[]
+[ 0 ]
+[, ]
+[a, ]
+[a,   , b]
+[a, }, b]
+[a, ", b]
+[a, '{}[]()";,\n\\, b]
+[[]]
+[[, ]]
+[[a, ]]
+[[a,   , b]]
+[[a, }, b]]
+[[a, ", b]]
+[[a, '{}[]()";,\n\\, b], [a, '{}[]()";,\n\\, b]]
 
 # timestamp list
 foreach type TIMESTAMP TIMESTAMP_MS TIMESTAMP_NS TIMESTAMP_S

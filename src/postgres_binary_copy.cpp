@@ -5,7 +5,8 @@
 
 namespace duckdb {
 
-PostgresBinaryCopyFunction::PostgresBinaryCopyFunction() : CopyFunction("postgres_binary") {
+PostgresBinaryCopyFunction::PostgresBinaryCopyFunction() :
+  CopyFunction("postgres_binary") {
 
 	copy_to_bind = PostgresBinaryWriteBind;
 	copy_to_initialize_global = PostgresBinaryWriteInitializeGlobal;
@@ -53,18 +54,16 @@ struct PostgresBinaryCopyGlobalState : public GlobalFunctionData {
 	}
 };
 
-struct PostgresBinaryWriteBindData : public TableFunctionData {};
+struct PostgresBinaryWriteBindData : public TableFunctionData {
+};
 
-unique_ptr<FunctionData> PostgresBinaryCopyFunction::PostgresBinaryWriteBind(ClientContext &context,
-                                                                             CopyFunctionBindInput &input,
-                                                                             const vector<string> &names,
-                                                                             const vector<LogicalType> &sql_types) {
+unique_ptr<FunctionData> PostgresBinaryCopyFunction::PostgresBinaryWriteBind(ClientContext &context, CopyFunctionBindInput &input,
+													const vector<string> &names, const vector<LogicalType> &sql_types) {
 	return make_uniq<PostgresBinaryWriteBindData>();
 }
 
-unique_ptr<GlobalFunctionData>
-PostgresBinaryCopyFunction::PostgresBinaryWriteInitializeGlobal(ClientContext &context, FunctionData &bind_data,
-                                                                const string &file_path) {
+unique_ptr<GlobalFunctionData> PostgresBinaryCopyFunction::PostgresBinaryWriteInitializeGlobal(ClientContext &context, FunctionData &bind_data,
+																	  const string &file_path) {
 	auto result = make_uniq<PostgresBinaryCopyGlobalState>();
 	auto &fs = FileSystem::GetFileSystem(context);
 	result->file_writer = make_uniq<BufferedFileWriter>(fs, file_path);
@@ -73,27 +72,25 @@ PostgresBinaryCopyFunction::PostgresBinaryWriteInitializeGlobal(ClientContext &c
 	return std::move(result);
 }
 
-unique_ptr<LocalFunctionData>
-PostgresBinaryCopyFunction::PostgresBinaryWriteInitializeLocal(ExecutionContext &context, FunctionData &bind_data_p) {
+unique_ptr<LocalFunctionData> PostgresBinaryCopyFunction::PostgresBinaryWriteInitializeLocal(ExecutionContext &context, FunctionData &bind_data_p) {
 	return make_uniq<LocalFunctionData>();
 }
 
-void PostgresBinaryCopyFunction::PostgresBinaryWriteSink(ExecutionContext &context, FunctionData &bind_data_p,
-                                                         GlobalFunctionData &gstate_p, LocalFunctionData &lstate,
-                                                         DataChunk &input) {
+void PostgresBinaryCopyFunction::PostgresBinaryWriteSink(ExecutionContext &context, FunctionData &bind_data_p, GlobalFunctionData &gstate_p,
+								LocalFunctionData &lstate, DataChunk &input) {
 	auto &gstate = gstate_p.Cast<PostgresBinaryCopyGlobalState>();
 	gstate.WriteChunk(input);
 }
 
-void PostgresBinaryCopyFunction::PostgresBinaryWriteCombine(ExecutionContext &context, FunctionData &bind_data,
-                                                            GlobalFunctionData &gstate, LocalFunctionData &lstate) {
+void PostgresBinaryCopyFunction::PostgresBinaryWriteCombine(ExecutionContext &context, FunctionData &bind_data, GlobalFunctionData &gstate,
+								   LocalFunctionData &lstate) {
 }
 
-void PostgresBinaryCopyFunction::PostgresBinaryWriteFinalize(ClientContext &context, FunctionData &bind_data,
-                                                             GlobalFunctionData &gstate_p) {
+void PostgresBinaryCopyFunction::PostgresBinaryWriteFinalize(ClientContext &context, FunctionData &bind_data, GlobalFunctionData &gstate_p) {
 	auto &gstate = gstate_p.Cast<PostgresBinaryCopyGlobalState>();
 	// write the footer and close the file
 	gstate.Flush();
 }
 
-} // namespace duckdb
+
+}

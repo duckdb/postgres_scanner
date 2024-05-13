@@ -10,6 +10,7 @@
 
 #include "postgres_utils.hpp"
 #include "postgres_result.hpp"
+#include "duckdb/common/shared_ptr.hpp"
 
 namespace duckdb {
 class PostgresBinaryWriter;

@@ -3,6 +3,8 @@
 #include "duckdb/parser/parser.hpp"
 #include "postgres_connection.hpp"
 #include "duckdb/common/types/uuid.hpp"
+#include "duckdb/common/shared_ptr.hpp"
+#include "duckdb/common/helper.hpp"
 
 namespace duckdb {
 
@@ -40,7 +42,7 @@ PostgresConnection &PostgresConnection::operator=(PostgresConnection &&other) no
 
 PostgresConnection PostgresConnection::Open(const string &connection_string) {
 	PostgresConnection result;
-	result.connection = make_shared<OwnedPostgresConnection>(PostgresUtils::PGConnect(connection_string));
+	result.connection = make_shared_ptr<OwnedPostgresConnection>(PostgresUtils::PGConnect(connection_string));
 	result.dsn = connection_string;
 	return result;
 }

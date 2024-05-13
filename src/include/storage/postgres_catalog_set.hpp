@@ -11,6 +11,7 @@
 #include "duckdb/transaction/transaction.hpp"
 #include "duckdb/common/case_insensitive_map.hpp"
 #include "duckdb/common/mutex.hpp"
+#include "duckdb/common/shared_ptr.hpp"
 
 namespace duckdb {
 struct DropInfo;

@@ -31,7 +31,8 @@ unique_ptr<BaseStatistics> PostgresTableEntry::GetStatistics(ClientContext &cont
 	return nullptr;
 }
 
-void PostgresTableEntry::BindUpdateConstraints(LogicalGet &, LogicalProjection &, LogicalUpdate &, ClientContext &) {
+void PostgresTableEntry::BindUpdateConstraints(Binder &binder, LogicalGet &, LogicalProjection &, LogicalUpdate &,
+											   ClientContext &) {
 }
 
 TableFunction PostgresTableEntry::GetScanFunction(ClientContext &context, unique_ptr<FunctionData> &bind_data) {

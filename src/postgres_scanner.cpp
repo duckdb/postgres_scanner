@@ -3,6 +3,8 @@
 #include <libpq-fe.h>
 
 #include "duckdb/main/extension_util.hpp"
+#include "duckdb/common/shared_ptr.hpp"
+#include "duckdb/common/helper.hpp"
 #include "duckdb/parser/parsed_data/create_table_function_info.hpp"
 #include "postgres_filter_pushdown.hpp"
 #include "postgres_scanner.hpp"

@@ -34,8 +34,7 @@ void GatherPostgresScans(LogicalOperator &op, PostgresOperators &result) {
 	}
 }
 
-void PostgresOptimizer::Optimize(ClientContext &context, OptimizerExtensionInfo *info,
-                                 unique_ptr<LogicalOperator> &plan) {
+void PostgresOptimizer::Optimize(OptimizerExtensionInput &input, unique_ptr<LogicalOperator> &plan) {
 	// look at the query plan and check if we can enable streaming query scans
 	PostgresOperators operators;
 	GatherPostgresScans(*plan, operators);

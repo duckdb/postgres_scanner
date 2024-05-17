@@ -65,9 +65,9 @@ optional_ptr<CatalogEntry> PostgresSchemaEntry::CreateFunction(CatalogTransactio
 	throw BinderException("Postgres databases do not support creating functions");
 }
 
-optional_ptr<CatalogEntry> PostgresSchemaEntry::CreateIndex(ClientContext &context, CreateIndexInfo &info,
+optional_ptr<CatalogEntry> PostgresSchemaEntry::CreateIndex(CatalogTransaction transaction, CreateIndexInfo &info,
                                                             TableCatalogEntry &table) {
-	return indexes.CreateIndex(context, info, table);
+	return indexes.CreateIndex(transaction.GetContext(), info, table);
 }
 
 string PGGetCreateViewSQL(PostgresSchemaEntry &schema, CreateViewInfo &info) {
@@ -147,12 +147,12 @@ optional_ptr<CatalogEntry> PostgresSchemaEntry::CreateCollation(CatalogTransacti
 	throw BinderException("Postgres databases do not support creating collations");
 }
 
-void PostgresSchemaEntry::Alter(ClientContext &context, AlterInfo &info) {
+void PostgresSchemaEntry::Alter(CatalogTransaction transaction, AlterInfo &info) {
 	if (info.type != AlterType::ALTER_TABLE) {
 		throw BinderException("Only altering tables is supported for now");
 	}
 	auto &alter = info.Cast<AlterTableInfo>();
-	tables.AlterTable(context, alter);
+	tables.AlterTable(transaction.GetContext(), alter);
 }
 
 bool CatalogTypeIsSupported(CatalogType type) {

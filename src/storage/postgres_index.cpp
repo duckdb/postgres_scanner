@@ -18,8 +18,8 @@ SourceResultType PostgresCreateIndex::GetData(ExecutionContext &context, DataChu
                                               OperatorSourceInput &input) const {
 	auto &catalog = table.catalog;
 	auto &schema = table.schema;
-	auto existing =
-	    schema.GetEntry(catalog.GetCatalogTransaction(context.client), CatalogType::INDEX_ENTRY, info->index_name);
+	auto transaction = catalog.GetCatalogTransaction(context.client);
+	auto existing = schema.GetEntry(transaction, CatalogType::INDEX_ENTRY, info->index_name);
 	if (existing) {
 		switch (info->on_conflict) {
 		case OnCreateConflict::IGNORE_ON_CONFLICT:
@@ -39,7 +39,7 @@ SourceResultType PostgresCreateIndex::GetData(ExecutionContext &context, DataChu
 			throw InternalException("Unsupported on create conflict");
 		}
 	}
-	schema.CreateIndex(context.client, *info, table);
+	schema.CreateIndex(transaction, *info, table);
 
 	return SourceResultType::FINISHED;
 }

@@ -34,6 +34,8 @@ public:
 	vector<unique_ptr<PostgresResult>> ExecuteQueries(const string &queries);
 	static PostgresTransaction &Get(ClientContext &context, Catalog &catalog);
 
+	string GetTemporarySchema();
+
 private:
 	PostgresPoolConnection connection;
 	PostgresTransactionState transaction_state;

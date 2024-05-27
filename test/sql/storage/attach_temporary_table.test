@@ -1,0 +1,28 @@
+# name: test/sql/storage/attach_temporary_table.test
+# description: Test attaching and querying a Postgres temporary table
+# group: [storage]
+
+require postgres_scanner
+
+require-env POSTGRES_TEST_DATABASE_AVAILABLE
+
+statement ok
+PRAGMA enable_verification
+
+statement ok
+ATTACH 'postgres:dbname=postgresscanner' AS s
+
+statement ok
+CREATE TABLE s.pg_temp.my_datasets(val VARCHAR)
+
+query I
+SELECT * FROM s.pg_temp.my_datasets
+----
+
+statement ok
+INSERT INTO s.pg_temp.my_datasets VALUES ('hello world')
+
+query I
+SELECT * FROM s.pg_temp.my_datasets
+----
+hello world

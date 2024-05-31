@@ -65,6 +65,9 @@ optional_ptr<SchemaCatalogEntry> PostgresCatalog::GetSchema(CatalogTransaction t
 		return GetSchema(transaction, "public", if_not_found, error_context);
 	}
 	auto &postgres_transaction = PostgresTransaction::Get(transaction.GetContext(), *this);
+	if (schema_name == "pg_temp") {
+		return GetSchema(transaction, postgres_transaction.GetTemporarySchema(), if_not_found, error_context);
+	}
 	auto entry = schemas.GetEntry(transaction.GetContext(), schema_name);
 	if (!entry && if_not_found != OnEntryNotFound::RETURN_NULL) {
 		throw BinderException("Schema with name \"%s\" not found", schema_name);

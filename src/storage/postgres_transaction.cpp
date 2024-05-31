@@ -80,17 +80,20 @@ vector<unique_ptr<PostgresResult>> PostgresTransaction::ExecuteQueries(const str
 }
 
 string PostgresTransaction::GetTemporarySchema() {
-	auto result = Query("SELECT nspname FROM pg_namespace WHERE oid = pg_my_temp_schema();");
-	if (result->Count() < 1) {
-		// no temporary tables exist yet in this connection
-		// create a random temporary table and return
-		Query("CREATE TEMPORARY TABLE __internal_temporary_table(i INTEGER)");
-		result = Query("SELECT nspname FROM pg_namespace WHERE oid = pg_my_temp_schema();");
+	if (temporary_schema.empty()) {
+		auto result = Query("SELECT nspname FROM pg_namespace WHERE oid = pg_my_temp_schema();");
 		if (result->Count() < 1) {
-			throw BinderException("Could not find temporary schema pg_temp_NNN for this connection");
+			// no temporary tables exist yet in this connection
+			// create a random temporary table and return
+			Query("CREATE TEMPORARY TABLE __internal_temporary_table(i INTEGER)");
+			result = Query("SELECT nspname FROM pg_namespace WHERE oid = pg_my_temp_schema();");
+			if (result->Count() < 1) {
+				throw BinderException("Could not find temporary schema pg_temp_NNN for this connection");
+			}
 		}
+		temporary_schema = result->GetString(0, 0);
 	}
-	return result->GetString(0, 0);
+	return temporary_schema;
 }
 
 PostgresTransaction &PostgresTransaction::Get(ClientContext &context, Catalog &catalog) {

@@ -40,6 +40,7 @@ private:
 	PostgresPoolConnection connection;
 	PostgresTransactionState transaction_state;
 	AccessMode access_mode;
+	string temporary_schema;
 
 private:
 	//! Retrieves the connection **without** starting a transaction if none is active

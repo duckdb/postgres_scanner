@@ -110,8 +110,10 @@ string PostgresDelete::GetName() const {
 	return "PG_DELETE";
 }
 
-string PostgresDelete::ParamsToString() const {
-	return table.name;
+InsertionOrderPreservingMap<string> PostgresDelete::ParamsToString() const {
+	InsertionOrderPreservingMap<string> result;
+	result["Table Name"] = table.name;
+	return result;
 }
 
 //===--------------------------------------------------------------------===//

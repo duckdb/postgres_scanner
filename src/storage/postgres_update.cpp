@@ -171,8 +171,10 @@ string PostgresUpdate::GetName() const {
 	return "PG_UPDATE";
 }
 
-string PostgresUpdate::ParamsToString() const {
-	return table.name;
+InsertionOrderPreservingMap<string> PostgresUpdate::ParamsToString() const {
+	InsertionOrderPreservingMap<string> result;
+	result["Table Name"] = table.name;
+	return result;
 }
 
 //===--------------------------------------------------------------------===//

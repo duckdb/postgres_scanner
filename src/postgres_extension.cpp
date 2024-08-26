@@ -48,7 +48,7 @@ public:
 class PostgresExtensionCallback : public ExtensionCallback {
 public:
 	void OnConnectionOpened(ClientContext &context) override {
-		context.registered_state.insert(make_pair("postgres_extension", make_shared_ptr<PostgresExtensionState>()));
+		context.registered_state->Insert("postgres_extension", make_shared_ptr<PostgresExtensionState>());
 	}
 };
 
@@ -174,7 +174,7 @@ static void LoadInternal(DatabaseInstance &db) {
 
 	config.extension_callbacks.push_back(make_uniq<PostgresExtensionCallback>());
 	for (auto &connection : ConnectionManager::Get(db).GetConnectionList()) {
-		connection->registered_state.insert(make_pair("postgres_extension", make_shared_ptr<PostgresExtensionState>()));
+		connection->registered_state->Insert("postgres_extension", make_shared_ptr<PostgresExtensionState>());
 	}
 }
 

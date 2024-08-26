@@ -144,8 +144,10 @@ string PostgresInsert::GetName() const {
 	return table ? "PG_INSERT" : "PG_CREATE_TABLE_AS";
 }
 
-string PostgresInsert::ParamsToString() const {
-	return table ? table->name : info->Base().table;
+InsertionOrderPreservingMap<string> PostgresInsert::ParamsToString() const {
+	InsertionOrderPreservingMap<string> result;
+	result["Table Name"] = table ? table->name : info->Base().table;
+	return result;
 }
 
 //===--------------------------------------------------------------------===//

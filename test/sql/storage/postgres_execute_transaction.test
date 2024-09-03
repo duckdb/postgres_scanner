@@ -1,0 +1,54 @@
+# name: test/sql/storage/postgres_execute_transaction.test
+# description: Test interactions of postgres_execute and transactions
+# group: [storage]
+
+require postgres_scanner
+
+require-env POSTGRES_TEST_DATABASE_AVAILABLE
+
+statement ok
+PRAGMA enable_verification
+
+statement ok
+ATTACH 'dbname=postgresscanner' AS s (TYPE POSTGRES)
+
+statement ok
+CREATE OR REPLACE TABLE s.postgres_execute_attempt(i INTEGER);
+
+statement ok
+BEGIN
+
+query I
+CALL postgres_query('s', 'SELECT 42')
+----
+42
+
+statement ok
+CALL postgres_execute('s', 'INSERT INTO postgres_execute_attempt VALUES (42)')
+
+statement ok
+ROLLBACK
+
+query I
+FROM s.postgres_execute_attempt
+----
+
+statement ok
+BEGIN
+
+query I
+CALL postgres_query('s', 'SELECT 42')
+----
+42
+
+statement ok
+CALL postgres_execute('s', 'INSERT INTO postgres_execute_attempt VALUES (42); INSERT INTO postgres_execute_attempt VALUES (84)')
+
+statement ok
+COMMIT
+
+query I
+FROM s.postgres_execute_attempt
+----
+42
+84

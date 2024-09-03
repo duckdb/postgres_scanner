@@ -58,12 +58,15 @@ static unique_ptr<Catalog> PostgresAttach(StorageExtensionInfo *storage_info, Cl
 	string connection_string = info.path;
 
 	string secret_name;
+	string schema_to_load;
 	for (auto &entry : info.options) {
 		auto lower_name = StringUtil::Lower(entry.first);
 		if (lower_name == "type" || lower_name == "read_only") {
 			// already handled
 		} else if (lower_name == "secret") {
 			secret_name = entry.second.ToString();
+		} else if (lower_name == "schema") {
+			schema_to_load = entry.second.ToString();
 		} else {
 			throw BinderException("Unrecognized option for Postgres attach: %s", entry.first);
 		}
@@ -93,7 +96,7 @@ static unique_ptr<Catalog> PostgresAttach(StorageExtensionInfo *storage_info, Cl
 		// secret not found and one was explicitly provided - throw an error
 		throw BinderException("Secret with name \"%s\" not found", secret_name);
 	}
-	return make_uniq<PostgresCatalog>(db, connection_string, access_mode);
+	return make_uniq<PostgresCatalog>(db, connection_string, access_mode, std::move(schema_to_load));
 }
 
 static unique_ptr<TransactionManager> PostgresCreateTransactionManager(StorageExtensionInfo *storage_info,

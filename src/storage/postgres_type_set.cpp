@@ -20,7 +20,7 @@ PostgresTypeSet::PostgresTypeSet(PostgresSchemaEntry &schema, unique_ptr<Postgre
       composite_type_result(std::move(composite_type_result_p)) {
 }
 
-string PostgresTypeSet::GetInitializeEnumsQuery(PostgresVersion version) {
+string PostgresTypeSet::GetInitializeEnumsQuery(PostgresVersion version, const string &schema) {
 	if (version.major_v < 8 || (version.major_v == 8 && version.minor_v < 3)) {
 		// pg_enum support has been present since v8.3 - https://www.postgresql.org/docs/8.3/catalog-pg-enum.html
 		// for older postgres versions we don't support enums instead
@@ -29,13 +29,19 @@ SELECT 0 AS oid, 0 AS enumtypid, '' AS typname, '' AS enumlabel
 LIMIT 0;
 )";
 	}
-	return R"(
+	string base_query = R"(
 SELECT n.oid, enumtypid, typname, enumlabel
 FROM pg_enum e
 JOIN pg_type t ON e.enumtypid = t.oid
 JOIN pg_namespace AS n ON (typnamespace=n.oid)
+${CONDITION}
 ORDER BY n.oid, enumtypid, enumsortorder;
 )";
+	string condition;
+	if (!schema.empty()) {
+		condition += "WHERE n.nspname=" + KeywordHelper::WriteQuoted(schema);
+	}
+	return StringUtil::Replace(base_query, "${CONDITION}", condition);
 }
 
 void PostgresTypeSet::CreateEnum(PostgresResult &result, idx_t start_row, idx_t end_row) {
@@ -75,8 +81,8 @@ void PostgresTypeSet::InitializeEnums(PostgresResultSlice &enums) {
 	}
 }
 
-string PostgresTypeSet::GetInitializeCompositesQuery() {
-	return R"(
+string PostgresTypeSet::GetInitializeCompositesQuery(const string &schema) {
+	string base_query = R"(
 SELECT n.oid, t.typrelid AS id, t.typname as type, pg_attribute.attname, sub_type.typname
 FROM pg_type t
 JOIN pg_catalog.pg_namespace n ON n.oid = t.typnamespace
@@ -85,8 +91,14 @@ JOIN pg_attribute ON attrelid=t.typrelid
 JOIN pg_type sub_type ON (pg_attribute.atttypid=sub_type.oid)
 WHERE pg_class.relkind = 'c'
 AND t.typtype='c'
+${CONDITION}
 ORDER BY n.oid, t.oid, attrelid, attnum;
 )";
+	string condition;
+	if (!schema.empty()) {
+		condition += "AND n.nspname=" + KeywordHelper::WriteQuoted(schema);
+	}
+	return StringUtil::Replace(base_query, "${CONDITION}", condition);
 }
 
 void PostgresTypeSet::CreateCompositeType(PostgresTransaction &transaction, PostgresResult &result, idx_t start_row,

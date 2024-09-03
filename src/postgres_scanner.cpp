@@ -525,6 +525,7 @@ PostgresScanFunction::PostgresScanFunction()
 	cardinality = PostgresScanCardinality;
 	table_scan_progress = PostgresScanProgress;
 	projection_pushdown = true;
+	global_initialization = TableFunctionInitialization::INITIALIZE_ON_SCHEDULE;
 }
 
 PostgresScanFunctionFilterPushdown::PostgresScanFunctionFilterPushdown()
@@ -538,6 +539,7 @@ PostgresScanFunctionFilterPushdown::PostgresScanFunctionFilterPushdown()
 	table_scan_progress = PostgresScanProgress;
 	projection_pushdown = true;
 	filter_pushdown = true;
+	global_initialization = TableFunctionInitialization::INITIALIZE_ON_SCHEDULE;
 }
 
 } // namespace duckdb

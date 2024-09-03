@@ -45,7 +45,7 @@ static void PGExecuteFunction(ClientContext &context, TableFunctionInput &data_p
 		return;
 	}
 	auto &transaction = Transaction::Get(context, data.pg_catalog).Cast<PostgresTransaction>();
-	transaction.ExecuteQueries(data.query);
+	transaction.Query(data.query);
 	data.finished = true;
 }
 

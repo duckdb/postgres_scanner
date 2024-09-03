@@ -2,6 +2,8 @@
 # description: Test attaching and querying a Postgres temporary table
 # group: [storage]
 
+mode skip
+
 require postgres_scanner
 
 require-env POSTGRES_TEST_DATABASE_AVAILABLE

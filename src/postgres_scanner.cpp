@@ -502,7 +502,6 @@ double PostgresScanProgress(ClientContext &context, const FunctionData *bind_dat
 
 	lock_guard<mutex> parallel_lock(gstate.lock);
 	double progress = 100 * double(gstate.page_idx) / double(bind_data.pages_approx);
-	;
 	return MinValue<double>(100, progress);
 }
 
@@ -525,6 +524,7 @@ PostgresScanFunction::PostgresScanFunction()
 	cardinality = PostgresScanCardinality;
 	table_scan_progress = PostgresScanProgress;
 	projection_pushdown = true;
+	global_initialization = TableFunctionInitialization::INITIALIZE_ON_SCHEDULE;
 }
 
 PostgresScanFunctionFilterPushdown::PostgresScanFunctionFilterPushdown()
@@ -538,6 +538,7 @@ PostgresScanFunctionFilterPushdown::PostgresScanFunctionFilterPushdown()
 	table_scan_progress = PostgresScanProgress;
 	projection_pushdown = true;
 	filter_pushdown = true;
+	global_initialization = TableFunctionInitialization::INITIALIZE_ON_SCHEDULE;
 }
 
 } // namespace duckdb

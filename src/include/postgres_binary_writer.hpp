@@ -200,6 +200,13 @@ public:
 		}
 	}
 
+	void WriteRawBlob(string_t value) {
+		auto str_size = value.GetSize();
+		auto str_data = value.GetData();
+		WriteRawInteger<int32_t>(NumericCast<int32_t>(str_size));
+		stream.WriteData(const_data_ptr_cast(str_data), str_size);
+	}
+
 	void WriteVarchar(string_t value) {
 		auto str_size = value.GetSize();
 		auto str_data = value.GetData();
@@ -219,11 +226,10 @@ public:
 					new_str += str_data[i];
 				}
 			}
-			WriteVarchar(new_str);
+			WriteRawBlob(new_str);
 			return;
 		}
-		WriteRawInteger<int32_t>(NumericCast<int32_t>(str_size));
-		stream.WriteData(const_data_ptr_cast(str_data), str_size);
+		WriteRawBlob(value);
 	}
 
 	void WriteArray(Vector &col, idx_t r, const vector<uint32_t> &dimensions, idx_t depth, uint32_t count) {
@@ -336,10 +342,14 @@ public:
 			WriteUUID(data);
 			break;
 		}
-		case LogicalTypeId::BLOB:
 		case LogicalTypeId::VARCHAR: {
 			auto data = FlatVector::GetData<string_t>(col)[r];
 			WriteVarchar(data);
+			break;
+		}
+		case LogicalTypeId::BLOB: {
+			auto data = FlatVector::GetData<string_t>(col)[r];
+			WriteRawBlob(data);
 			break;
 		}
 		case LogicalTypeId::ENUM: {

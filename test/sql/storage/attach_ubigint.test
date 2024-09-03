@@ -1,0 +1,27 @@
+# name: test/sql/storage/attach_ubigint.test
+# description: Test inserting/querying UBIGINT
+# group: [storage]
+
+require postgres_scanner
+
+require-env POSTGRES_TEST_DATABASE_AVAILABLE
+
+statement ok
+PRAGMA enable_verification
+
+statement ok
+ATTACH 'dbname=postgresscanner' AS s (TYPE POSTGRES)
+
+statement ok
+USE s;
+
+statement ok
+CREATE OR REPLACE TABLE ubigints(u UBIGINT);
+
+statement ok
+INSERT INTO ubigints VALUES (1394265502879208448);
+
+query I
+SELECT u::VARCHAR FROM ubigints
+----
+1394265502879208448

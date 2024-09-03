@@ -282,6 +282,8 @@ void PostgresConnection::CopyChunk(ClientContext &context, PostgresCopyState &st
 				varchar_types.push_back(LogicalType::VARCHAR);
 			}
 			varchar_chunk.Initialize(Allocator::DefaultAllocator(), varchar_types);
+		} else {
+			varchar_chunk.Reset();
 		}
 		D_ASSERT(chunk.ColumnCount() == varchar_chunk.ColumnCount());
 		// for text format cast to varchar first

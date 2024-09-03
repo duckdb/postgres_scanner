@@ -111,6 +111,17 @@ void SetPostgresSecretParameters(CreateSecretFunction &function) {
 	function.named_parameters["dbname"] = LogicalType::VARCHAR;
 }
 
+void SetPostgresNullByteReplacement(ClientContext &context, SetScope scope, Value &parameter) {
+	if (parameter.IsNull()) {
+		return;
+	}
+	for (const auto c : StringValue::Get(parameter)) {
+		if (c == '\0') {
+			throw BinderException("NULL byte replacement string cannot contain NULL values");
+		}
+	}
+}
+
 static void LoadInternal(DatabaseInstance &db) {
 	PostgresScanFunction postgres_fun;
 	ExtensionUtil::RegisterFunction(db, postgres_fun);
@@ -165,6 +176,9 @@ static void LoadInternal(DatabaseInstance &db) {
 	config.AddExtensionOption("pg_experimental_filter_pushdown",
 	                          "Whether or not to use filter pushdown (currently experimental)", LogicalType::BOOLEAN,
 	                          Value::BOOLEAN(false));
+	config.AddExtensionOption("pg_null_byte_replacement",
+	                          "When writing NULL bytes to Postgres, replace them with the given character",
+	                          LogicalType::VARCHAR, Value(), SetPostgresNullByteReplacement);
 	config.AddExtensionOption("pg_debug_show_queries", "DEBUG SETTING: print all queries sent to Postgres to stdout",
 	                          LogicalType::BOOLEAN, Value::BOOLEAN(false), SetPostgresDebugQueryPrint);
 

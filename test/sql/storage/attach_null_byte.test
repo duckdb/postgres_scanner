@@ -1,0 +1,65 @@
+# name: test/sql/storage/attach_null_byte.test
+# description: Test inserting null byte values through ATTACH
+# group: [storage]
+
+require postgres_scanner
+
+require-env POSTGRES_TEST_DATABASE_AVAILABLE
+
+statement ok
+PRAGMA enable_verification
+
+statement ok
+ATTACH 'dbname=postgresscanner' AS s1 (TYPE POSTGRES)
+
+statement ok
+USE s1
+
+foreach pg_binary true false
+
+statement ok
+SET pg_use_binary_copy=${pg_binary}
+
+statement ok
+CREATE OR REPLACE TABLE nullbyte_tbl(s VARCHAR);
+
+statement error
+INSERT INTO nullbyte_tbl VALUES (chr(0))
+----
+Postgres does not support NULL-bytes in VARCHAR values
+
+statement ok
+SET pg_null_byte_replacement=''
+
+statement ok
+INSERT INTO nullbyte_tbl VALUES (chr(0)), ('FF' || chr(0) || 'FF');
+
+query I
+SELECT * FROM nullbyte_tbl
+----
+(empty)
+FFFF
+
+statement ok
+SET pg_null_byte_replacement='NULLBYTE'
+
+statement ok
+INSERT INTO nullbyte_tbl VALUES (chr(0)), ('FF' || chr(0) || 'FF');
+
+query I
+SELECT * FROM nullbyte_tbl
+----
+(empty)
+FFFF
+NULLBYTE
+FFNULLBYTEFF
+
+statement ok
+RESET pg_null_byte_replacement
+
+endloop
+
+statement error
+SET pg_null_byte_replacement=chr(0)
+----
+NULL byte replacement string cannot contain NULL values

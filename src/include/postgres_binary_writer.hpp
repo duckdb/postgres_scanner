@@ -17,6 +17,9 @@ namespace duckdb {
 
 class PostgresBinaryWriter {
 public:
+	explicit PostgresBinaryWriter(PostgresCopyState &state) : state(state) {
+	}
+
 	template <class T>
 	T GetInteger(T val) {
 		if (sizeof(T) == sizeof(uint8_t)) {
@@ -197,9 +200,36 @@ public:
 		}
 	}
 
+	void WriteRawBlob(string_t value) {
+		auto str_size = value.GetSize();
+		auto str_data = value.GetData();
+		WriteRawInteger<int32_t>(NumericCast<int32_t>(str_size));
+		stream.WriteData(const_data_ptr_cast(str_data), str_size);
+	}
+
 	void WriteVarchar(string_t value) {
-		WriteRawInteger<int32_t>(value.GetSize());
-		stream.WriteData(const_data_ptr_cast(value.GetData()), value.GetSize());
+		auto str_size = value.GetSize();
+		auto str_data = value.GetData();
+		if (memchr(str_data, '\0', str_size) != nullptr) {
+			if (!state.has_null_byte_replacement) {
+				throw InvalidInputException("Attempting to write a VARCHAR value with a NULL-byte. Postgres does not "
+				                            "support NULL-bytes in VARCHAR values.\n* SET pg_null_byte_replacement='' "
+				                            "to remove NULL bytes or replace them with another character");
+			}
+			// we have a NULL byte replacement - construct a new string that has all null bytes replaced and write it
+			// out
+			string new_str;
+			for (idx_t i = 0; i < str_size; i++) {
+				if (str_data[i] == '\0') {
+					new_str += state.null_byte_replacement;
+				} else {
+					new_str += str_data[i];
+				}
+			}
+			WriteRawBlob(new_str);
+			return;
+		}
+		WriteRawBlob(value);
 	}
 
 	void WriteArray(Vector &col, idx_t r, const vector<uint32_t> &dimensions, idx_t depth, uint32_t count) {
@@ -312,10 +342,14 @@ public:
 			WriteUUID(data);
 			break;
 		}
-		case LogicalTypeId::BLOB:
 		case LogicalTypeId::VARCHAR: {
 			auto data = FlatVector::GetData<string_t>(col)[r];
 			WriteVarchar(data);
+			break;
+		}
+		case LogicalTypeId::BLOB: {
+			auto data = FlatVector::GetData<string_t>(col)[r];
+			WriteRawBlob(data);
 			break;
 		}
 		case LogicalTypeId::ENUM: {
@@ -405,6 +439,7 @@ public:
 
 public:
 	MemoryStream stream;
+	PostgresCopyState &state;
 };
 
 } // namespace duckdb

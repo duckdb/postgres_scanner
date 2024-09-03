@@ -255,7 +255,7 @@ string PostgresColumnsToSQL(const ColumnList &columns, const vector<unique_ptr<C
 		if (column.Oid() > 0) {
 			ss << ", ";
 		}
-		ss << KeywordHelper::WriteOptionallyQuoted(column.Name()) << " ";
+		ss << KeywordHelper::WriteQuoted(column.Name(), '"') << " ";
 		ss << PostgresUtils::TypeToString(column.Type());
 		bool not_null = not_null_columns.find(column.Logical()) != not_null_columns.end();
 		bool is_single_key_pk = pk_columns.find(column.Logical()) != pk_columns.end();

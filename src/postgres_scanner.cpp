@@ -502,7 +502,6 @@ double PostgresScanProgress(ClientContext &context, const FunctionData *bind_dat
 
 	lock_guard<mutex> parallel_lock(gstate.lock);
 	double progress = 100 * double(gstate.page_idx) / double(bind_data.pages_approx);
-	;
 	return MinValue<double>(100, progress);
 }
 

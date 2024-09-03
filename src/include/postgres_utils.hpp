@@ -46,6 +46,14 @@ struct PostgresType {
 
 enum class PostgresCopyFormat { AUTO = 0, BINARY = 1, TEXT = 2 };
 
+struct PostgresCopyState {
+	PostgresCopyFormat format = PostgresCopyFormat::AUTO;
+	bool has_null_byte_replacement = false;
+	string null_byte_replacement;
+
+	void Initialize(ClientContext &context);
+};
+
 class PostgresUtils {
 public:
 	static PGconn *PGConnect(const string &dsn);

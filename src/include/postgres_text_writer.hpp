@@ -17,6 +17,9 @@ namespace duckdb {
 
 class PostgresTextWriter {
 public:
+	explicit PostgresTextWriter(PostgresCopyState &state) : state(state) {
+	}
+
 	void WriteNull() {
 		stream.WriteData(const_data_ptr_cast("\b"), 1);
 	}
@@ -59,6 +62,16 @@ public:
 			WriteCharInternal('\\');
 			WriteCharInternal('"');
 			break;
+		case '\0':
+			if (!state.has_null_byte_replacement) {
+				throw InvalidInputException("Attempting to write a VARCHAR value with a NULL-byte. Postgres does not "
+				                            "support NULL-bytes in VARCHAR values.\n* SET pg_null_byte_replacement='' "
+				                            "to remove NULL bytes or replace them with another character");
+			}
+			for (const auto replacement_chr : state.null_byte_replacement) {
+				WriteChar(replacement_chr);
+			}
+			break;
 		default:
 			WriteCharInternal(c);
 			break;
@@ -98,6 +111,7 @@ public:
 
 public:
 	MemoryStream stream;
+	PostgresCopyState &state;
 };
 
 } // namespace duckdb

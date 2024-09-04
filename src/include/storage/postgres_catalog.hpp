@@ -20,7 +20,7 @@ class PostgresSchemaEntry;
 
 class PostgresCatalog : public Catalog {
 public:
-	explicit PostgresCatalog(AttachedDatabase &db_p, const string &path, AccessMode access_mode);
+	explicit PostgresCatalog(AttachedDatabase &db_p, const string &path, AccessMode access_mode, string schema_to_load);
 	~PostgresCatalog();
 
 	string path;
@@ -93,6 +93,7 @@ private:
 	PostgresVersion version;
 	PostgresSchemaSet schemas;
 	PostgresConnectionPool connection_pool;
+	string default_schema;
 };
 
 } // namespace duckdb

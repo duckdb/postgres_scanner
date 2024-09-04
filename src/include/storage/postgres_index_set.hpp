@@ -20,7 +20,7 @@ public:
 	PostgresIndexSet(PostgresSchemaEntry &schema, unique_ptr<PostgresResultSlice> index_result = nullptr);
 
 public:
-	static string GetInitializeQuery();
+	static string GetInitializeQuery(const string &schema = string());
 
 	optional_ptr<CatalogEntry> CreateIndex(ClientContext &context, CreateIndexInfo &info, TableCatalogEntry &table);
 

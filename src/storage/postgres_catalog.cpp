@@ -9,8 +9,13 @@
 
 namespace duckdb {
 
-PostgresCatalog::PostgresCatalog(AttachedDatabase &db_p, const string &path, AccessMode access_mode)
-    : Catalog(db_p), path(path), access_mode(access_mode), schemas(*this), connection_pool(*this) {
+PostgresCatalog::PostgresCatalog(AttachedDatabase &db_p, const string &path, AccessMode access_mode,
+                                 string schema_to_load)
+    : Catalog(db_p), path(path), access_mode(access_mode), schemas(*this, schema_to_load), connection_pool(*this),
+      default_schema(schema_to_load) {
+	if (default_schema.empty()) {
+		default_schema = "public";
+	}
 	Value connection_limit;
 	auto &db_instance = db_p.GetDatabase();
 	if (db_instance.TryGetCurrentSetting("pg_connection_limit", connection_limit)) {
@@ -62,7 +67,7 @@ optional_ptr<SchemaCatalogEntry> PostgresCatalog::GetSchema(CatalogTransaction t
                                                             OnEntryNotFound if_not_found,
                                                             QueryErrorContext error_context) {
 	if (schema_name == DEFAULT_SCHEMA) {
-		return GetSchema(transaction, "public", if_not_found, error_context);
+		return GetSchema(transaction, default_schema, if_not_found, error_context);
 	}
 	auto &postgres_transaction = PostgresTransaction::Get(transaction.GetContext(), *this);
 	if (schema_name == "pg_temp") {

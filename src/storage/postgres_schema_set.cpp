@@ -10,7 +10,8 @@
 
 namespace duckdb {
 
-PostgresSchemaSet::PostgresSchemaSet(Catalog &catalog) : PostgresCatalogSet(catalog, false) {
+PostgresSchemaSet::PostgresSchemaSet(Catalog &catalog, string schema_to_load_p)
+    : PostgresCatalogSet(catalog, false), schema_to_load(std::move(schema_to_load_p)) {
 }
 
 vector<unique_ptr<PostgresResultSlice>> SliceResult(PostgresResult &schemas, unique_ptr<PostgresResult> to_slice_ptr) {
@@ -33,22 +34,28 @@ vector<unique_ptr<PostgresResultSlice>> SliceResult(PostgresResult &schemas, uni
 	return result;
 }
 
-string PostgresSchemaSet::GetInitializeQuery() {
-	return R"(
+string PostgresSchemaSet::GetInitializeQuery(const string &schema) {
+	string base_query = R"(
 SELECT oid, nspname
 FROM pg_namespace
+${CONDITION}
 ORDER BY oid;
 )";
+	string condition;
+	if (!schema.empty()) {
+		condition += "WHERE pg_namespace.nspname=" + KeywordHelper::WriteQuoted(schema);
+	}
+	return StringUtil::Replace(base_query, "${CONDITION}", condition);
 }
 
 void PostgresSchemaSet::LoadEntries(ClientContext &context) {
 	auto &pg_catalog = catalog.Cast<PostgresCatalog>();
 	auto pg_version = pg_catalog.GetPostgresVersion();
-	string schema_query = PostgresSchemaSet::GetInitializeQuery();
-	string tables_query = PostgresTableSet::GetInitializeQuery();
-	string enum_types_query = PostgresTypeSet::GetInitializeEnumsQuery(pg_version);
-	string composite_types_query = PostgresTypeSet::GetInitializeCompositesQuery();
-	string index_query = PostgresIndexSet::GetInitializeQuery();
+	string schema_query = PostgresSchemaSet::GetInitializeQuery(schema_to_load);
+	string tables_query = PostgresTableSet::GetInitializeQuery(schema_to_load);
+	string enum_types_query = PostgresTypeSet::GetInitializeEnumsQuery(pg_version, schema_to_load);
+	string composite_types_query = PostgresTypeSet::GetInitializeCompositesQuery(schema_to_load);
+	string index_query = PostgresIndexSet::GetInitializeQuery(schema_to_load);
 
 	auto full_query = schema_query + tables_query + enum_types_query + composite_types_query + index_query;
 

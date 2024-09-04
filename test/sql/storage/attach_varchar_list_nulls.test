@@ -1,0 +1,32 @@
+# name: test/sql/storage/attach_varchar_list_nulls.test
+# description: Test inserting/querying VARCHAR lists with NULL values
+# group: [storage]
+
+require postgres_scanner
+
+require-env POSTGRES_TEST_DATABASE_AVAILABLE
+
+statement ok
+PRAGMA enable_verification
+
+statement ok
+ATTACH 'dbname=postgresscanner' AS s (TYPE POSTGRES)
+
+statement ok
+CREATE OR REPLACE TABLE s.varchar_list_big(i BIGINT, v VARCHAR[]);
+
+statement ok
+CREATE TABLE tbl AS SELECT CASE WHEN i<1000 THEN NULL ELSE i END i, case when i<1000 then null else [i] end v FROM range(4000) t(i);
+
+query IIII
+select min(len(v)), max(len(v)), sum(len(v)), count(*) from tbl;
+----
+1	1	3000	4000
+
+statement ok
+INSERT INTo s.varchar_list_big FROM tbl
+
+query IIII
+select min(len(v)), max(len(v)), sum(len(v)), count(*) from s.varchar_list_big;
+----
+1	1	3000	4000

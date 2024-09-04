@@ -25,8 +25,8 @@ public:
 public:
 	optional_ptr<CatalogEntry> CreateType(ClientContext &context, CreateTypeInfo &info);
 
-	static string GetInitializeEnumsQuery(PostgresVersion version);
-	static string GetInitializeCompositesQuery();
+	static string GetInitializeEnumsQuery(PostgresVersion version, const string &schema = string());
+	static string GetInitializeCompositesQuery(const string &schema = string());
 
 protected:
 	bool HasInternalDependencies() const override {

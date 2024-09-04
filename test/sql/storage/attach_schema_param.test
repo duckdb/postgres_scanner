@@ -1,0 +1,36 @@
+# name: test/sql/storage/attach_schema_param.test
+# description: Test attaching only a specific schema
+# group: [storage]
+
+require postgres_scanner
+
+require-env POSTGRES_TEST_DATABASE_AVAILABLE
+
+statement ok
+PRAGMA enable_verification
+
+statement ok
+ATTACH 'dbname=postgresscanner' AS s (TYPE POSTGRES, SCHEMA 'some_schema')
+
+query I
+SELECT * FROM s.some_schema.some_table
+----
+two
+
+query I
+SELECT * FROM s.some_table
+----
+two
+
+statement error
+SELECT * FROM s.public.my_table
+----
+does not exist
+
+statement ok
+USE s;
+
+query I
+SELECT * FROM some_table
+----
+two

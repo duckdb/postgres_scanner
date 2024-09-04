@@ -29,10 +29,6 @@ struct OwnedPostgresConnection {
 	PGconn *connection;
 };
 
-struct PostgresCopyState {
-	PostgresCopyFormat format = PostgresCopyFormat::AUTO;
-};
-
 class PostgresConnection {
 public:
 	explicit PostgresConnection(shared_ptr<OwnedPostgresConnection> connection = nullptr);

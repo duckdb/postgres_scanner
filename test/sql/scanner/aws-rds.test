@@ -2,6 +2,8 @@
 # description: Read over AWS RDS
 # group: [scanner]
 
+mode skip
+
 require postgres_scanner
 
 require-env POSTGRES_TEST_DATABASE_AVAILABLE

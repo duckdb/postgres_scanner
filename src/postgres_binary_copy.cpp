@@ -6,7 +6,6 @@
 namespace duckdb {
 
 PostgresBinaryCopyFunction::PostgresBinaryCopyFunction() : CopyFunction("postgres_binary") {
-
 	copy_to_bind = PostgresBinaryWriteBind;
 	copy_to_initialize_global = PostgresBinaryWriteInitializeGlobal;
 	copy_to_initialize_local = PostgresBinaryWriteInitializeLocal;
@@ -16,21 +15,23 @@ PostgresBinaryCopyFunction::PostgresBinaryCopyFunction() : CopyFunction("postgre
 }
 
 struct PostgresBinaryCopyGlobalState : public GlobalFunctionData {
-	unique_ptr<BufferedFileWriter> file_writer;
+	explicit PostgresBinaryCopyGlobalState(ClientContext &context) {
+		copy_state.Initialize(context);
+	}
 
 	void Flush(PostgresBinaryWriter &writer) {
 		file_writer->WriteData(writer.stream.GetData(), writer.stream.GetPosition());
 	}
 
 	void WriteHeader() {
-		PostgresBinaryWriter writer;
+		PostgresBinaryWriter writer(copy_state);
 		writer.WriteHeader();
 		Flush(writer);
 	}
 
 	void WriteChunk(DataChunk &chunk) {
 		chunk.Flatten();
-		PostgresBinaryWriter writer;
+		PostgresBinaryWriter writer(copy_state);
 		for (idx_t r = 0; r < chunk.size(); r++) {
 			writer.BeginRow(chunk.ColumnCount());
 			for (idx_t c = 0; c < chunk.ColumnCount(); c++) {
@@ -44,13 +45,17 @@ struct PostgresBinaryCopyGlobalState : public GlobalFunctionData {
 
 	void Flush() {
 		// write the footer
-		PostgresBinaryWriter writer;
+		PostgresBinaryWriter writer(copy_state);
 		writer.WriteFooter();
 		Flush(writer);
 		// flush and close the file
 		file_writer->Flush();
 		file_writer.reset();
 	}
+
+public:
+	unique_ptr<BufferedFileWriter> file_writer;
+	PostgresCopyState copy_state;
 };
 
 struct PostgresBinaryWriteBindData : public TableFunctionData {};
@@ -65,7 +70,7 @@ unique_ptr<FunctionData> PostgresBinaryCopyFunction::PostgresBinaryWriteBind(Cli
 unique_ptr<GlobalFunctionData>
 PostgresBinaryCopyFunction::PostgresBinaryWriteInitializeGlobal(ClientContext &context, FunctionData &bind_data,
                                                                 const string &file_path) {
-	auto result = make_uniq<PostgresBinaryCopyGlobalState>();
+	auto result = make_uniq<PostgresBinaryCopyGlobalState>(context);
 	auto &fs = FileSystem::GetFileSystem(context);
 	result->file_writer = make_uniq<BufferedFileWriter>(fs, file_path);
 	// write the header

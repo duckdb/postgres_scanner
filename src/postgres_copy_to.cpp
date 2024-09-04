@@ -5,6 +5,24 @@
 
 namespace duckdb {
 
+void PostgresCopyState::Initialize(ClientContext &context) {
+	Value replacement_value;
+	if (!context.TryGetCurrentSetting("pg_null_byte_replacement", replacement_value)) {
+		return;
+	}
+	if (replacement_value.IsNull()) {
+		return;
+	}
+	auto replacement_str = StringValue::Get(replacement_value);
+	for (const auto c : replacement_str) {
+		if (c == '\0') {
+			throw InternalException("NULL byte replacement string cannot contain NULL values");
+		}
+	}
+	has_null_byte_replacement = true;
+	null_byte_replacement = std::move(replacement_str);
+}
+
 void PostgresConnection::BeginCopyTo(ClientContext &context, PostgresCopyState &state, PostgresCopyFormat format,
                                      const string &schema_name, const string &table_name,
                                      const vector<string> &column_names) {
@@ -24,6 +42,7 @@ void PostgresConnection::BeginCopyTo(ClientContext &context, PostgresCopyState &
 		query += ") ";
 	}
 	query += "FROM STDIN (FORMAT ";
+	state.Initialize(context);
 	state.format = format;
 	switch (state.format) {
 	case PostgresCopyFormat::BINARY:
@@ -43,7 +62,7 @@ void PostgresConnection::BeginCopyTo(ClientContext &context, PostgresCopyState &
 	}
 	if (state.format == PostgresCopyFormat::BINARY) {
 		// binary copy requires a header
-		PostgresBinaryWriter writer;
+		PostgresBinaryWriter writer(state);
 		writer.WriteHeader();
 		CopyData(writer);
 	}
@@ -70,12 +89,12 @@ void PostgresConnection::CopyData(PostgresTextWriter &writer) {
 void PostgresConnection::FinishCopyTo(PostgresCopyState &state) {
 	if (state.format == PostgresCopyFormat::BINARY) {
 		// binary copy requires a footer
-		PostgresBinaryWriter writer;
+		PostgresBinaryWriter writer(state);
 		writer.WriteFooter();
 		CopyData(writer);
 	} else if (state.format == PostgresCopyFormat::TEXT) {
 		// text copy requires a footer
-		PostgresTextWriter writer;
+		PostgresTextWriter writer(state);
 		writer.WriteFooter();
 		CopyData(writer);
 	}
@@ -263,7 +282,7 @@ void PostgresConnection::CopyChunk(ClientContext &context, PostgresCopyState &st
 	chunk.Flatten();
 
 	if (state.format == PostgresCopyFormat::BINARY) {
-		PostgresBinaryWriter writer;
+		PostgresBinaryWriter writer(state);
 		for (idx_t r = 0; r < chunk.size(); r++) {
 			writer.BeginRow(chunk.ColumnCount());
 			for (idx_t c = 0; c < chunk.ColumnCount(); c++) {
@@ -282,6 +301,8 @@ void PostgresConnection::CopyChunk(ClientContext &context, PostgresCopyState &st
 				varchar_types.push_back(LogicalType::VARCHAR);
 			}
 			varchar_chunk.Initialize(Allocator::DefaultAllocator(), varchar_types);
+		} else {
+			varchar_chunk.Reset();
 		}
 		D_ASSERT(chunk.ColumnCount() == varchar_chunk.ColumnCount());
 		// for text format cast to varchar first
@@ -290,7 +311,7 @@ void PostgresConnection::CopyChunk(ClientContext &context, PostgresCopyState &st
 		}
 		varchar_chunk.SetCardinality(chunk.size());
 
-		PostgresTextWriter writer;
+		PostgresTextWriter writer(state);
 		for (idx_t r = 0; r < chunk.size(); r++) {
 			for (idx_t c = 0; c < chunk.ColumnCount(); c++) {
 				if (c > 0) {

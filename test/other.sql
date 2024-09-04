@@ -104,7 +104,7 @@ CREATE TABLE my_table (
 insert into my_table values (42, 'something', 'something else');
 
 
-	CREATE SCHEMA some_schema;
+CREATE SCHEMA some_schema;
 
 create type some_schema.some_enum as enum('one', 'two');
 

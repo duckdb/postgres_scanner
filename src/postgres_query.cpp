@@ -92,5 +92,6 @@ PostgresQueryFunction::PostgresQueryFunction()
 	init_local = scan_function.init_local;
 	function = scan_function.function;
 	projection_pushdown = true;
+	global_initialization = TableFunctionInitialization::INITIALIZE_ON_SCHEDULE;
 }
 } // namespace duckdb

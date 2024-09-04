@@ -16,15 +16,19 @@ struct CreateSchemaInfo;
 
 class PostgresSchemaSet : public PostgresCatalogSet {
 public:
-	explicit PostgresSchemaSet(Catalog &catalog);
+	explicit PostgresSchemaSet(Catalog &catalog, string schema_to_load);
 
 public:
 	optional_ptr<CatalogEntry> CreateSchema(ClientContext &context, CreateSchemaInfo &info);
 
-	static string GetInitializeQuery();
+	static string GetInitializeQuery(const string &schema = string());
 
 protected:
 	void LoadEntries(ClientContext &context) override;
+
+protected:
+	//! Schema to load - if empty loads all schemas (default behavior)
+	string schema_to_load;
 };
 
 } // namespace duckdb

@@ -29,6 +29,18 @@ CREATE TABLE ${table_name} AS FROM public.${table_name}
 endloop
 
 statement ok
+USE memory
+
+statement ok
+DETACH s1
+
+statement ok
+ATTACH 'dbname=postgresscanner' AS s1 (TYPE POSTGRES, SCHEMA 'copy_schema')
+
+statement ok
+USE s1.copy_schema
+
+statement ok
 create table big_tbl as from range(100000) t(id)
 
 statement ok
@@ -46,7 +58,8 @@ COPY FROM DATABASE s1 TO new_db
 foreach table_name pg_numtypes pg_bytetypes pg_datetypes big_tbl my_view
 
 query I
-FROM new_db.${table_name} EXCEPT FROM ${table_name}
+SELECT COUNT(*) FROM (FROM new_db.copy_schema.${table_name} EXCEPT FROM ${table_name})
 ----
+0
 
 endloop

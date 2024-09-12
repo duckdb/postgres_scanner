@@ -72,9 +72,9 @@ release:
 
 test: test_release
 test_release: release
-	./build/release/$(TEST_PATH) "$(PROJ_DIR)test/*"
+	./build/release/$(TEST_PATH) --test-dir "$(PROJ_DIR)" "test/*"
 test_debug: debug
-	./build/debug/$(TEST_PATH) "$(PROJ_DIR)test/*"
+	./build/debug/$(TEST_PATH) --test-dir "$(PROJ_DIR)" "test/*"
 
 format:
 	cp duckdb/.clang-format .

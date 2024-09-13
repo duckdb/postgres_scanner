@@ -1,0 +1,65 @@
+# name: test/sql/storage/attach_copy_from_database.test
+# description: Test copy from database
+# group: [storage]
+
+require postgres_scanner
+
+require-env POSTGRES_TEST_DATABASE_AVAILABLE
+
+statement ok
+PRAGMA enable_verification
+
+statement ok
+ATTACH 'dbname=postgresscanner' AS s1 (TYPE POSTGRES)
+
+statement ok
+DROP SCHEMA IF EXISTS s1.copy_schema CASCADE
+
+statement ok
+CREATE SCHEMA s1.copy_schema
+
+statement ok
+USE s1.copy_schema
+
+foreach table_name pg_numtypes pg_bytetypes pg_datetypes
+
+statement ok
+CREATE TABLE ${table_name} AS FROM public.${table_name}
+
+endloop
+
+statement ok
+USE memory
+
+statement ok
+DETACH s1
+
+statement ok
+ATTACH 'dbname=postgresscanner' AS s1 (TYPE POSTGRES, SCHEMA 'copy_schema')
+
+statement ok
+USE s1.copy_schema
+
+statement ok
+create table big_tbl as from range(100000) t(id)
+
+statement ok
+create index i_index on big_tbl(id)
+
+statement ok
+create view my_view as select min(id) from copy_schema.big_tbl
+
+statement ok
+ATTACH '__TEST_DIR__/copy_database.db' AS new_db;
+
+statement ok
+COPY FROM DATABASE s1 TO new_db
+
+foreach table_name pg_numtypes pg_bytetypes pg_datetypes big_tbl my_view
+
+query I
+SELECT COUNT(*) FROM (FROM new_db.copy_schema.${table_name} EXCEPT FROM ${table_name})
+----
+0
+
+endloop

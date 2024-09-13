@@ -253,7 +253,7 @@ LogicalType PostgresUtils::ToPostgresType(const LogicalType &input) {
 	case LogicalTypeId::UINTEGER:
 		return LogicalType::BIGINT;
 	case LogicalTypeId::UBIGINT:
-          return LogicalType::DECIMAL(20, 0);
+		return LogicalType::DECIMAL(20, 0);
 	case LogicalTypeId::HUGEINT:
 		return LogicalType::DOUBLE;
 	default:

@@ -45,8 +45,8 @@ jobs:
 
     env:
       GEN: ninja
-      CC: 'ccache gcc'
-      CXX: 'ccache g++'
+      CC: '/usr/lib/ccache/gcc'
+      CXX: '/usr/lib/ccache/g++'
       CCACHE_DIR: ${{ github.workspace }}/ccache
       VCPKG_TARGET_TRIPLET: x64-linux-release
       VCPKG_HOST_TRIPLET: x64-linux-release
@@ -85,7 +85,7 @@ jobs:
     - name: Setup vcpkg
       uses: lukka/run-vcpkg@v11.1
       with:
-        vcpkgGitCommitId: 84bab45d415d22042bd0b9081aea57f362da3f35
+        vcpkgGitCommitId: 9e593bb18ea69cc5095e012465dcd675a822ed0d # Release 2026.07.29
 
     - name: Build extension
       run: |
@@ -135,8 +135,8 @@ jobs:
 
     env:
       GEN: ninja
-      CC: 'ccache gcc'
-      CXX: 'ccache g++'
+      CC: '/usr/lib/ccache/gcc'
+      CXX: '/usr/lib/ccache/g++'
       CCACHE_DIR: ${{ github.workspace }}/ccache
       VCPKG_TARGET_TRIPLET: x64-linux-release
       VCPKG_HOST_TRIPLET: x64-linux-release
@@ -176,7 +176,7 @@ jobs:
     - name: Setup vcpkg
       uses: lukka/run-vcpkg@v11.1
       with:
-        vcpkgGitCommitId: 84bab45d415d22042bd0b9081aea57f362da3f35
+        vcpkgGitCommitId: 9e593bb18ea69cc5095e012465dcd675a822ed0d # Release 2026.07.29
 
     - name: Build extension
       run: |
@@ -269,8 +269,8 @@ jobs:
 
     env:
       CMAKE_BUILD_PARALLEL_LEVEL: 2
-      CC: 'ccache gcc'
-      CXX: 'ccache g++'
+      CC: '/usr/lib/ccache/gcc'
+      CXX: '/usr/lib/ccache/g++'
       CCACHE_DIR: ${{ github.workspace }}/ccache
       VCPKG_TARGET_TRIPLET: x64-linux-release
       VCPKG_HOST_TRIPLET: x64-linux-release
@@ -310,7 +310,7 @@ jobs:
     - name: Setup vcpkg
       uses: lukka/run-vcpkg@v11.1
       with:
-        vcpkgGitCommitId: 84bab45d415d22042bd0b9081aea57f362da3f35
+        vcpkgGitCommitId: 9e593bb18ea69cc5095e012465dcd675a822ed0d # Release 2026.07.29
 
     - name: Build extension
       env:
@@ -421,7 +421,7 @@ jobs:
     - name: Setup vcpkg
       uses: lukka/run-vcpkg@v11.1
       with:
-        vcpkgGitCommitId: 84bab45d415d22042bd0b9081aea57f362da3f35
+        vcpkgGitCommitId: 9e593bb18ea69cc5095e012465dcd675a822ed0d # Release 2026.07.29
 
     - name: Prepare build tree
       shell: bash

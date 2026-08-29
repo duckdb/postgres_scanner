@@ -84,13 +84,14 @@ static unique_ptr<FunctionData> PGQueryBind(ClientContext &context, TableFunctio
 		                      "at least one column",
 		                      sql);
 	}
+	auto type_config = PostgresTypeConfig::FromContext(context);
 	for (idx_t c = 0; c < nfields; c++) {
 		PostgresType postgres_type;
 		postgres_type.oid = PQftype(describe_prepared, c);
 		PostgresTypeData type_data;
 		type_data.type_name = PostgresUtils::PostgresOidToName(postgres_type.oid);
 		type_data.type_modifier = PQfmod(describe_prepared, c);
-		auto converted_type = PostgresUtils::TypeToLogicalType(nullptr, nullptr, type_data, postgres_type);
+		auto converted_type = PostgresUtils::TypeToLogicalType(nullptr, nullptr, type_config, type_data, postgres_type);
 		result->postgres_types.push_back(postgres_type);
 		return_types.emplace_back(converted_type);
 		names.emplace_back(PQfname(describe_prepared, c));

@@ -186,6 +186,10 @@ static void LoadInternal(ExtensionLoader &loader) {
 	    "pg_array_as_varchar", "Read Postgres arrays as varchar - enables reading mixed dimensional arrays",
 	    LogicalType::BOOLEAN, Value::BOOLEAN(false), PostgresClearCacheFunction::ClearCacheOnSetting);
 	config.AddExtensionOption(
+	    "pg_numeric_as_varchar",
+	    "Read Postgres numerics without precision and scale or precision > 38 as varchar instead of double",
+	    LogicalType::BOOLEAN, Value::BOOLEAN(false), PostgresClearCacheFunction::ClearCacheOnSetting);
+	config.AddExtensionOption(
 	    "pg_connection_cache",
 	    "Whether or not to use the connection pooling."
 	    " This option is deprecated, instead to disable the connection pooling use \"SET pg_pool_max_connections=0\" "

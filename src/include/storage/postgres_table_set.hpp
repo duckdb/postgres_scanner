@@ -50,11 +50,12 @@ protected:
 	void AlterTable(ClientContext &context, PostgresTransaction &transaction, RemoveColumnInfo &info);
 
 	static void AddColumn(optional_ptr<PostgresTransaction> transaction, optional_ptr<PostgresSchemaEntry> schema,
-	                      PostgresResult &result, idx_t row, PostgresTableInfo &table_info);
+	                      const PostgresTypeConfig &type_config, PostgresResult &result, idx_t row,
+	                      PostgresTableInfo &table_info);
 	static void AddConstraint(PostgresResult &result, idx_t row, PostgresTableInfo &table_info);
 	static void AddColumnOrConstraint(optional_ptr<PostgresTransaction> transaction,
-	                                  optional_ptr<PostgresSchemaEntry> schema, PostgresResult &result, idx_t row,
-	                                  PostgresTableInfo &table_info);
+	                                  optional_ptr<PostgresSchemaEntry> schema, const PostgresTypeConfig &type_config,
+	                                  PostgresResult &result, idx_t row, PostgresTableInfo &table_info);
 
 	void CreateEntries(PostgresTransaction &transaction, PostgresResult &result, idx_t start, idx_t end);
 

@@ -57,3 +57,10 @@ SELECT * FROM mixed_arrays
 ----
 {{{1,2,3}},{{4,5,6}},{{7,8,9}}}
 {1,2,3}
+
+# pg_array_as_varchar also applies to postgres_query
+query I
+SELECT * FROM postgres_query('s', 'SELECT * FROM mixed_arrays')
+----
+{{{1,2,3}},{{4,5,6}},{{7,8,9}}}
+{1,2,3}

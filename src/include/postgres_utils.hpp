@@ -24,6 +24,13 @@ struct PostgresTypeData {
 	idx_t array_dimensions = 0;
 };
 
+struct PostgresTypeConfig {
+	bool array_as_varchar = false;
+	bool numeric_as_varchar = false;
+
+	static PostgresTypeConfig FromContext(optional_ptr<ClientContext> context);
+};
+
 enum class PostgresTypeAnnotation {
 	STANDARD,
 	CAST_TO_VARCHAR,
@@ -68,7 +75,8 @@ public:
 	static string DataTypeToTypeName(const string &data_type);
 	static LogicalType ToPostgresType(const LogicalType &input);
 	static LogicalType TypeToLogicalType(optional_ptr<PostgresTransaction> transaction,
-	                                     optional_ptr<PostgresSchemaEntry> schema, const PostgresTypeData &input,
+	                                     optional_ptr<PostgresSchemaEntry> schema,
+	                                     const PostgresTypeConfig &type_config, const PostgresTypeData &input,
 	                                     PostgresType &postgres_type);
 	static string TypeToString(const LogicalType &input);
 	static string PostgresOidToName(uint32_t oid);

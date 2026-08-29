@@ -91,8 +91,8 @@ ORDER BY table_schema, table_name, ordinal_position;
 }
 
 void PostgresTableSet::AddColumn(optional_ptr<PostgresTransaction> transaction,
-                                 optional_ptr<PostgresSchemaEntry> schema, PostgresResult &result, idx_t row,
-                                 PostgresTableInfo &table_info) {
+                                 optional_ptr<PostgresSchemaEntry> schema, const PostgresTypeConfig &type_config,
+                                 PostgresResult &result, idx_t row, PostgresTableInfo &table_info) {
 	PostgresTypeData type_info;
 	idx_t column_index = 3;
 	auto column_name = result.GetString(row, column_index);
@@ -108,7 +108,7 @@ void PostgresTableSet::AddColumn(optional_ptr<PostgresTransaction> transaction,
 	string default_value;
 
 	PostgresType postgres_type;
-	auto column_type = PostgresUtils::TypeToLogicalType(transaction, schema, type_info, postgres_type);
+	auto column_type = PostgresUtils::TypeToLogicalType(transaction, schema, type_config, type_info, postgres_type);
 	table_info.postgres_types.push_back(std::move(postgres_type));
 	table_info.postgres_names.push_back(column_name);
 	ColumnDefinition column(std::move(column_name), std::move(column_type));
@@ -160,13 +160,14 @@ void PostgresTableSet::AddConstraint(PostgresResult &result, idx_t row, Postgres
 }
 
 void PostgresTableSet::AddColumnOrConstraint(optional_ptr<PostgresTransaction> transaction,
-                                             optional_ptr<PostgresSchemaEntry> schema, PostgresResult &result,
-                                             idx_t row, PostgresTableInfo &table_info) {
+                                             optional_ptr<PostgresSchemaEntry> schema,
+                                             const PostgresTypeConfig &type_config, PostgresResult &result, idx_t row,
+                                             PostgresTableInfo &table_info) {
 	if (result.IsNull(row, 3)) {
 		// constraint
 		AddConstraint(result, row, table_info);
 	} else {
-		AddColumn(transaction, schema, result, row, table_info);
+		AddColumn(transaction, schema, type_config, result, row, table_info);
 	}
 }
 
@@ -174,6 +175,7 @@ void PostgresTableSet::CreateEntries(PostgresTransaction &transaction, PostgresR
 	vector<unique_ptr<PostgresTableInfo>> tables;
 	unique_ptr<PostgresTableInfo> info;
 
+	auto type_config = PostgresTypeConfig::FromContext(transaction.GetContext());
 	for (idx_t row = start; row < end; row++) {
 		auto table_name = result.GetString(row, 1);
 		if (!info || info->GetTableName() != table_name) {
@@ -187,7 +189,7 @@ void PostgresTableSet::CreateEntries(PostgresTransaction &transaction, PostgresR
 				info->create_info->comment = Value(result.GetString(row, 14));
 			}
 		}
-		AddColumnOrConstraint(&transaction, &schema, result, row, *info);
+		AddColumnOrConstraint(&transaction, &schema, type_config, result, row, *info);
 	}
 	if (info) {
 		tables.push_back(std::move(info));
@@ -246,8 +248,9 @@ unique_ptr<PostgresTableInfo> PostgresTableSet::GetTableInfo(PostgresTransaction
 		return nullptr;
 	}
 	auto table_info = make_uniq<PostgresTableInfo>(schema, table_name);
+	auto type_config = PostgresTypeConfig::FromContext(transaction.GetContext());
 	for (idx_t row = 0; row < rows; row++) {
-		AddColumnOrConstraint(&transaction, &schema, *result, row, *table_info);
+		AddColumnOrConstraint(&transaction, &schema, type_config, *result, row, *table_info);
 	}
 	table_info->approx_num_pages = result->IsNull(0, 2) ? 0 : result->GetInt64(0, 2);
 	// Read table-level comment from 14
@@ -268,8 +271,9 @@ unique_ptr<PostgresTableInfo> PostgresTableSet::GetTableInfo(ClientContext &cont
 		throw InvalidInputException("Table %s does not contain any columns.", table_name);
 	}
 	auto table_info = make_uniq<PostgresTableInfo>(schema_name, table_name);
+	auto type_config = PostgresTypeConfig::FromContext(context);
 	for (idx_t row = 0; row < rows; row++) {
-		AddColumnOrConstraint(nullptr, nullptr, *result, row, *table_info);
+		AddColumnOrConstraint(nullptr, nullptr, type_config, *result, row, *table_info);
 	}
 	table_info->approx_num_pages = result->IsNull(0, 2) ? 0 : result->GetInt64(0, 2);
 	// Read table-level comment

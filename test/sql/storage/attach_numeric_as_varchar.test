@@ -1,0 +1,116 @@
+# name: test/sql/storage/attach_numeric_as_varchar.test
+# description: Test reading unbound numerics as varchar with pg_numeric_as_varchar
+# group: [storage]
+
+require postgres_scanner
+
+require-env POSTGRES_TEST_DATABASE_AVAILABLE
+
+statement ok
+ATTACH 'dbname=postgresscanner' AS s (TYPE POSTGRES)
+
+statement ok
+CALL postgres_execute('s', 'DROP TABLE IF EXISTS unbound_numerics')
+
+statement ok
+CALL postgres_execute('s', 'CREATE TABLE unbound_numerics(n NUMERIC)')
+
+statement ok
+CALL postgres_execute('s', 'INSERT INTO unbound_numerics VALUES (12345678901234567890123456789012345678901234567890), (0.12345678901234567890123456789012345678901234567890), (NULL)')
+
+# by default unbound numerics are read as double
+query I
+SELECT typeof(n) FROM s.unbound_numerics LIMIT 1
+----
+DOUBLE
+
+statement ok
+SET pg_numeric_as_varchar=true
+
+statement ok
+CALL pg_clear_cache();
+
+# with pg_numeric_as_varchar the values are read as varchar without precision loss
+query I
+SELECT typeof(n) FROM s.unbound_numerics LIMIT 1
+----
+VARCHAR
+
+query I
+SELECT n FROM s.unbound_numerics
+----
+12345678901234567890123456789012345678901234567890
+0.12345678901234567890123456789012345678901234567890
+NULL
+
+# the setting also applies to postgres_query
+query I
+SELECT * FROM postgres_query('s', 'SELECT n FROM unbound_numerics WHERE n > 1')
+----
+12345678901234567890123456789012345678901234567890
+
+# unbound numerics inside arrays
+statement ok
+CALL postgres_execute('s', 'DROP TABLE IF EXISTS unbound_numeric_arrays')
+
+statement ok
+CALL postgres_execute('s', 'CREATE TABLE unbound_numeric_arrays(n NUMERIC[])')
+
+statement ok
+CALL postgres_execute('s', 'INSERT INTO unbound_numeric_arrays VALUES (ARRAY[12345678901234567890123456789012345678901234567890::NUMERIC, 2])')
+
+statement ok
+CALL pg_clear_cache();
+
+query I
+SELECT n FROM s.unbound_numeric_arrays
+----
+[12345678901234567890123456789012345678901234567890, 2]
+
+# bounded numerics with a precision above DuckDB's decimal maximum of 38 take the same fallback
+statement ok
+CALL postgres_execute('s', 'DROP TABLE IF EXISTS oversized_numerics')
+
+statement ok
+CALL postgres_execute('s', 'CREATE TABLE oversized_numerics(n NUMERIC(50,10))')
+
+statement ok
+CALL postgres_execute('s', 'INSERT INTO oversized_numerics VALUES (1234567890123456789012345678901234567890.0123456789)')
+
+statement ok
+CALL pg_clear_cache();
+
+query I
+SELECT typeof(n) FROM s.oversized_numerics
+----
+VARCHAR
+
+query I
+SELECT n FROM s.oversized_numerics
+----
+1234567890123456789012345678901234567890.0123456789
+
+statement ok
+SET pg_numeric_as_varchar=false
+
+statement ok
+CALL pg_clear_cache();
+
+query I
+SELECT typeof(n) FROM s.unbound_numerics LIMIT 1
+----
+DOUBLE
+
+query I
+SELECT typeof(n) FROM s.oversized_numerics
+----
+DOUBLE
+
+statement ok
+CALL postgres_execute('s', 'DROP TABLE unbound_numerics')
+
+statement ok
+CALL postgres_execute('s', 'DROP TABLE oversized_numerics')
+
+statement ok
+CALL postgres_execute('s', 'DROP TABLE unbound_numeric_arrays')

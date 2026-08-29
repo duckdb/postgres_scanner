@@ -177,25 +177,32 @@ uint32_t PostgresUtils::TypeNameToPostgresOid(const string &type_name) {
 	return 0;
 }
 
+PostgresTypeConfig PostgresTypeConfig::FromContext(optional_ptr<ClientContext> context) {
+	PostgresTypeConfig result;
+	if (!context) {
+		return result;
+	}
+	Value setting;
+	if (context->TryGetCurrentSetting("pg_array_as_varchar", setting)) {
+		result.array_as_varchar = BooleanValue::Get(setting);
+	}
+	if (context->TryGetCurrentSetting("pg_numeric_as_varchar", setting)) {
+		result.numeric_as_varchar = BooleanValue::Get(setting);
+	}
+	return result;
+}
+
 LogicalType PostgresUtils::TypeToLogicalType(optional_ptr<PostgresTransaction> transaction,
                                              optional_ptr<PostgresSchemaEntry> schema,
-                                             const PostgresTypeData &type_info, PostgresType &postgres_type) {
+                                             const PostgresTypeConfig &type_config, const PostgresTypeData &type_info,
+                                             PostgresType &postgres_type) {
 	auto &pgtypename = type_info.type_name;
 
 	// postgres array types start with an _
 	if (StringUtil::StartsWith(pgtypename, "_")) {
-		if (transaction) {
-			auto context = transaction->GetContext();
-			if (!context) {
-				throw InternalException("Context is destroyed!?");
-			}
-			Value array_as_varchar;
-			if (context->TryGetCurrentSetting("pg_array_as_varchar", array_as_varchar)) {
-				if (BooleanValue::Get(array_as_varchar)) {
-					postgres_type.info = PostgresTypeAnnotation::CAST_TO_VARCHAR;
-					return LogicalType::VARCHAR;
-				}
-			}
+		if (type_config.array_as_varchar) {
+			postgres_type.info = PostgresTypeAnnotation::CAST_TO_VARCHAR;
+			return LogicalType::VARCHAR;
 		}
 		// get the array dimension information
 		idx_t dimensions = type_info.array_dimensions;
@@ -208,7 +215,8 @@ LogicalType PostgresUtils::TypeToLogicalType(optional_ptr<PostgresTransaction> t
 		child_type_info.type_modifier = type_info.type_modifier;
 		child_type_info.type_schema = type_info.type_schema;
 		PostgresType child_pg_type;
-		auto child_type = PostgresUtils::TypeToLogicalType(transaction, schema, child_type_info, child_pg_type);
+		auto child_type =
+		    PostgresUtils::TypeToLogicalType(transaction, schema, type_config, child_type_info, child_pg_type);
 		// populate the child OID from the actual Postgres type name
 		if (child_pg_type.oid == 0) {
 			child_pg_type.oid = TypeNameToPostgresOid(child_type_info.type_name);
@@ -243,7 +251,10 @@ LogicalType PostgresUtils::TypeToLogicalType(optional_ptr<PostgresTransaction> t
 		auto width = ((type_info.type_modifier - sizeof(int32_t)) >> 16) & 0xffff;
 		auto scale = (((type_info.type_modifier - sizeof(int32_t)) & 0x7ff) ^ 1024) - 1024;
 		if (type_info.type_modifier == -1 || width < 0 || scale < 0 || width > 38) {
-			// fallback to double
+			if (type_config.numeric_as_varchar) {
+				postgres_type.info = PostgresTypeAnnotation::CAST_TO_VARCHAR;
+				return LogicalType::VARCHAR;
+			}
 			postgres_type.info = PostgresTypeAnnotation::NUMERIC_AS_DOUBLE;
 			return LogicalType::DOUBLE;
 		}

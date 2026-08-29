@@ -98,7 +98,7 @@ void PostgresBinaryCopyFunction::PostgresBinaryWriteFinalize(ClientContext &cont
 
 struct PostgresBinaryReadBindData : public TableFunctionData {
 	string file_path;
-	vector<string> names;
+	vector<Identifier> names;
 	vector<LogicalType> types;
 	vector<PostgresType> postgres_types;
 	idx_t buffer_size = PostgresBinaryFileReader::DEFAULT_BUFFER_SIZE;
@@ -125,7 +125,7 @@ struct PostgresBinaryReadGlobalState : public GlobalTableFunctionState {
 
 unique_ptr<FunctionData> PostgresBinaryCopyFunction::PostgresBinaryReadBind(ClientContext &context,
                                                                             CopyFromFunctionBindInput &info,
-                                                                            vector<string> &expected_names,
+                                                                            vector<Identifier> &expected_names,
                                                                             vector<LogicalType> &expected_types) {
 	auto result = make_uniq<PostgresBinaryReadBindData>();
 	result->file_path = info.info.file_path;
@@ -178,7 +178,7 @@ static unique_ptr<FunctionData> ReadPostgresBinaryBind(ClientContext &context, T
 		result->postgres_types.push_back(PostgresUtils::CreateEmptyPostgresType(col_type));
 	}
 
-	result->names = IdentifiersToStrings(names);
+	result->names = names;
 	result->types = return_types;
 
 	if (input.named_parameters.count("buffer_size")) {

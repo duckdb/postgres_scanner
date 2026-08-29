@@ -47,8 +47,8 @@ public:
 	string GetCatalogType() override {
 		return "postgres";
 	}
-	Identifier GetDefaultSchema() const override {
-		return default_schema.empty() ? "public" : default_schema;
+	optional<Identifier> GetDefaultSchema() const override {
+		return default_schema.empty() ? Identifier("public") : default_schema;
 	}
 
 	string GetConnectionString();

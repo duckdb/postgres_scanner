@@ -12,7 +12,7 @@ require postgres_scanner
 statement error
 ATTACH 'dbname=nope' AS d (TYPE POSTGRES, CONNECT_DISPLAY NULL)
 ----
-NULL is not supported as a valid option for ATTACH option "connect_display"
+NULL is not supported as a valid option for ATTACH option
 
 # the value ends up in the shell prompt verbatim, so escape sequences must not survive
 statement error

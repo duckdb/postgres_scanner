@@ -35,7 +35,7 @@ public:
 	                                        GlobalFunctionData &gstate);
 
 	static unique_ptr<FunctionData> PostgresBinaryReadBind(ClientContext &context, CopyFromFunctionBindInput &info,
-	                                                       vector<string> &expected_names,
+	                                                       vector<Identifier> &expected_names,
 	                                                       vector<LogicalType> &expected_types);
 };
 

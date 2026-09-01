@@ -49,6 +49,7 @@ public:
 	bool use_transaction = true;
 	bool use_text_protocol = false;
 	idx_t max_threads = 1;
+	PostgresTypeConfig type_config;
 
 public:
 	void SetTablePages(idx_t approx_num_pages);

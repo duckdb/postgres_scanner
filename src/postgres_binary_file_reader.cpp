@@ -14,10 +14,10 @@ static vector<column_t> MakeSequentialColumnIds(idx_t count) {
 
 PostgresBinaryFileReader::PostgresBinaryFileReader(ClientContext &context, const string &file_path,
                                                    vector<LogicalType> types_p, vector<PostgresType> postgres_types_p,
-                                                   idx_t buffer_size_p)
-    : column_ids(MakeSequentialColumnIds(types_p.size())), parser(std::move(types_p), std::move(postgres_types_p)),
-      buffer_size(buffer_size_p), file_offset(0), leftover(0), leftover_offset(0), finished(false),
-      header_scanned(false) {
+                                                   PostgresTypeConfig type_config, idx_t buffer_size_p)
+    : column_ids(MakeSequentialColumnIds(types_p.size())),
+      parser(std::move(types_p), std::move(postgres_types_p), type_config), buffer_size(buffer_size_p), file_offset(0),
+      leftover(0), leftover_offset(0), finished(false), header_scanned(false) {
 	auto &fs = FileSystem::GetFileSystem(context);
 	file_handle = fs.OpenFile(file_path, FileFlags::FILE_FLAGS_READ);
 	file_size = file_handle->GetFileSize();

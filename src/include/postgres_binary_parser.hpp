@@ -19,7 +19,8 @@ namespace duckdb {
 
 class PostgresBinaryParser {
 public:
-	PostgresBinaryParser(vector<LogicalType> types, vector<PostgresType> postgres_types);
+	PostgresBinaryParser(vector<LogicalType> types, vector<PostgresType> postgres_types,
+	                     PostgresTypeConfig type_config);
 
 	void SetBuffer(data_ptr_t buf, idx_t len);
 	bool ReadChunk(DataChunk &output, const vector<column_t> &column_ids);
@@ -40,6 +41,7 @@ private:
 
 	vector<LogicalType> types;
 	vector<PostgresType> postgres_types;
+	PostgresTypeConfig type_config;
 
 private:
 	template <class T>
@@ -151,14 +153,25 @@ private:
 
 	PostgresDecimalConfig ReadDecimalConfig();
 
+	static PostgresDecimalKind NonFiniteDecimalKindFromSign(uint16_t dec_sign);
+
+	static string NonFiniteDecimalKindToString(PostgresDecimalKind kind);
+
 	template <class T, class OP = DecimalConversionInteger>
-	T ReadDecimal() {
+	PostgresDecimal<T> ReadDecimal() {
 		// this is wild
 		auto config = ReadDecimalConfig();
+
+		// we do not support non-finite numerics, need to return NULL or throw
+		if (config.sign == NUMERIC_NAN || config.sign == NUMERIC_PINF || config.sign == NUMERIC_NINF) {
+			PostgresDecimalKind kind = NonFiniteDecimalKindFromSign(config.sign);
+			return PostgresDecimal<T>(kind);
+		}
+
 		auto scale_POWER = OP::GetPowerOfTen(config.scale);
 
 		if (config.ndigits == 0) {
-			return 0;
+			return PostgresDecimal<T>(static_cast<T>(0));
 		}
 		T integral_part = 0, fractional_part = 0;
 
@@ -210,7 +223,8 @@ private:
 
 		// finally
 		auto base_res = OP::Finalize(config, integral_part + fractional_part);
-		return (config.is_negative ? -base_res : base_res);
+		auto val = (config.is_negative ? -base_res : base_res);
+		return PostgresDecimal<T>(val);
 	}
 
 	void ReadGeometry(const LogicalType &type, const PostgresType &postgres_type, Vector &out_vec, idx_t output_offset);
@@ -219,6 +233,8 @@ private:
 	               uint32_t current_count, uint32_t dimensions[], uint32_t ndim);
 
 	void ReadValue(const LogicalType &type, const PostgresType &postgres_type, Vector &out_vec, idx_t output_offset);
+
+	bool CheckDecimalKindSetNull(Vector &out_vec, idx_t output_offset, PostgresDecimalKind dec_kind);
 };
 
 } // namespace duckdb

@@ -141,8 +141,9 @@ static unique_ptr<GlobalTableFunctionState> PostgresBinaryReadInitGlobal(ClientC
                                                                          TableFunctionInitInput &input) {
 	auto &bind_data = input.bind_data->Cast<PostgresBinaryReadBindData>();
 	auto result = make_uniq<PostgresBinaryReadGlobalState>();
+	PostgresTypeConfig type_config = PostgresTypeConfig::FromContext(context);
 	result->reader = make_uniq<PostgresBinaryFileReader>(context, bind_data.file_path, bind_data.types,
-	                                                     bind_data.postgres_types, bind_data.buffer_size);
+	                                                     bind_data.postgres_types, type_config, bind_data.buffer_size);
 	return std::move(result);
 }
 

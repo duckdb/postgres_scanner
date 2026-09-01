@@ -10,7 +10,8 @@ namespace duckdb {
 
 PostgresBinaryReader::PostgresBinaryReader(PostgresConnection &con_p, const vector<column_t> &column_ids,
                                            const PostgresBindData &bind_data)
-    : PostgresResultReader(con_p, column_ids, bind_data), parser(bind_data.types, bind_data.postgres_types) {
+    : PostgresResultReader(con_p, column_ids, bind_data),
+      parser(bind_data.types, bind_data.postgres_types, bind_data.type_config) {
 }
 
 PostgresBinaryReader::~PostgresBinaryReader() {

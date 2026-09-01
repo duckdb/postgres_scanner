@@ -134,6 +134,7 @@ static unique_ptr<FunctionData> PGQueryBind(ClientContext &context, TableFunctio
 	}
 
 	// set up the bind data
+	result->type_config = type_config;
 	result->SetCatalog(pg_catalog);
 	result->dsn = con.GetDSN();
 	result->types = return_types;

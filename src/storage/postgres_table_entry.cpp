@@ -58,6 +58,7 @@ TableFunction PostgresTableEntry::GetScanFunction(ClientContext &context, unique
 	result->names = postgres_names;
 	result->postgres_types = postgres_types;
 	result->read_only = transaction.IsReadOnly();
+	result->type_config = PostgresTypeConfig::FromContext(context);
 	PostgresScanFunction::PrepareBind(pg_catalog.GetPostgresVersion(), context, *result,
 	                                  approx_num_pages.load(std::memory_order_acquire));
 

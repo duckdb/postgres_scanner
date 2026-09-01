@@ -192,6 +192,9 @@ static void LoadInternal(ExtensionLoader &loader) {
 	    "Read Postgres numerics without precision and scale or precision > 38 as varchar instead of double",
 	    LogicalType::BOOLEAN, Value::BOOLEAN(false), PostgresClearCacheFunction::ClearCacheOnSetting);
 	config.AddExtensionOption(
+	    "pg_numeric_nan_as_null", "Read Postgres numeric NaN value as NULL instead of throwing an error",
+	    LogicalType::BOOLEAN, Value::BOOLEAN(true), PostgresClearCacheFunction::ClearCacheOnSetting);
+	config.AddExtensionOption(
 	    "pg_connection_cache",
 	    "Whether or not to use the connection pooling."
 	    " This option is deprecated, instead to disable the connection pooling use \"SET pg_pool_max_connections=0\" "

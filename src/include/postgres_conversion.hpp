@@ -99,6 +99,21 @@ struct PostgresDecimalConfig {
 	uint16_t ndigits;
 	int16_t weight;
 	bool is_negative;
+	uint16_t sign;
+};
+
+enum class PostgresDecimalKind { ORDINARY, NOT_A_NUMBER, POSITIVE_INFINITY, NEGATIVE_INFINITY };
+
+template <typename T>
+struct PostgresDecimal {
+	T value;
+	PostgresDecimalKind kind;
+
+	PostgresDecimal(T val) : value(val), kind(PostgresDecimalKind::ORDINARY) {
+	}
+
+	PostgresDecimal(PostgresDecimalKind kind_p) : value(0), kind(kind_p) {
+	}
 };
 
 struct PostgresConversion {

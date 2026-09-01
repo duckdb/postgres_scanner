@@ -54,6 +54,7 @@ public:
 	//! DML without RETURNING). InitGlobalState executes it and returns a single-row Success result.
 	bool command_only = false;
 	idx_t max_threads = 1;
+	PostgresTypeConfig type_config;
 
 	dbconnector::optimizer::OrderByAndLimitBindData order_by_and_limit_bind_data;
 	dbconnector::optimizer::AggregateBindData aggregate_bind_data;

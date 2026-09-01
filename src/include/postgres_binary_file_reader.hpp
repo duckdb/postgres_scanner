@@ -22,7 +22,8 @@ public:
 	static constexpr idx_t COPY_FILE_HEADER_SIZE = PostgresConversion::COPY_HEADER_LENGTH + 8;
 
 	PostgresBinaryFileReader(ClientContext &context, const string &file_path, vector<LogicalType> types,
-	                         vector<PostgresType> postgres_types, idx_t buffer_size = DEFAULT_BUFFER_SIZE);
+	                         vector<PostgresType> postgres_types, PostgresTypeConfig type_config,
+	                         idx_t buffer_size = DEFAULT_BUFFER_SIZE);
 
 	bool ReadChunk(DataChunk &output);
 

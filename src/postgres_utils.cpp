@@ -193,6 +193,9 @@ PostgresTypeConfig PostgresTypeConfig::FromContext(optional_ptr<ClientContext> c
 	if (context->TryGetCurrentSetting("pg_numeric_as_varchar", setting)) {
 		result.numeric_as_varchar = BooleanValue::Get(setting);
 	}
+	if (context->TryGetCurrentSetting("pg_numeric_nan_as_null", setting)) {
+		result.numeric_nan_as_null = BooleanValue::Get(setting);
+	}
 	return result;
 }
 

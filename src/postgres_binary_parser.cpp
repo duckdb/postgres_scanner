@@ -7,8 +7,9 @@
 
 namespace duckdb {
 
-PostgresBinaryParser::PostgresBinaryParser(vector<LogicalType> types_p, vector<PostgresType> postgres_types_p)
-    : types(std::move(types_p)), postgres_types(std::move(postgres_types_p)) {
+PostgresBinaryParser::PostgresBinaryParser(vector<LogicalType> types_p, vector<PostgresType> postgres_types_p,
+                                           PostgresTypeConfig type_config_p)
+    : types(std::move(types_p)), postgres_types(std::move(postgres_types_p)), type_config(type_config_p) {
 }
 
 void PostgresBinaryParser::SetBuffer(data_ptr_t buf, idx_t len) {
@@ -81,6 +82,7 @@ PostgresDecimalConfig PostgresBinaryParser::ReadDecimalConfig() {
 	      sign == NUMERIC_NEG)) {
 		throw NotImplementedException("Postgres numeric NA/Inf");
 	}
+	config.sign = sign;
 	config.is_negative = sign == NUMERIC_NEG;
 	config.scale = ReadInteger<uint16_t>();
 
@@ -188,7 +190,25 @@ void PostgresBinaryParser::ReadValue(const LogicalType &type, const PostgresType
 		break;
 	case LogicalTypeId::DOUBLE: {
 		if (postgres_type.info == PostgresTypeAnnotation::NUMERIC_AS_DOUBLE) {
-			FlatVector::GetDataMutable<double>(out_vec)[output_offset] = ReadDecimal<double, DecimalConversionDouble>();
+			PostgresDecimal<double> dec = ReadDecimal<double, DecimalConversionDouble>();
+			double double_value = 0;
+			switch (dec.kind) {
+			case PostgresDecimalKind::ORDINARY:
+				double_value = dec.value;
+				break;
+			case PostgresDecimalKind::NOT_A_NUMBER:
+				double_value = std::numeric_limits<double>::quiet_NaN();
+				break;
+			case PostgresDecimalKind::POSITIVE_INFINITY:
+				double_value = std::numeric_limits<double>::infinity();
+				break;
+			case PostgresDecimalKind::NEGATIVE_INFINITY:
+				double_value = -std::numeric_limits<double>::infinity();
+				break;
+			default:
+				throw InvalidInputException("Unsupported decimal kind");
+			}
+			FlatVector::GetDataMutable<double>(out_vec)[output_offset] = double_value;
 			break;
 		}
 		D_ASSERT(value_len == sizeof(double));
@@ -235,19 +255,34 @@ void PostgresBinaryParser::ReadValue(const LogicalType &type, const PostgresType
 			throw InvalidInputException("Need at least 8 bytes to read a Postgres decimal. Got %d", value_len);
 		}
 		switch (type.InternalType()) {
-		case PhysicalType::INT16:
-			FlatVector::GetDataMutable<int16_t>(out_vec)[output_offset] = ReadDecimal<int16_t>();
+		case PhysicalType::INT16: {
+			PostgresDecimal<int16_t> dec = ReadDecimal<int16_t>();
+			if (!CheckDecimalKindSetNull(out_vec, output_offset, dec.kind)) {
+				FlatVector::GetDataMutable<int16_t>(out_vec)[output_offset] = dec.value;
+			}
 			break;
-		case PhysicalType::INT32:
-			FlatVector::GetDataMutable<int32_t>(out_vec)[output_offset] = ReadDecimal<int32_t>();
+		}
+		case PhysicalType::INT32: {
+			PostgresDecimal<int32_t> dec = ReadDecimal<int32_t>();
+			if (!CheckDecimalKindSetNull(out_vec, output_offset, dec.kind)) {
+				FlatVector::GetDataMutable<int32_t>(out_vec)[output_offset] = dec.value;
+			}
 			break;
-		case PhysicalType::INT64:
-			FlatVector::GetDataMutable<int64_t>(out_vec)[output_offset] = ReadDecimal<int64_t>();
+		}
+		case PhysicalType::INT64: {
+			PostgresDecimal<int64_t> dec = ReadDecimal<int64_t>();
+			if (!CheckDecimalKindSetNull(out_vec, output_offset, dec.kind)) {
+				FlatVector::GetDataMutable<int64_t>(out_vec)[output_offset] = dec.value;
+			}
 			break;
-		case PhysicalType::INT128:
-			FlatVector::GetDataMutable<hugeint_t>(out_vec)[output_offset] =
-			    ReadDecimal<hugeint_t, DecimalConversionHugeint>();
+		}
+		case PhysicalType::INT128: {
+			PostgresDecimal<hugeint_t> dec = ReadDecimal<hugeint_t, DecimalConversionHugeint>();
+			if (!CheckDecimalKindSetNull(out_vec, output_offset, dec.kind)) {
+				FlatVector::GetDataMutable<hugeint_t>(out_vec)[output_offset] = dec.value;
+			}
 			break;
+		}
 		default:
 			throw InvalidInputException("Unsupported decimal storage type");
 		}
@@ -385,6 +420,44 @@ void PostgresBinaryParser::ReadValue(const LogicalType &type, const PostgresType
 	default:
 		throw InternalException("Unsupported Type %s", type.ToString());
 	}
+}
+
+PostgresDecimalKind PostgresBinaryParser::NonFiniteDecimalKindFromSign(uint16_t dec_sign) {
+	if (dec_sign == NUMERIC_NAN) {
+		return PostgresDecimalKind::NOT_A_NUMBER;
+	}
+	if (dec_sign == NUMERIC_PINF) {
+		return PostgresDecimalKind::POSITIVE_INFINITY;
+	}
+	if (dec_sign == NUMERIC_NINF) {
+		return PostgresDecimalKind::NEGATIVE_INFINITY;
+	}
+	throw InvalidInputException("Unsupported unbound NUMERIC sign: %u", static_cast<unsigned int>(dec_sign));
+}
+
+string PostgresBinaryParser::NonFiniteDecimalKindToString(PostgresDecimalKind kind) {
+	switch (kind) {
+	case PostgresDecimalKind::NOT_A_NUMBER:
+		return "NaN";
+	case PostgresDecimalKind::POSITIVE_INFINITY:
+		return "Infinity";
+	case PostgresDecimalKind::NEGATIVE_INFINITY:
+		return "-Infinity";
+	default:
+		throw InvalidInputException("Unsupported unbound NUMERIC kind");
+	}
+}
+
+bool PostgresBinaryParser::CheckDecimalKindSetNull(Vector &out_vec, idx_t output_offset, PostgresDecimalKind dec_kind) {
+	if (dec_kind == PostgresDecimalKind::ORDINARY) {
+		return false;
+	}
+	if (!type_config.numeric_nan_as_null) {
+		string kind_str = NonFiniteDecimalKindToString(dec_kind);
+		throw InvalidInputException("Unsupported NUMERIC value: %s", kind_str);
+	}
+	FlatVector::SetNull(out_vec, output_offset, true);
+	return true;
 }
 
 } // namespace duckdb

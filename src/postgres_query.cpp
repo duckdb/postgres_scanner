@@ -22,10 +22,37 @@ static bool ExtractFlag(TableFunctionBindInput &input, const string &name, bool 
 	return default_val;
 }
 
+static unique_ptr<FunctionData> BindDML(ClientContext &context, TableFunctionBindInput &input,
+                                        vector<LogicalType> &return_types, vector<Identifier> &names,
+                                        PostgresCatalog &pg_catalog, PostgresConnection &con, std::string sql,
+                                        bool use_transaction) {
+	// The statement returns no result columns: it's a command (DDL, or DML without RETURNING).
+	// Instead of failing, run it as a command and return a single-row Success result. We reuse
+	// the prepare/describe just done — no extra round-trip — and defer execution to
+	// InitGlobalState (execution time, not bind, so EXPLAIN does not run it).
+	auto result = make_uniq<PostgresBindData>(context);
+	result->command_only = true;
+	if (ExtractFlag(input, "suppress_dml_output", false)) {
+		// This invocation wraps a command with no result set (DDL, or DML without RETURNING). Tell the
+		// binder via the return-type modifier so that when this is routed through CONNECT the outer
+		// statement is reported as NOTHING and displays like a native command (no spurious result table).
+		input.table_function.call_return_type = StatementReturnType::NOTHING;
+	}
+	return_types.emplace_back(LogicalType::BIGINT);
+	names.emplace_back(Identifier("rowcount"));
+	result->SetCatalog(pg_catalog);
+	result->dsn = con.GetDSN();
+	result->types = return_types;
+	result->names.emplace_back(names[0].GetIdentifierName());
+	result->read_only = false;
+	result->sql = std::move(sql);
+	result->use_transaction = use_transaction;
+	PostgresScanFunction::PrepareBind(pg_catalog.GetPostgresVersion(), context, *result, 0);
+	return std::move(result);
+}
+
 static unique_ptr<FunctionData> PGQueryBind(ClientContext &context, TableFunctionBindInput &input,
                                             vector<LogicalType> &return_types, vector<Identifier> &names) {
-	auto result = make_uniq<PostgresBindData>(context);
-
 	if (input.inputs[0].IsNull() || input.inputs[1].IsNull()) {
 		throw BinderException("Parameters to postgres_query cannot be NULL");
 	}
@@ -68,6 +95,13 @@ static unique_ptr<FunctionData> PGQueryBind(ClientContext &context, TableFunctio
 
 	auto &con = use_transaction ? transaction.GetConnection() : transaction.GetConnectionWithoutTransaction();
 
+	if (!ExtractFlag(input, "prepare", true)) {
+		if (param_values.size() > 0) {
+			throw BinderException("query parameters cannot be used with 'prepare=FALSE'");
+		}
+		return BindDML(context, input, return_types, names, pg_catalog, con, std::move(sql), use_transaction);
+	}
+
 	auto conn = con.GetConn();
 	// prepare execution of the query to figure out the result types and names
 	auto prepared = PQprepare(conn, "", sql.c_str(), 0, nullptr);
@@ -87,29 +121,9 @@ static unique_ptr<FunctionData> PGQueryBind(ClientContext &context, TableFunctio
 	}
 	int nfields = PQnfields(describe_prepared);
 	if (nfields <= 0) {
-		// The statement returns no result columns: it's a command (DDL, or DML without RETURNING).
-		// Instead of failing, run it as a command and return a single-row Success result. We reuse
-		// the prepare/describe just done — no extra round-trip — and defer execution to
-		// InitGlobalState (execution time, not bind, so EXPLAIN does not run it).
-		result->command_only = true;
-		if (ExtractFlag(input, "suppress_dml_output", false)) {
-			// This invocation wraps a command with no result set (DDL, or DML without RETURNING). Tell the
-			// binder via the return-type modifier so that when this is routed through CONNECT the outer
-			// statement is reported as NOTHING and displays like a native command (no spurious result table).
-			input.table_function.call_return_type = StatementReturnType::NOTHING;
-		}
-		return_types.emplace_back(LogicalType::BIGINT);
-		names.emplace_back(Identifier("rowcount"));
-		result->SetCatalog(pg_catalog);
-		result->dsn = con.GetDSN();
-		result->types = return_types;
-		result->names.emplace_back(names[0].GetIdentifierName());
-		result->read_only = false;
-		result->sql = std::move(sql);
-		result->use_transaction = use_transaction;
-		PostgresScanFunction::PrepareBind(pg_catalog.GetPostgresVersion(), context, *result, 0);
-		return std::move(result);
+		return BindDML(context, input, return_types, names, pg_catalog, con, std::move(sql), use_transaction);
 	}
+	auto result = make_uniq<PostgresBindData>(context);
 	auto type_config = PostgresTypeConfig::FromContext(context);
 	for (idx_t c = 0; c < nfields; c++) {
 		PostgresType postgres_type;
@@ -154,6 +168,7 @@ PostgresQueryFunction::PostgresQueryFunction()
 	named_parameters["use_transaction"] = LogicalType::BOOLEAN;
 	named_parameters["params"] = LogicalType::ANY;
 	named_parameters["suppress_dml_output"] = LogicalType::BOOLEAN;
+	named_parameters["prepare"] = LogicalType::BOOLEAN;
 	PostgresScanFunction scan_function;
 	init_global = scan_function.init_global;
 	init_local = scan_function.init_local;
@@ -166,6 +181,7 @@ PostgresExecuteFunction::PostgresExecuteFunction()
     : TableFunction("postgres_execute", {LogicalType::VARCHAR, LogicalType::VARCHAR}, nullptr, PGQueryBind) {
 	named_parameters["use_transaction"] = LogicalType::BOOLEAN;
 	named_parameters["params"] = LogicalType::ANY;
+	named_parameters["prepare"] = LogicalType::BOOLEAN;
 	PostgresScanFunction scan_function;
 	init_global = scan_function.init_global;
 	init_local = scan_function.init_local;

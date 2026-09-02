@@ -202,5 +202,55 @@ CALL postgres_query('s1', 'UPDATE dml_output_test SET col1 = 43', suppress_dml_o
 statement ok
 CALL postgres_query('s1', 'DROP TABLE dml_output_test')
 
+# non-preparable statement
+
+statement error
+CALL postgres_query('s1', 'PREPARE p1 AS SELECT 42; EXECUTE p1;')
+----
+Failed to prepare
+
+statement error
+CALL postgres_query('s1', 'PREPARE p1 AS SELECT 42; EXECUTE p1;', prepare=FALSE, params=row(42))
+----
+query parameters cannot be used with 'prepare=FALSE'
+
+# use the same connection
+
+statement ok
+BEGIN TRANSACTION
+
+statement ok
+CALL postgres_query('s1', 'PREPARE p1 AS SELECT 42; EXECUTE p1;', prepare=FALSE)
+
+query I
+FROM postgres_query('s1', 'EXECUTE p1', prepare=FALSE)
+----
+1
+
+query II
+SELECT column_name, column_type FROM (
+  DESCRIBE FROM postgres_query('s1', 'EXECUTE p1', prepare=FALSE)
+)
+----
+rowcount	BIGINT
+
+query II
+SELECT column_name, column_type FROM (
+  DESCRIBE FROM postgres_execute('s1', 'EXECUTE p1', prepare=FALSE)
+)
+----
+rowcount	BIGINT
+
+statement ok
+CALL postgres_query('s1', 'DEALLOCATE p1', prepare=FALSE)
+
+statement error
+FROM postgres_query('s1', 'EXECUTE p1', prepare=FALSE)
+----
+does not exist
+
+statement ok
+ROLLBACK
+
 statement ok
 DETACH s1

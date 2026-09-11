@@ -8,6 +8,8 @@
 
 #pragma once
 
+#include "dbconnector/attached.hpp"
+
 #include <memory>
 #include <mutex>
 
@@ -88,6 +90,8 @@ public:
 	shared_ptr<PostgresConnectionPool> GetConnectionPoolPtr() {
 		return connection_pool;
 	}
+
+	static dbconnector::attached::AttachedCatalog Lookup(ClientContext &ctx, const string &name);
 
 	void ClearCache();
 

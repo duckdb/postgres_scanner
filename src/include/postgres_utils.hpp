@@ -8,6 +8,8 @@
 
 #pragma once
 
+#include <mutex>
+
 #include "duckdb.hpp"
 #include <libpq-fe.h>
 #include "postgres_version.hpp"
@@ -66,6 +68,8 @@ struct PostgresCopyState {
 
 enum class PostgresIsolationLevel { READ_COMMITTED, REPEATABLE_READ, SERIALIZABLE };
 
+enum class PostgresConnectCheck { THROW_ON_CONNECTION_BAD, RETURN_ON_CONNECTION_BAD };
+
 class PostgresUtils {
 public:
 	static PGconn *PGConnect(const string &dsn, const string &attach_path);
@@ -93,6 +97,13 @@ public:
 	static string EscapeConnectionString(const string &input);
 	static string ExtractConnectionOption(const KeyValueSecret &kv_secret, const string &name);
 	static string WriteLiteralsCommaSeparated(const vector<string> &literals);
+	static string WriteIdentifier(const string &identifier);
+
+private:
+	static mutex libpq_init_lock;
+	static bool libpq_connect_succeeded_at_least_once;
+
+	static PGconn *PGConnectInternal(const string &dsn, const string &attach_path, PostgresConnectCheck check);
 };
 
 } // namespace duckdb

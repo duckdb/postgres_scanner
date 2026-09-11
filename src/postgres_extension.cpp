@@ -1,7 +1,7 @@
 #define DUCKDB_BUILD_LOADABLE_EXTENSION
 #include "duckdb.hpp"
-#include <openssl/crypto.h>
-#include <openssl/ssl.h>
+#include "duckdb/logging/log_manager.hpp"
+#include "duckdb/main/config.hpp"
 
 #include "postgres_scanner.hpp"
 #include "postgres_storage.hpp"
@@ -118,12 +118,6 @@ static std::string CreatePoolNote(const std::string &option) {
 }
 
 static void LoadInternal(ExtensionLoader &loader) {
-	// Prevent a race with OpenSSL init that manifests itself with
-	// the following message on the first connection attempt:
-	// "port 5432 failed: could not create SSL context: unknown option"
-	OPENSSL_init_crypto(0, nullptr);
-	OPENSSL_init_ssl(0, nullptr);
-
 	// Register the OAuth bearer token hook before any connections are made
 	PostgresInitOAuthHook();
 

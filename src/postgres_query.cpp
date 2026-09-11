@@ -40,14 +40,14 @@ static unique_ptr<FunctionData> BindDML(ClientContext &context, TableFunctionBin
 	}
 	return_types.emplace_back(LogicalType::BIGINT);
 	names.emplace_back(Identifier("rowcount"));
-	result->SetCatalog(pg_catalog);
+	result->catalog_name = pg_catalog.GetName();
 	result->dsn = con.GetDSN();
 	result->types = return_types;
 	result->names.emplace_back(names[0].GetIdentifierName());
 	result->read_only = false;
 	result->sql = std::move(sql);
 	result->use_transaction = use_transaction;
-	PostgresScanFunction::PrepareBind(pg_catalog.GetPostgresVersion(), context, *result, 0);
+	PostgresScanFunction::PrepareBind(pg_catalog.GetPostgresVersion(), context, *result, 0, pg_catalog);
 	return std::move(result);
 }
 
@@ -149,7 +149,7 @@ static unique_ptr<FunctionData> PGQueryBind(ClientContext &context, TableFunctio
 
 	// set up the bind data
 	result->type_config = type_config;
-	result->SetCatalog(pg_catalog);
+	result->catalog_name = pg_catalog.GetName();
 	result->dsn = con.GetDSN();
 	result->types = return_types;
 	for (auto &nm : names) {
@@ -159,7 +159,7 @@ static unique_ptr<FunctionData> PGQueryBind(ClientContext &context, TableFunctio
 	result->sql = std::move(sql);
 	result->params = PostgresParameters(std::move(param_types), std::move(param_values));
 	result->use_transaction = use_transaction;
-	PostgresScanFunction::PrepareBind(pg_catalog.GetPostgresVersion(), context, *result, 0);
+	PostgresScanFunction::PrepareBind(pg_catalog.GetPostgresVersion(), context, *result, 0, pg_catalog);
 	return std::move(result);
 }
 

@@ -1,4 +1,7 @@
 #include "storage/postgres_optimizer.hpp"
+
+#include <map>
+
 #include "duckdb/planner/logical_operator.hpp"
 
 #include "duckdb/planner/operator/logical_get.hpp"
@@ -16,7 +19,7 @@
 namespace duckdb {
 
 struct PostgresOperators {
-	reference_map_t<PostgresCatalog, vector<reference<LogicalGet>>> scans;
+	std::map<string, vector<reference<LogicalGet>>> scans;
 };
 
 static void GatherPostgresScans(LogicalOperator &op, PostgresOperators &result) {
@@ -28,12 +31,11 @@ static void GatherPostgresScans(LogicalOperator &op, PostgresOperators &result) 
 			return;
 		}
 		auto &bind_data = get.bind_data->Cast<PostgresBindData>();
-		auto catalog = bind_data.GetCatalog();
-		if (!catalog) {
+		if (bind_data.catalog_name.empty()) {
 			// "postgres_scan" functions are fully independent - we can always stream them
 			return;
 		}
-		result.scans[*catalog].push_back(get);
+		result.scans[bind_data.catalog_name.GetIdentifierName()].push_back(get);
 	}
 	// recurse into children
 	for (auto &child : op.children) {
@@ -78,7 +80,6 @@ void PostgresOptimizer::Optimize(OptimizerExtensionInput &input, unique_ptr<Logi
 		return;
 	}
 	for (auto &entry : operators.scans) {
-		auto &catalog = entry.first;
 		auto multiple_scans = entry.second.size() > 1;
 		for (auto &scan : entry.second) {
 			auto &bind_data = scan.get().bind_data->Cast<PostgresBindData>();

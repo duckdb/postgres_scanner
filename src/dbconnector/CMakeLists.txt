@@ -3,6 +3,8 @@ set(POSTGRES_DBCONNECTOR_PATH
 
 add_library(
   postgres_ext_dbconnector OBJECT
+  ${POSTGRES_DBCONNECTOR_PATH}/src/attached/attached_catalog.cpp
+  ${POSTGRES_DBCONNECTOR_PATH}/src/attached/attached_table.cpp
   ${POSTGRES_DBCONNECTOR_PATH}/src/functions/configure_pool.cpp
   ${POSTGRES_DBCONNECTOR_PATH}/src/query/query_writer.cpp
   ${POSTGRES_DBCONNECTOR_PATH}/src/table_scan/filter_pushdown.cpp

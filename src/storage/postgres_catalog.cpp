@@ -326,4 +326,15 @@ void PostgresCatalog::RegisterSecretStorage() {
 	}
 }
 
+dbconnector::attached::AttachedCatalog PostgresCatalog::Lookup(ClientContext &ctx, const Identifier &name) {
+	using namespace dbconnector::attached;
+
+	AttachedCatalog attached_catalog = AttachedCatalog::Lookup(ctx, "postgres", name);
+	if (!attached_catalog) {
+		throw InvalidInputException("Attached PostgreSQL database not found in the specified client session, name: %s",
+		                            name);
+	}
+	return attached_catalog;
+}
+
 } // namespace duckdb

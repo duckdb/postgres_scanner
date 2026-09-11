@@ -8,6 +8,8 @@
 
 #pragma once
 
+#include "dbconnector/attached.hpp"
+
 #include <memory>
 #include "duckdb/main/attached_database.hpp"
 #include "duckdb/main/client_context.hpp"
@@ -118,6 +120,8 @@ public:
 	shared_ptr<PostgresConnectionPool> GetConnectionPoolPtr() {
 		return connection_pool;
 	}
+
+	static dbconnector::attached::AttachedCatalog Lookup(ClientContext &ctx, const Identifier &name);
 
 	void ClearCache();
 

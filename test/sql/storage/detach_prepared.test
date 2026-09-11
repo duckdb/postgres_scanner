@@ -1,0 +1,126 @@
+# name: test/sql/storage/detach_prepared.test
+# description: Test the behaviour of DETACH with PREPARE/EXECUTE
+# group: [storage]
+
+require mysql_scanner
+
+require-env POSTGRES_TEST_DATABASE_AVAILABLE
+
+statement ok
+ATTACH 'dbname=postgresscanner' AS s (TYPE POSTGRES)
+
+statement ok
+CREATE OR REPLACE TABLE s.detach_prepare_test AS FROM range(41, 43) r
+
+statement ok
+PREPARE p1 AS SELECT divide(r, 1) FROM s.detach_prepare_test
+
+query I
+EXECUTE p1
+----
+41
+42
+
+query I
+EXECUTE p1
+----
+41
+42
+
+statement ok
+DETACH s
+
+statement error
+EXECUTE p1
+----
+Catalog Error: Table with name "s.detach_prepare_test" does not exist because schema "s" does not exist.
+
+statement ok
+ATTACH 'dbname=postgresscanner' AS s (TYPE POSTGRES)
+
+query I
+EXECUTE p1
+----
+41
+42
+
+statement ok
+DROP TABLE s.detach_prepare_test
+
+statement error
+EXECUTE p1
+----
+Catalog Error: Table with name detach_prepare_test does not exist!
+
+statement ok
+DEALLOCATE p1
+
+statement error
+EXECUTE p1
+----
+Binder Error: Prepared statement "p1" does not exist
+
+statement ok
+DETACh s
+
+# prepared postgres_query, no cached tables
+
+statement ok
+ATTACH 'dbname=postgresscanner' AS s (TYPE POSTGRES)
+
+statement ok
+CALL postgres_query('s', 'CREATE TABLE detach_prepare_test(r INT)')
+
+statement ok
+CALL postgres_query('s', 'INSERT INTO detach_prepare_test VALUES (41),(42)')
+
+statement ok
+PREPARE p2 AS FROM postgres_query('s', 'SELECT * FROM detach_prepare_test')
+
+query I
+EXECUTE p2
+----
+41
+42
+
+query I
+EXECUTE p2
+----
+41
+42
+
+statement ok
+DETACH s
+
+statement error
+EXECUTE p2
+----
+Invalid Input Error: Attached PostgreSQL database not found in the specified client session, name: "s"
+
+statement ok
+ATTACH 'dbname=postgresscanner' AS s (TYPE POSTGRES)
+
+query I
+EXECUTE p2
+----
+41
+42
+
+statement ok
+CALL postgres_query('s', 'DROP TABLE detach_prepare_test')
+
+statement error
+EXECUTE p2
+----
+ERROR:  relation "detach_prepare_test" does not exist
+
+statement ok
+DEALLOCATE p2
+
+statement error
+EXECUTE p2
+----
+Binder Error: Prepared statement "p2" does not exist
+
+statement ok
+DETACh s

@@ -8,6 +8,8 @@
 
 #pragma once
 
+#include "dbconnector/attached.hpp"
+
 #include "duckdb/catalog/catalog_entry/table_catalog_entry.hpp"
 #include "duckdb/main/client_context.hpp"
 #include "duckdb/catalog/catalog.hpp"
@@ -60,6 +62,8 @@ public:
 
 	//! Get the copy format (text or binary) that should be used when writing data to this table
 	PostgresCopyFormat GetCopyFormat(ClientContext &context);
+
+	static dbconnector::attached::AttachedTable Lookup(ClientContext &ctx, QualifiedName name);
 
 public:
 	//! Postgres type annotations

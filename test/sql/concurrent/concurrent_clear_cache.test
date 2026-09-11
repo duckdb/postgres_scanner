@@ -1,0 +1,36 @@
+# name: test/sql/concurrent/concurrent_clear_cache.test
+# description: Test concurrent drop of the table being quried
+# group: [concurrent]
+
+require mysql_scanner
+
+require-env POSTGRES_TEST_DATABASE_AVAILABLE
+
+statement ok
+ATTACH 'dbname=postgresscanner' AS s (TYPE POSTGRES)
+
+statement ok
+CREATE OR REPLACE TABLE s.concurrent_drop_test  AS
+SELECT unnest(range(1<<12)) col1
+
+loop i 0 16
+
+concurrentloop j 0 16
+
+statement ok
+CALL pg_clear_cache()
+
+query I
+SELECT divide(count(*), 1) FROM s.concurrent_drop_test
+----
+4096
+
+endloop
+
+endloop
+
+statement ok
+DROP TABLE s.concurrent_drop_test
+
+statement ok
+DETACH s

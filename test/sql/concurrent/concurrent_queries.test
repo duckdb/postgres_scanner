@@ -1,0 +1,46 @@
+# name: test/sql/concurrent/concurrent_queries.test
+# description: Run queries concurrently over different connections
+# group: [concurrent]
+
+require postgres_scanner
+
+require-env POSTGRES_TEST_DATABASE_AVAILABLE
+
+statement ok
+ATTACH 'dbname=postgresscanner' AS s (TYPE POSTGRES)
+
+# concurrent table creation
+concurrentloop i 0 10
+
+statement maybe
+CREATE OR REPLACE TABLE s.concurrent(i INTEGER);
+----
+
+endloop
+
+# just run a bunch of queries - these may or may not work but they at least should not crash
+concurrentloop i 0 10
+
+loop k 0 10
+
+statement ok
+INSERT INTO s.concurrent VALUES ({i} + {k})
+
+endloop
+
+endloop
+
+query II
+SELECT SUM(i), COUNT(*) FROM s.concurrent
+----
+900	100
+
+# query a non-existent table concurrently
+concurrentloop i 0 10
+
+statement error
+SELECT * FROM s.xxxxxxzzz
+----
+xxxxxxzzz
+
+endloop

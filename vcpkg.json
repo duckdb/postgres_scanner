@@ -1,6 +1,5 @@
 {
   "dependencies": [
-    "openssl",
     "libpq"
   ],
   "vcpkg-configuration": {

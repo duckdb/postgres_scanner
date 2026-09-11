@@ -74,9 +74,12 @@ static void PostgresGetSnapshot(ClientContext &context, PostgresVersion version,
 		return;
 	}
 	// SET TRANSACTION SNAPSHOT requires REPEATABLE READ or SERIALIZABLE
-	auto pg_catalog = bind_data.GetCatalog();
-	if (pg_catalog && pg_catalog->isolation_level == PostgresIsolationLevel::READ_COMMITTED) {
-		return;
+	if (!bind_data.catalog_name.empty()) {
+		auto attached_catalog = PostgresCatalog::Lookup(context, bind_data.catalog_name);
+		auto &pg_catalog = attached_catalog.Get<PostgresCatalog>();
+		if (pg_catalog.isolation_level == PostgresIsolationLevel::READ_COMMITTED) {
+			return;
+		}
 	}
 	// reader threads can use the same snapshot
 	auto &con = gstate.GetConnection();
@@ -100,7 +103,8 @@ static void PostgresGetSnapshot(ClientContext &context, PostgresVersion version,
 }
 
 void PostgresScanFunction::PrepareBind(PostgresVersion version, ClientContext &context, PostgresBindData &bind_data,
-                                       int64_t approx_num_pages) {
+                                       int64_t approx_num_pages, optional_ptr<PostgresCatalog> pg_catalog) {
+	(void)pg_catalog;
 	Value pages_per_task;
 	if (context.TryGetCurrentSetting("pg_pages_per_task", pages_per_task)) {
 		bind_data.pages_per_task = UBigIntValue::Get(pages_per_task);
@@ -167,14 +171,6 @@ void PostgresGlobalState::SetConnection(shared_ptr<OwnedPostgresConnection> conn
 	this->connection = PostgresConnection(std::move(connection));
 }
 
-void PostgresBindData::SetCatalog(PostgresCatalog &catalog) {
-	this->pg_catalog = &catalog;
-}
-
-void PostgresBindData::SetTable(PostgresTableEntry &table) {
-	this->pg_table = &table;
-}
-
 static unique_ptr<FunctionData> PostgresBind(ClientContext &context, TableFunctionBindInput &input,
                                              vector<LogicalType> &return_types, vector<string> &names) {
 	auto bind_data = make_uniq<PostgresBindData>(context);
@@ -199,7 +195,7 @@ static unique_ptr<FunctionData> PostgresBind(ClientContext &context, TableFuncti
 	bind_data->can_use_main_thread = true;
 	bind_data->requires_materialization = false;
 
-	PostgresScanFunction::PrepareBind(version, context, *bind_data, info->approx_num_pages);
+	PostgresScanFunction::PrepareBind(version, context, *bind_data, info->approx_num_pages, nullptr);
 	return std::move(bind_data);
 }
 
@@ -327,7 +323,13 @@ static unique_ptr<GlobalTableFunctionState> PostgresInitGlobalState(ClientContex
                                                                     TableFunctionInitInput &input) {
 	auto &bind_data = input.bind_data->Cast<PostgresBindData>();
 	auto result = make_uniq<PostgresGlobalState>(PostgresMaxThreads(context, input.bind_data.get()));
-	auto pg_catalog = bind_data.GetCatalog();
+	optional_ptr<PostgresCatalog> pg_catalog = nullptr;
+	dbconnector::attached::AttachedCatalog attached_catalog;
+	if (!bind_data.catalog_name.empty()) {
+		attached_catalog = PostgresCatalog::Lookup(context, bind_data.catalog_name);
+		pg_catalog = &attached_catalog.Get<PostgresCatalog>();
+	}
+
 	if (pg_catalog) {
 		auto &transaction = Transaction::Get(context, *pg_catalog).Cast<PostgresTransaction>();
 		auto &con =
@@ -395,7 +397,12 @@ static bool PostgresParallelStateNext(ClientContext &context, const FunctionData
 
 bool PostgresGlobalState::TryOpenNewConnection(ClientContext &context, PostgresLocalState &lstate,
                                                const PostgresBindData &bind_data) {
-	auto pg_catalog = bind_data.GetCatalog();
+	optional_ptr<PostgresCatalog> pg_catalog = nullptr;
+	dbconnector::attached::AttachedCatalog attached_catalog;
+	if (!bind_data.catalog_name.empty()) {
+		attached_catalog = PostgresCatalog::Lookup(context, bind_data.catalog_name);
+		pg_catalog = &attached_catalog.Get<PostgresCatalog>();
+	}
 	{
 		lock_guard<mutex> parallel_lock(lock);
 		if (!used_main_thread) {
@@ -572,10 +579,13 @@ static unique_ptr<FunctionData> PostgresScanDeserialize(Deserializer &deserializ
 }
 
 static BindInfo PostgresGetBindInfo(const optional_ptr<FunctionData> bind_data_p) {
-	auto &bind_data = bind_data_p->Cast<PostgresBindData>();
-	auto table = bind_data.GetTable();
+	auto &bdata = bind_data_p->Cast<PostgresBindData>();
 	BindInfo info(ScanType::EXTERNAL);
-	info.table = table.get();
+	shared_ptr<ClientContext> ctx = bdata.context_ptr.lock();
+	if (ctx) { // cannot fail in known scenarios
+		auto attached_table = PostgresTableEntry::Lookup(*ctx, bdata.qualified_table_name);
+		info.table = attached_table.Get<PostgresTableEntry>();
+	}
 	return info;
 }
 

@@ -109,7 +109,7 @@ static unique_ptr<FunctionData> PGQueryBind(ClientContext &context, TableFunctio
 
 	// set up the bind data
 	result->type_config = type_config;
-	result->SetCatalog(pg_catalog);
+	result->catalog_name = pg_catalog.GetName();
 	result->dsn = con.GetDSN();
 	result->types = return_types;
 	result->names = names;
@@ -118,6 +118,7 @@ static unique_ptr<FunctionData> PGQueryBind(ClientContext &context, TableFunctio
 	result->sql = std::move(sql);
 	result->params = PostgresParameters(std::move(param_types), std::move(param_values));
 	result->use_transaction = use_transaction;
+	PostgresScanFunction::PrepareBind(pg_catalog.GetPostgresVersion(), context, *result, 0, pg_catalog);
 	return std::move(result);
 }
 

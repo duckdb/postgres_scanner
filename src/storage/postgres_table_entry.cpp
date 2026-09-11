@@ -46,8 +46,11 @@ TableFunction PostgresTableEntry::GetScanFunction(ClientContext &context, unique
 	result->table_name = name;
 	result->dsn = transaction.GetDSN();
 	result->attach_path = pg_catalog.attach_path;
-	result->SetCatalog(pg_catalog);
-	result->SetTable(*this);
+	result->catalog_name = pg_catalog.GetName();
+	result->qualified_table_name.catalog = ParentCatalog().GetName();
+	result->qualified_table_name.schema = ParentSchema().name;
+	result->qualified_table_name.name = name;
+	result->context_ptr = transaction.context;
 	for (auto &col : columns.Logical()) {
 		result->types.push_back(col.GetType());
 	}
@@ -56,7 +59,7 @@ TableFunction PostgresTableEntry::GetScanFunction(ClientContext &context, unique
 	result->read_only = transaction.IsReadOnly();
 	result->type_config = PostgresTypeConfig::FromContext(context);
 	PostgresScanFunction::PrepareBind(pg_catalog.GetPostgresVersion(), context, *result,
-	                                  approx_num_pages.load(std::memory_order_acquire));
+	                                  approx_num_pages.load(std::memory_order_acquire), pg_catalog);
 
 	bind_data = std::move(result);
 	auto function = PostgresScanFunction();
@@ -147,6 +150,17 @@ PostgresCopyFormat PostgresTableEntry::GetCopyFormat(ClientContext &context) {
 		}
 	}
 	return PostgresCopyFormat::BINARY;
+}
+
+dbconnector::attached::AttachedTable PostgresTableEntry::Lookup(ClientContext &ctx, QualifiedName name) {
+	using namespace dbconnector::attached;
+
+	AttachedTable table = AttachedTable::Lookup(ctx, "postgres", name);
+	if (!table) {
+		throw InvalidInputException("Attached PostgreSQL table, name: %s is not found in the specified client session",
+		                            name.ToString());
+	}
+	return table;
 }
 
 } // namespace duckdb

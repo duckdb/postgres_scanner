@@ -29,6 +29,13 @@ public:
 	PostgresVersion version;
 	string schema_name;
 	string table_name;
+
+	string catalog_name;
+	QualifiedName qualified_table_name;
+
+	// required for get_bind_info and only used there
+	weak_ptr<ClientContext> context_ptr;
+
 	string sql;
 	PostgresParameters params;
 	string limit;
@@ -54,25 +61,12 @@ public:
 public:
 	void SetTablePages(idx_t approx_num_pages);
 
-	void SetCatalog(PostgresCatalog &catalog);
-	void SetTable(PostgresTableEntry &table);
-	optional_ptr<PostgresCatalog> GetCatalog() const {
-		return pg_catalog;
-	}
-	optional_ptr<PostgresTableEntry> GetTable() const {
-		return pg_table;
-	}
-
 	unique_ptr<FunctionData> Copy() const override {
 		throw NotImplementedException("");
 	}
 	bool Equals(const FunctionData &other_p) const override {
 		return false;
 	}
-
-private:
-	optional_ptr<PostgresCatalog> pg_catalog;
-	optional_ptr<PostgresTableEntry> pg_table;
 };
 
 class PostgresAttachFunction : public TableFunction {
@@ -85,7 +79,7 @@ public:
 	PostgresScanFunction();
 
 	static void PrepareBind(PostgresVersion version, ClientContext &context, PostgresBindData &bind,
-	                        int64_t approx_num_pages);
+	                        int64_t approx_num_pages, optional_ptr<PostgresCatalog> pg_catalog);
 };
 
 class PostgresScanFunctionFilterPushdown : public TableFunction {

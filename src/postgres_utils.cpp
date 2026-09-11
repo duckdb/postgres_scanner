@@ -9,18 +9,54 @@
 
 namespace duckdb {
 
+mutex PostgresUtils::libpq_init_lock;
+bool PostgresUtils::libpq_connect_succeeded_at_least_once = false;
+
 static void PGNoticeProcessor(void *arg, const char *message) {
 }
 
 PGconn *PostgresUtils::PGConnect(const string &dsn, const string &attach_path) {
+	bool lock_needed = true;
+	{
+		lock_guard<mutex> guard(libpq_init_lock);
+		if (libpq_connect_succeeded_at_least_once) {
+			lock_needed = false;
+		}
+	}
+
+	if (lock_needed) {
+		lock_guard<mutex> guard(libpq_init_lock);
+		idx_t max_attempts = 2;
+		for (idx_t i = 0; i < max_attempts; i++) { // observed sporadic OpenSSL failures on the first connection
+			PostgresConnectCheck check = i < max_attempts - 1 ? PostgresConnectCheck::RETURN_ON_CONNECTION_BAD
+			                                                  : PostgresConnectCheck::THROW_ON_CONNECTION_BAD;
+			PGconn *conn = PGConnectInternal(dsn, attach_path, check);
+			if (PQstatus(conn) == CONNECTION_BAD) {
+				PQfinish(conn);
+				continue;
+			}
+			libpq_connect_succeeded_at_least_once = true;
+			return conn;
+		}
+	}
+
+	return PGConnectInternal(dsn, attach_path, PostgresConnectCheck::THROW_ON_CONNECTION_BAD);
+}
+
+PGconn *PostgresUtils::PGConnectInternal(const string &dsn, const string &attach_path,
+                                         PostgresConnectCheck check_behaviour) {
 	PGconn *conn = PQconnectdb(dsn.c_str());
 
 	// both PQStatus and PQerrorMessage check for nullptr
 	if (PQstatus(conn) == CONNECTION_BAD) {
-		char *msg_cstr = PQerrorMessage(conn);
-		string msg = msg_cstr != nullptr ? string(msg_cstr) : string();
-		PQfinish(conn);
-		throw IOException("Unable to connect to Postgres at \"%s\": %s", attach_path, msg);
+		if (check_behaviour == PostgresConnectCheck::THROW_ON_CONNECTION_BAD) {
+			char *msg_cstr = PQerrorMessage(conn);
+			string msg = msg_cstr != nullptr ? string(msg_cstr) : string();
+			PQfinish(conn);
+			throw IOException("Unable to connect to Postgres at \"%s\": %s", attach_path, msg);
+		} else {
+			return conn;
+		}
 	}
 	PQsetNoticeProcessor(conn, PGNoticeProcessor, nullptr);
 	return conn;

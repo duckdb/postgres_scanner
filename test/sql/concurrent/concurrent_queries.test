@@ -1,6 +1,6 @@
-# name: test/sql/storage/attach_concurrent_queries.test
+# name: test/sql/concurrent/concurrent_queries.test
 # description: Run queries concurrently over different connections
-# group: [storage]
+# group: [concurrent]
 
 require postgres_scanner
 

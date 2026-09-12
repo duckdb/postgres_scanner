@@ -1,0 +1,31 @@
+# name: test/sql/concurrent/concurrent_attach.test
+# description: Test ATTACH called concurrently from multiple threads
+# group: [concurrent]
+
+require mysql_scanner
+
+require-env POSTGRES_TEST_DATABASE_AVAILABLE
+
+statement ok
+ATTACH 'dbname=postgresscanner' AS s (TYPE POSTGRES)
+
+statement ok
+DETACH s
+
+statement ok
+SET threads = 4
+
+concurrentloop i 0 16
+
+statement ok
+ATTACH 'dbname=postgresscanner' AS s{i} (TYPE POSTGRES)
+
+query I
+SELECT count(*) FROM s{i}.pg_numtypes
+----
+4
+
+statement ok
+DETACH s{i}
+
+endloop
